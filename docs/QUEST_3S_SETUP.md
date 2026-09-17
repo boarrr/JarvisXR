@@ -82,7 +82,6 @@ For OpenAI, Claude, or Council, copy `.env.example` to `.env`, install `.[openai
 Keep the backend at its default `127.0.0.1:8787`. The deploy helper uses Android Debug Bridge reverse-port mapping, so the Quest's `ws://127.0.0.1:8787/ws` reaches the computer without exposing an unauthenticated service on Wi-Fi.
 
 ## 4. Export and install
-
 Connect the Quest by USB, accept its debugging prompt, then run:
 
 ```sh
@@ -100,6 +99,25 @@ Individual commands are available when iterating:
 ```
 
 ADB reverse mappings disappear when the device or daemon restarts; rerun `tunnel` when the backend link remains offline.
+
+### First deploy after initial headset setup (verified checklist)
+
+Once the headset has finished its first-run setup with the controllers:
+
+1. Enable Developer Mode for the headset (Meta Horizon app → Devices → Headset
+   Settings → Developer Mode). It is usually already on for a developer org.
+2. Plug the headset into the Mac and accept **Allow USB debugging** with
+   *Always allow from this computer* inside the headset.
+3. Confirm `adb devices` shows the serial as `device` (not `unauthorized`).
+4. Start the backend from the project copy:
+   `backend/.venv/bin/spatial-agent-backend` (loopback, fake provider is fine).
+5. Run `./scripts/quest.sh deploy` — exports, installs the APK, and maps
+   `tcp:8787` to the Mac.
+6. Launch **Spatial Agent XR** from Library → Unknown Sources. The project
+   settings select the WebSocket transport on Android, so the headset connects
+   to `ws://127.0.0.1:8787/ws` through the ADB tunnel with no LAN setup.
+7. Hand tracking is the intended input. If the app cannot see your hands,
+   verify Settings → Hands and Controllers → Hand Tracking is on.
 
 ## 5. Hand interaction acceptance pass
 
