@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/xr/xr_runtime.gd" id="1_runtime"]
+[ext_resource type="Script" path="res://interaction/openxr_interaction_source.gd" id="2_hands"]
+
+[node name="XRRuntime" type="Node3D"]
+script = ExtResource("1_runtime")
+
+[node name="XROrigin3D" type="XROrigin3D" parent="."]
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
+current = true
+near = 0.03
+far = 100.0
+
+[node name="OpenXRInteractionSource" type="Node" parent="."]
+script = ExtResource("2_hands")
+xr_origin_path = NodePath("../XROrigin3D")

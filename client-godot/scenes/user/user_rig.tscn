@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/user/user_rig.gd" id="1_rig"]
+[ext_resource type="Script" path="res://interaction/desktop_interaction_source.gd" id="2_desktop"]
+
+[node name="UserRig" type="Node3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.65, 0)
+script = ExtResource("1_rig")
+
+[node name="YawPivot" type="Node3D" parent="."]
+
+[node name="PitchPivot" type="Node3D" parent="YawPivot"]
+
+[node name="Camera3D" type="Camera3D" parent="YawPivot/PitchPivot"]
+current = true
+near = 0.05
+far = 100.0
+
+[node name="DesktopInteractionSource" type="Node" parent="."]
+script = ExtResource("2_desktop")
+camera_path = NodePath("../YawPivot/PitchPivot/Camera3D")
+

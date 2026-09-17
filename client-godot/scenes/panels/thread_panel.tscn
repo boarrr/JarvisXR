@@ -1,0 +1,213 @@
+[gd_scene load_steps=17 format=3]
+
+[ext_resource type="Script" path="res://scenes/panels/thread_panel.gd" id="1_panel"]
+[ext_resource type="Script" path="res://interaction/spatial_action_target.gd" id="2_target"]
+
+[sub_resource type="StandardMaterial3D" id="Material_border"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.02, 0.82, 1, 0.68)
+emission_enabled = true
+emission = Color(0.01, 0.62, 1, 1)
+emission_energy_multiplier = 1.8
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="QuadMesh" id="Mesh_border"]
+material = SubResource("Material_border")
+size = Vector2(1.24, 0.86)
+
+[sub_resource type="StandardMaterial3D" id="Material_background"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.006, 0.022, 0.036, 0.965)
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="QuadMesh" id="Mesh_background"]
+material = SubResource("Material_background")
+size = Vector2(1.212, 0.832)
+
+[sub_resource type="StandardMaterial3D" id="Material_accent"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.08, 0.94, 1, 0.9)
+emission_enabled = true
+emission = Color(0.02, 0.82, 1, 1)
+emission_energy_multiplier = 2.6
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="QuadMesh" id="Mesh_header_rail"]
+material = SubResource("Material_accent")
+size = Vector2(1.04, 0.006)
+
+[sub_resource type="QuadMesh" id="Mesh_side_rail"]
+material = SubResource("Material_accent")
+size = Vector2(0.006, 0.63)
+
+[sub_resource type="SphereMesh" id="Mesh_pip"]
+material = SubResource("Material_accent")
+radius = 0.012
+height = 0.024
+radial_segments = 12
+rings = 6
+
+[sub_resource type="StandardMaterial3D" id="Material_action"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.015, 0.26, 0.31, 0.98)
+emission_enabled = true
+emission = Color(0.03, 0.8, 0.92, 1)
+emission_energy_multiplier = 2.0
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="StandardMaterial3D" id="Material_dismiss"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.28, 0.045, 0.035, 0.99)
+emission_enabled = true
+emission = Color(1, 0.25, 0.1, 1)
+emission_energy_multiplier = 2.2
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="QuadMesh" id="Mesh_code_action"]
+material = SubResource("Material_action")
+size = Vector2(0.43, 0.075)
+
+[sub_resource type="QuadMesh" id="Mesh_dismiss_action"]
+material = SubResource("Material_dismiss")
+size = Vector2(0.28, 0.075)
+
+[sub_resource type="BoxShape3D" id="Shape_code_action"]
+size = Vector3(0.43, 0.075, 0.04)
+
+[sub_resource type="BoxShape3D" id="Shape_dismiss_action"]
+size = Vector3(0.28, 0.075, 0.04)
+
+[node name="ThreadPanel" type="Node3D"]
+visible = false
+script = ExtResource("1_panel")
+
+[node name="Border" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0, -0.008)
+cast_shadow = 0
+mesh = SubResource("Mesh_border")
+
+[node name="Background" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = SubResource("Mesh_background")
+
+[node name="HeaderRail" type="MeshInstance3D" parent="."]
+position = Vector3(0.035, 0.275, 0.014)
+cast_shadow = 0
+mesh = SubResource("Mesh_header_rail")
+
+[node name="SideRail" type="MeshInstance3D" parent="."]
+position = Vector3(-0.55, -0.035, 0.014)
+cast_shadow = 0
+mesh = SubResource("Mesh_side_rail")
+
+[node name="StatusPip" type="MeshInstance3D" parent="."]
+position = Vector3(-0.535, 0.375, 0.016)
+cast_shadow = 0
+mesh = SubResource("Mesh_pip")
+
+[node name="EyebrowLabel" type="Label3D" parent="."]
+position = Vector3(-0.5, 0.366, 0.018)
+pixel_size = 0.0025
+text = "THREAD LINK // ACTIVE"
+font_size = 9
+outline_size = 3
+width = 400.0
+horizontal_alignment = 0
+modulate = Color(0.19, 0.85, 0.96, 0.78)
+no_depth_test = true
+
+[node name="TitleLabel" type="Label3D" parent="."]
+position = Vector3(-0.5, 0.309, 0.018)
+pixel_size = 0.0025
+text = "Thread"
+font_size = 19
+outline_size = 5
+width = 400.0
+horizontal_alignment = 0
+modulate = Color(0.78, 0.96, 1, 1)
+no_depth_test = true
+
+[node name="BodyLabel" type="Label3D" parent="."]
+position = Vector3(-0.5, 0.215, 0.019)
+pixel_size = 0.0025
+text = "No messages yet."
+font_size = 15
+outline_size = 4
+width = 400.0
+autowrap_mode = 3
+horizontal_alignment = 0
+vertical_alignment = 0
+modulate = Color(0.72, 0.86, 0.9, 1)
+no_depth_test = true
+
+[node name="HintLabel" type="Label3D" parent="."]
+position = Vector3(-0.31, -0.352, 0.12)
+pixel_size = 0.0025
+text = "CODE TRACE // PINCH"
+font_size = 8
+outline_size = 3
+width = 170.0
+horizontal_alignment = 1
+modulate = Color(0.5, 0.94, 1, 1)
+no_depth_test = true
+
+[node name="SequenceLabel" type="Label3D" parent="."]
+position = Vector3(0.5, 0.366, 0.019)
+pixel_size = 0.0025
+text = "MSG 00 // RX"
+font_size = 9
+outline_size = 3
+width = 160.0
+horizontal_alignment = 2
+modulate = Color(0.2, 0.7, 0.78, 0.9)
+no_depth_test = true
+
+[node name="CodeTraceTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(-0.31, -0.352, 0.08)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "ui:code_toggle"
+
+[node name="Mesh" type="MeshInstance3D" parent="CodeTraceTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_code_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CodeTraceTarget"]
+shape = SubResource("Shape_code_action")
+
+[node name="DismissTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(0.205, -0.352, 0.11)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "ui:dismiss"
+
+[node name="Mesh" type="MeshInstance3D" parent="DismissTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_dismiss_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DismissTarget"]
+shape = SubResource("Shape_dismiss_action")
+
+[node name="DismissLabel" type="Label3D" parent="."]
+position = Vector3(0.205, -0.352, 0.15)
+pixel_size = 0.0025
+text = "DISMISS // PINCH"
+font_size = 9
+outline_size = 3
+width = 108.0
+modulate = Color(1, 0.86, 0.72, 1)
+no_depth_test = true

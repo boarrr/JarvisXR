@@ -1,0 +1,235 @@
+[gd_scene load_steps=42 format=3]
+
+[ext_resource type="Script" path="res://scenes/app/main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://scenes/user/user_rig.tscn" id="2_rig"]
+[ext_resource type="PackedScene" path="res://scenes/debug/debug_overlay.tscn" id="3_overlay"]
+[ext_resource type="Script" path="res://interaction/interaction_manager.gd" id="4_interaction"]
+[ext_resource type="PackedScene" path="res://scenes/orb/orb_manager.tscn" id="5_orbs"]
+[ext_resource type="Script" path="res://scenes/debug/debug_thread_controller.gd" id="6_debug_threads"]
+[ext_resource type="PackedScene" path="res://scenes/panels/thread_panel.tscn" id="7_thread_panel"]
+[ext_resource type="Script" path="res://services/backend_bridge.gd" id="8_backend_bridge"]
+[ext_resource type="Script" path="res://services/fake_backend_transport.gd" id="9_fake_transport"]
+[ext_resource type="Script" path="res://services/backend_client.gd" id="10_websocket_client"]
+[ext_resource type="Script" path="res://services/command_router.gd" id="11_command_router"]
+[ext_resource type="PackedScene" path="res://scenes/panels/desktop_composer.tscn" id="12_composer"]
+[ext_resource type="PackedScene" path="res://scenes/panels/approval_panel.tscn" id="13_approval"]
+[ext_resource type="Script" path="res://services/local_whisper_speech_service.gd" id="14_speech"]
+[ext_resource type="PackedScene" path="res://scenes/panels/code_viewer.tscn" id="15_code_viewer"]
+[ext_resource type="Script" path="res://scenes/hud/holographic_reticle.gd" id="16_reticle"]
+[ext_resource type="PackedScene" path="res://scenes/xr/xr_runtime.tscn" id="17_xr_runtime"]
+[ext_resource type="PackedScene" path="res://scenes/hud/palm_console.tscn" id="18_palm_console"]
+[ext_resource type="PackedScene" path="res://scenes/hud/hand_ray_visualizer.tscn" id="19_hand_ray"]
+[ext_resource type="PackedScene" path="res://scenes/panels/quick_intent_panel.tscn" id="20_quick_intent"]
+[ext_resource type="PackedScene" path="res://scenes/cognition/cognition_layer.tscn" id="21_cognition"]
+[ext_resource type="PackedScene" path="res://scenes/mission/mission_topology.tscn" id="22_mission"]
+[ext_resource type="PackedScene" path="res://scenes/privacy/privacy_veil.tscn" id="23_privacy"]
+[ext_resource type="Script" path="res://services/room_anchor_registry.gd" id="24_anchors"]
+[ext_resource type="PackedScene" path="res://services/spatial_audio_cue_service.tscn" id="25_audio"]
+[ext_resource type="Script" path="res://scenes/hud/hand_lab.gd" id="26_hand_lab"]
+[ext_resource type="Script" path="res://scenes/hud/reactor_field.gd" id="27_reactor"]
+
+[sub_resource type="Environment" id="Environment_development"]
+background_mode = 1
+background_color = Color(0.002, 0.008, 0.014, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.04, 0.17, 0.23, 1)
+ambient_light_energy = 0.34
+
+[sub_resource type="StandardMaterial3D" id="Material_floor"]
+albedo_color = Color(0.008, 0.018, 0.025, 1)
+metallic = 0.1
+roughness = 0.84
+
+[sub_resource type="BoxMesh" id="Mesh_floor"]
+material = SubResource("Material_floor")
+size = Vector3(12, 0.05, 12)
+
+[sub_resource type="BoxShape3D" id="Shape_floor"]
+size = Vector3(12, 0.05, 12)
+
+[sub_resource type="StandardMaterial3D" id="Material_left"]
+albedo_color = Color(0.22, 0.82, 0.52, 1)
+metallic = 0.1
+roughness = 0.4
+
+[sub_resource type="BoxMesh" id="Mesh_left"]
+material = SubResource("Material_left")
+size = Vector3(0.4, 0.4, 0.4)
+
+[sub_resource type="StandardMaterial3D" id="Material_right"]
+albedo_color = Color(0.92, 0.43, 0.24, 1)
+metallic = 0.1
+roughness = 0.4
+
+[sub_resource type="CylinderMesh" id="Mesh_right"]
+material = SubResource("Material_right")
+top_radius = 0.22
+bottom_radius = 0.22
+height = 0.48
+
+[sub_resource type="StandardMaterial3D" id="Material_axis"]
+albedo_color = Color(0.16, 0.22, 0.3, 1)
+roughness = 0.75
+
+[sub_resource type="BoxMesh" id="Mesh_axis_z"]
+material = SubResource("Material_axis")
+size = Vector3(0.025, 0.012, 4)
+
+[sub_resource type="BoxMesh" id="Mesh_axis_x"]
+material = SubResource("Material_axis")
+size = Vector3(4, 0.012, 0.025)
+
+[sub_resource type="Shader" id="Shader_grid"]
+code = "shader_type spatial;\nrender_mode unshaded, blend_add, cull_disabled;\n\nuniform vec4 grid_color : source_color = vec4(0.02, 0.55, 0.7, 1.0);\n\nvoid fragment() {\n    vec2 fine_coord = UV * 32.0;\n    vec2 fine_width = fwidth(fine_coord);\n    vec2 fine_grid = abs(fract(fine_coord - 0.5) - 0.5) / max(fine_width, vec2(0.001));\n    float fine_line = 1.0 - min(min(fine_grid.x, fine_grid.y), 1.0);\n\n    vec2 major_coord = UV * 8.0;\n    vec2 major_width = fwidth(major_coord);\n    vec2 major_grid = abs(fract(major_coord - 0.5) - 0.5) / max(major_width, vec2(0.001));\n    float major_line = 1.0 - min(min(major_grid.x, major_grid.y), 1.0);\n\n    float radial_fade = 1.0 - smoothstep(0.22, 0.72, distance(UV, vec2(0.5)));\n    float intensity = (fine_line * 0.10 + major_line * 0.24) * radial_fade;\n    ALBEDO = grid_color.rgb;\n    EMISSION = grid_color.rgb * intensity * 1.8;\n    ALPHA = intensity;\n}\n"
+
+[sub_resource type="ShaderMaterial" id="Material_grid"]
+render_priority = 1
+shader = SubResource("Shader_grid")
+
+[sub_resource type="PlaneMesh" id="Mesh_grid"]
+material = SubResource("Material_grid")
+size = Vector2(13, 13)
+
+[node name="Main" type="Node"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_development")
+
+[node name="EnvironmentLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-52, -28, 0)
+light_color = Color(0.84, 0.91, 1, 1)
+light_energy = 0.42
+shadow_enabled = false
+
+[node name="DevelopmentFloor" type="StaticBody3D" parent="."]
+position = Vector3(0, -0.025, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="DevelopmentFloor"]
+mesh = SubResource("Mesh_floor")
+
+[node name="Collision" type="CollisionShape3D" parent="DevelopmentFloor"]
+shape = SubResource("Shape_floor")
+
+[node name="HolographicGrid" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.008, 0)
+cast_shadow = 0
+mesh = SubResource("Mesh_grid")
+
+[node name="UserRig" parent="." instance=ExtResource("2_rig")]
+
+[node name="XRRuntime" parent="." instance=ExtResource("17_xr_runtime")]
+
+[node name="ReactorField" type="Node3D" parent="."]
+script = ExtResource("27_reactor")
+
+[node name="HandLab" type="CanvasLayer" parent="."]
+script = ExtResource("26_hand_lab")
+
+[node name="OrbManager" parent="." instance=ExtResource("5_orbs")]
+
+[node name="CognitionLayer" parent="." instance=ExtResource("21_cognition")]
+
+[node name="MissionTopology" parent="." instance=ExtResource("22_mission")]
+
+[node name="InteractionManager" type="Node3D" parent="."]
+script = ExtResource("4_interaction")
+
+[node name="RoomAnchorRegistry" type="Node" parent="."]
+script = ExtResource("24_anchors")
+
+[node name="ThreadPanel" parent="." instance=ExtResource("7_thread_panel")]
+
+[node name="CodeViewer" parent="." instance=ExtResource("15_code_viewer")]
+
+[node name="QuickIntentPanel" parent="." instance=ExtResource("20_quick_intent")]
+
+[node name="PalmConsole" parent="." instance=ExtResource("18_palm_console")]
+
+[node name="HandRayVisualizer" parent="." instance=ExtResource("19_hand_ray")]
+
+[node name="BackendBridge" type="Node" parent="."]
+script = ExtResource("8_backend_bridge")
+
+[node name="FakeBackendTransport" type="Node" parent="BackendBridge"]
+script = ExtResource("9_fake_transport")
+
+[node name="WebSocketBackendClient" type="Node" parent="BackendBridge"]
+script = ExtResource("10_websocket_client")
+
+[node name="CommandRouter" type="Node" parent="."]
+script = ExtResource("11_command_router")
+
+[node name="LocalWhisperSpeechService" type="Node" parent="."]
+script = ExtResource("14_speech")
+
+[node name="SpatialAudioCueService" parent="." instance=ExtResource("25_audio")]
+
+[node name="ApprovalPanel" parent="." instance=ExtResource("13_approval")]
+
+[node name="PrivacyVeil" parent="." instance=ExtResource("23_privacy")]
+
+[node name="DesktopComposer" parent="." instance=ExtResource("12_composer")]
+
+[node name="PointerHUD" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="CenterReticle" type="Control" parent="PointerHUD"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -28.0
+offset_top = -28.0
+offset_right = 28.0
+offset_bottom = 28.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("16_reticle")
+
+[node name="DebugOverlay" parent="." instance=ExtResource("3_overlay")]
+visible = false
+
+[node name="DebugThreadController" type="Node" parent="."]
+script = ExtResource("6_debug_threads")
+
+[node name="DevelopmentMarkers" type="Node3D" parent="."]
+visible = false
+
+[node name="AxisForward" type="MeshInstance3D" parent="DevelopmentMarkers"]
+position = Vector3(0, 0.012, -2)
+mesh = SubResource("Mesh_axis_z")
+
+[node name="AxisSide" type="MeshInstance3D" parent="DevelopmentMarkers"]
+position = Vector3(0, 0.014, -2)
+mesh = SubResource("Mesh_axis_x")
+
+[node name="MarkerLeft" type="Node3D" parent="DevelopmentMarkers"]
+position = Vector3(-1.5, 0.25, -2.5)
+
+[node name="Mesh" type="MeshInstance3D" parent="DevelopmentMarkers/MarkerLeft"]
+mesh = SubResource("Mesh_left")
+
+[node name="Label" type="Label3D" parent="DevelopmentMarkers/MarkerLeft"]
+position = Vector3(0, 0.36, 0)
+text = "LEFT"
+font_size = 18
+outline_size = 5
+modulate = Color(0.62, 1, 0.78, 1)
+billboard = 1
+
+[node name="MarkerRight" type="Node3D" parent="DevelopmentMarkers"]
+position = Vector3(1.5, 0.25, -2.5)
+
+[node name="Mesh" type="MeshInstance3D" parent="DevelopmentMarkers/MarkerRight"]
+mesh = SubResource("Mesh_right")
+
+[node name="Label" type="Label3D" parent="DevelopmentMarkers/MarkerRight"]
+position = Vector3(0, 0.38, 0)
+text = "RIGHT"
+font_size = 18
+outline_size = 5
+modulate = Color(1, 0.76, 0.62, 1)
+billboard = 1

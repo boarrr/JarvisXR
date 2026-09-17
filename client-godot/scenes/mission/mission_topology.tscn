@@ -1,0 +1,38 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/mission/mission_topology.gd" id="1_mission"]
+
+[node name="MissionTopology" type="Node3D"]
+visible = false
+script = ExtResource("1_mission")
+
+[node name="Legend" type="Node3D" parent="."]
+
+[node name="TitleLabel" type="Label3D" parent="Legend"]
+pixel_size = 0.002
+text = "MISSION TOPOLOGY // LIVE SWARM"
+font_size = 13
+outline_size = 5
+width = 340.0
+modulate = Color(0.25, 0.94, 1, 0.96)
+no_depth_test = true
+
+[node name="CountLabel" type="Label3D" parent="Legend"]
+position = Vector3(0, -0.042, 0)
+pixel_size = 0.0018
+text = "00 LINKS // CONTENT-BLIND"
+font_size = 9
+outline_size = 4
+width = 340.0
+modulate = Color(0.2, 0.72, 0.78, 0.92)
+no_depth_test = true
+
+[node name="TruthLabel" type="Label3D" parent="Legend"]
+position = Vector3(0, -0.075, 0)
+pixel_size = 0.00155
+text = "PARENT LINKS + FOCUSED ACTIVE CORRELATIONS // NOT TASK AUTHORITY"
+font_size = 7
+outline_size = 3
+width = 450.0
+modulate = Color(0.34, 0.56, 0.62, 0.82)
+no_depth_test = true

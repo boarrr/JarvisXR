@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/demo/xr_showcase.gd" id="1_showcase"]
+[ext_resource type="PackedScene" path="res://scenes/app/main.tscn" id="2_main"]
+
+[node name="XRShowcase" type="Node"]
+script = ExtResource("1_showcase")
+
+[node name="Main" parent="." instance=ExtResource("2_main")]

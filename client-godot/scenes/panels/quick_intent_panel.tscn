@@ -1,0 +1,192 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scenes/panels/quick_intent_panel.gd" id="1_panel"]
+[ext_resource type="Script" path="res://interaction/spatial_action_target.gd" id="2_target"]
+
+[sub_resource type="StandardMaterial3D" id="Material_border"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.02, 0.88, 1, 0.84)
+emission_enabled = true
+emission = Color(0.02, 0.75, 1, 1)
+emission_energy_multiplier = 2.0
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="StandardMaterial3D" id="Material_glass"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.006, 0.025, 0.04, 0.975)
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="StandardMaterial3D" id="Material_action"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.012, 0.2, 0.27, 0.98)
+emission_enabled = true
+emission = Color(0.02, 0.62, 0.72, 1)
+emission_energy_multiplier = 1.2
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="QuadMesh" id="Mesh_border"]
+material = SubResource("Material_border")
+size = Vector2(1.04, 0.67)
+
+[sub_resource type="QuadMesh" id="Mesh_glass"]
+material = SubResource("Material_glass")
+size = Vector2(1.01, 0.64)
+
+[sub_resource type="QuadMesh" id="Mesh_action"]
+material = SubResource("Material_action")
+size = Vector2(0.46, 0.17)
+
+[sub_resource type="BoxShape3D" id="Shape_action"]
+size = Vector3(0.46, 0.17, 0.04)
+
+[node name="QuickIntentPanel" type="Node3D"]
+visible = false
+script = ExtResource("1_panel")
+
+[node name="Border" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0, -0.008)
+cast_shadow = 0
+mesh = SubResource("Mesh_border")
+
+[node name="Glass" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = SubResource("Mesh_glass")
+
+[node name="Eyebrow" type="Label3D" parent="."]
+position = Vector3(-0.455, 0.275, 0.035)
+pixel_size = 0.0023
+text = "QUICK INTENT // NO KEYBOARD REQUIRED"
+font_size = 10
+outline_size = 4
+width = 395.0
+horizontal_alignment = 0
+modulate = Color(0.24, 0.9, 1, 1)
+no_depth_test = true
+
+[node name="Title" type="Label3D" parent="."]
+position = Vector3(-0.455, 0.22, 0.035)
+pixel_size = 0.0023
+text = "DIRECT THE FOCUSED AGENT"
+font_size = 17
+outline_size = 5
+width = 395.0
+horizontal_alignment = 0
+modulate = Color(0.72, 0.98, 1, 1)
+no_depth_test = true
+
+[node name="ContinueTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(-0.247, 0.08, 0.035)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "quick:continue"
+
+[node name="Mesh" type="MeshInstance3D" parent="ContinueTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ContinueTarget"]
+shape = SubResource("Shape_action")
+
+[node name="Label" type="Label3D" parent="ContinueTarget"]
+position = Vector3(0, 0, 0.015)
+pixel_size = 0.0023
+text = "CONTINUE\nNEXT CONCRETE RESULT"
+font_size = 11
+outline_size = 4
+width = 185.0
+modulate = Color(0.72, 1, 0.95, 1)
+no_depth_test = true
+
+[node name="SummarizeTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(0.247, 0.08, 0.035)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "quick:summarize"
+
+[node name="Mesh" type="MeshInstance3D" parent="SummarizeTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SummarizeTarget"]
+shape = SubResource("Shape_action")
+
+[node name="Label" type="Label3D" parent="SummarizeTarget"]
+position = Vector3(0, 0, 0.015)
+pixel_size = 0.0023
+text = "SUMMARIZE\nPROGRESS + BLOCKERS"
+font_size = 11
+outline_size = 4
+width = 185.0
+modulate = Color(0.72, 1, 0.95, 1)
+no_depth_test = true
+
+[node name="ExplainTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(-0.247, -0.12, 0.035)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "quick:explain_code"
+
+[node name="Mesh" type="MeshInstance3D" parent="ExplainTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ExplainTarget"]
+shape = SubResource("Shape_action")
+
+[node name="Label" type="Label3D" parent="ExplainTarget"]
+position = Vector3(0, 0, 0.015)
+pixel_size = 0.0023
+text = "EXPLAIN CODE\nCHANGES + RISKS"
+font_size = 11
+outline_size = 4
+width = 185.0
+modulate = Color(0.72, 1, 0.95, 1)
+no_depth_test = true
+
+[node name="PrivacyTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(0.247, -0.12, 0.035)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "quick:privacy_review"
+
+[node name="Mesh" type="MeshInstance3D" parent="PrivacyTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PrivacyTarget"]
+shape = SubResource("Shape_action")
+
+[node name="Label" type="Label3D" parent="PrivacyTarget"]
+position = Vector3(0, 0, 0.015)
+pixel_size = 0.0023
+text = "PRIVACY REVIEW\nDATA + SECURITY"
+font_size = 11
+outline_size = 4
+width = 185.0
+modulate = Color(1, 0.78, 0.42, 1)
+no_depth_test = true
+
+[node name="Hint" type="Label3D" parent="."]
+position = Vector3(-0.455, -0.275, 0.035)
+pixel_size = 0.0023
+text = "PINCH ONE INTENT // EXACT PROMPT IS SENT TO THE ACTIVE THREAD"
+font_size = 8
+outline_size = 3
+width = 395.0
+horizontal_alignment = 0
+modulate = Color(0.25, 0.62, 0.68, 1)
+no_depth_test = true

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spatial-agent-backend"
+version = "0.4.0"
+description = "Local WebSocket agent backend for the Spatial Agent Interface"
+requires-python = ">=3.11"
+dependencies = [
+  "websockets==17.1",
+]
+
+[project.optional-dependencies]
+claude = [
+  "anthropic==1.5.0",
+]
+openai = [
+  "openai>=2.0,<3",
+]
+hosted = [
+  "anthropic==1.5.0",
+  "openai>=2.0,<3",
+]
+
+[project.scripts]
+spatial-agent-backend = "spatial_agent_backend.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

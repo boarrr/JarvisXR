@@ -1,0 +1,88 @@
+class_name ApprovalPanel
+extends Node3D
+
+@export var user_rig_path: NodePath = ^"../UserRig"
+@export_range(0.8, 2.5, 0.05) var distance_from_user: float = 1.15
+@export_range(-1.5, 1.5, 0.05) var horizontal_offset: float = 0.0
+@export_range(-1.0, 1.0, 0.05) var vertical_offset: float = 0.1
+@export var room_anchor_registry_path: NodePath = ^"../RoomAnchorRegistry"
+
+@onready var _title_label: Label3D = $TitleLabel
+@onready var _summary_label: Label3D = $SummaryLabel
+@onready var _permission_label: Label3D = $PermissionLabel
+@onready var _impact_preview: ApprovalImpactPreview = $ImpactPreview
+
+var _camera: Camera3D = null
+var _room_anchors: RoomAnchorRegistry = null
+var _approval_id: String = ""
+
+
+func _ready() -> void:
+	var rig := get_node_or_null(user_rig_path) as UserRig
+	if rig != null:
+		_camera = rig.get_camera()
+	_room_anchors = get_node_or_null(room_anchor_registry_path) as RoomAnchorRegistry
+	AppState.approval_requested.connect(_on_approval_requested)
+	AppState.approval_resolved.connect(_on_approval_resolved)
+	AppState.privacy_veil_changed.connect(_on_privacy_veil_changed)
+	visible = false
+	_show_next_approval()
+
+
+func get_approval_id() -> String:
+	return _approval_id
+
+
+func is_open() -> bool:
+	return visible and not _approval_id.is_empty()
+
+
+func _show_next_approval() -> void:
+	if AppState.privacy_veil_active:
+		visible = false
+		return
+	var request := AppState.get_next_approval()
+	if request.is_empty():
+		visible = false
+		_approval_id = ""
+		return
+	_approval_id = str(request.get("approval_id", ""))
+	_title_label.text = "APPROVAL REQUIRED  ·  %s" % request.get("tool_name", "Tool")
+	_summary_label.text = str(request.get("summary", "The agent requested an action."))
+	_permission_label.text = "%s // EXPLICIT HAND CONFIRMATION" % str(
+		request.get("permission_level", "explicit approval")
+	).to_upper()
+	_impact_preview.configure(request.get("impact_preview", {}) as Dictionary)
+	_place_in_reading_zone()
+	visible = true
+
+
+func _place_in_reading_zone() -> void:
+	if _camera == null:
+		return
+	var camera_basis := _camera.global_transform.basis.orthonormalized()
+	var offset := Vector3(horizontal_offset, vertical_offset, -distance_from_user)
+	global_transform = Transform3D(camera_basis, _camera.global_position + camera_basis * offset)
+	if _room_anchors != null:
+		_room_anchors.register_anchor("approval_surface", "approval_gate", global_transform)
+
+
+func _on_approval_requested(_request: Dictionary) -> void:
+	if not is_open():
+		_show_next_approval()
+
+
+func _on_approval_resolved(approval_id: String) -> void:
+	if approval_id == _approval_id:
+		_show_next_approval()
+
+
+func get_impact_preview() -> ApprovalImpactPreview:
+	return _impact_preview
+
+
+func _on_privacy_veil_changed(value: bool) -> void:
+	if value:
+		visible = false
+	else:
+		_show_next_approval()

@@ -1,0 +1,774 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spatial-agent.local/protocol/v1/events.schema.json",
+  "title": "Spatial Agent protocol v1 envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "type",
+    "event_id",
+    "session_id",
+    "thread_id",
+    "timestamp",
+    "payload"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "thread_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "session.hello"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/sessionHelloPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "thread.list",
+              "thread.focus"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/emptyPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "thread.create"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/threadCreatePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "thread.rename"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/threadRenamePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "thread.archive",
+              "run.cancel"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/emptyPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "message.send"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/messageSendPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "approval.respond"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/approvalResponsePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "voice.transcript.final"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/voiceTranscriptPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "thread.snapshot"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/threadSnapshotPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "thread.created",
+              "thread.updated"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/threadPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "agent.status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/agentStatusPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "agent.message.started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/messageStartedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "agent.message.delta"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/messageDeltaPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "agent.message.completed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/messageCompletedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "approval.required"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/approvalRequiredPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/errorPayload"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "emptyPayload": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "sessionHelloPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol_version"
+      ],
+      "properties": {
+        "client": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "protocol_version": {
+          "const": 1
+        }
+      }
+    },
+    "threadCreatePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      }
+    },
+    "threadRenamePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      }
+    },
+    "approvalResponsePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approval_id",
+        "decision"
+      ],
+      "properties": {
+        "approval_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "approve",
+            "deny"
+          ]
+        }
+      }
+    },
+    "voiceTranscriptPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transcript"
+      ],
+      "properties": {
+        "transcript": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "listening",
+        "working",
+        "waiting_user",
+        "complete",
+        "error"
+      ]
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "user",
+        "assistant",
+        "system",
+        "tool"
+      ]
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "thread_id",
+        "role",
+        "content",
+        "created_at",
+        "is_streaming",
+        "metadata"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "thread_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "content": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "is_streaming": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "type": "object"
+        }
+      }
+    },
+    "thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "status",
+        "messages",
+        "unread_count",
+        "created_at",
+        "updated_at",
+        "parent_thread_id",
+        "tags",
+        "metadata",
+        "is_pinned"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/message"
+          }
+        },
+        "unread_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "parent_thread_id": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "is_pinned": {
+          "type": "boolean"
+        }
+      }
+    },
+    "messageSendPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "content"
+      ],
+      "properties": {
+        "content": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "threadSnapshotPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "threads"
+      ],
+      "properties": {
+        "threads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/thread"
+          }
+        }
+      }
+    },
+    "threadPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread"
+      ],
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/thread"
+        }
+      }
+    },
+    "agentStatusPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "run_id": {
+          "type": "string"
+        }
+      }
+    },
+    "messageStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "message_id",
+        "role"
+      ],
+      "properties": {
+        "message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        }
+      }
+    },
+    "messageDeltaPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "message_id",
+        "delta",
+        "sequence"
+      ],
+      "properties": {
+        "message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "delta": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "run_id": {
+          "type": "string"
+        }
+      }
+    },
+    "messageCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "message_id"
+      ],
+      "properties": {
+        "message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "cancelled": {
+          "type": "boolean"
+        },
+        "unread_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "approvalRequiredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approval_id",
+        "tool_name",
+        "summary"
+      ],
+      "properties": {
+        "approval_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "permission_level": {
+          "type": "string",
+          "enum": [
+            "safe_read",
+            "sensitive_read",
+            "write_reversible",
+            "write_external",
+            "destructive",
+            "forbidden"
+          ]
+        },
+        "impact_preview": {
+          "$ref": "#/$defs/impactPreview"
+        }
+      }
+    },
+    "impactPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route",
+        "scope",
+        "side_effect",
+        "reversibility",
+        "external"
+      ],
+      "properties": {
+        "route": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "side_effect": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "reversibility": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "external": {
+          "type": "boolean"
+        }
+      }
+    },
+    "errorPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

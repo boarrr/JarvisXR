@@ -1,0 +1,14 @@
+.DS_Store
+.env
+backend/.env
+backend/.venv/
+backend/data/
+backend/*.egg-info/
+backend/src/*.egg-info/
+**/__pycache__/
+*.py[cod]
+client-godot/.godot/
+client-godot/*.wav
+client-godot/addons/godotopenxrvendors/
+client-godot/android/
+build/

@@ -1,0 +1,54 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/debug/debug_overlay.gd" id="1_overlay"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_overlay"]
+bg_color = Color(0.004, 0.022, 0.034, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.02, 0.62, 0.76, 0.82)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="DebugOverlay" type="CanvasLayer"]
+visible = false
+layer = 20
+script = ExtResource("1_overlay")
+
+[node name="Panel" type="PanelContainer" parent="."]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 354.0
+offset_bottom = 380.0
+theme_override_styles/panel = SubResource("StyleBox_overlay")
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="Panel/Margin"]
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="Panel/Margin/VBox"]
+theme_override_colors/font_color = Color(0.45, 0.83, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "SYSTEM TRACE // F3"
+
+[node name="Metrics" type="Label" parent="Panel/Margin/VBox"]
+theme_override_colors/font_color = Color(0.86, 0.91, 0.96, 1)
+theme_override_font_sizes/font_size = 14
+text = "Starting..."
+
+[node name="Separator" type="HSeparator" parent="Panel/Margin/VBox"]
+
+[node name="LastMessage" type="Label" parent="Panel/Margin/VBox"]
+theme_override_colors/font_color = Color(0.66, 0.75, 0.82, 1)
+theme_override_font_sizes/font_size = 13
+text = "Last event: none"
+autowrap_mode = 2

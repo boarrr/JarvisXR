@@ -1,0 +1,201 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://scenes/panels/code_viewer.gd" id="1_viewer"]
+[ext_resource type="Script" path="res://interaction/spatial_action_target.gd" id="2_target"]
+[ext_resource type="Script" path="res://scenes/panels/diff_sculptor.gd" id="3_diff"]
+
+[sub_resource type="StandardMaterial3D" id="Material_frame"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.02, 0.88, 1, 0.78)
+emission_enabled = true
+emission = Color(0.02, 0.75, 1, 1)
+emission_energy_multiplier = 2.2
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="QuadMesh" id="Mesh_frame"]
+material = SubResource("Material_frame")
+size = Vector2(1.48, 0.9)
+
+[sub_resource type="QuadMesh" id="Mesh_screen"]
+size = Vector2(1.445, 0.865)
+
+[sub_resource type="StyleBoxFlat" id="Style_code"]
+bg_color = Color(0.012, 0.025, 0.038, 0.97)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.035, 0.24, 0.3, 0.9)
+
+[sub_resource type="StyleBoxFlat" id="Style_scroll"]
+bg_color = Color(0.02, 0.42, 0.5, 0.7)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="Style_scroll_bg"]
+bg_color = Color(0.01, 0.08, 0.11, 0.8)
+
+[sub_resource type="StyleBoxFlat" id="Style_frame"]
+bg_color = Color(0.01, 0.02, 0.03, 1)
+
+[sub_resource type="BoxShape3D" id="Shape_code_surface"]
+size = Vector3(1.445, 0.865, 0.025)
+
+[node name="CodeViewer" type="Node3D"]
+visible = false
+script = ExtResource("1_viewer")
+
+[node name="FrameGlow" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0, -0.01)
+cast_shadow = 0
+mesh = SubResource("Mesh_frame")
+
+[node name="Screen" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = SubResource("Mesh_screen")
+
+[node name="SurfaceTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(0, 0, 0.02)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "ui:code_surface"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SurfaceTarget"]
+shape = SubResource("Shape_code_surface")
+
+[node name="DiffSculptor" type="Node3D" parent="."]
+position = Vector3(0.84, 0, -0.055)
+script = ExtResource("3_diff")
+
+[node name="DiffLabel" type="Label3D" parent="."]
+visible = false
+position = Vector3(0.84, 0.39, -0.035)
+pixel_size = 0.0018
+text = "DIFF SCULPTURE  +00  -00"
+font_size = 9
+outline_size = 4
+width = 190.0
+modulate = Color(0.42, 1, 0.86, 0.96)
+no_depth_test = true
+
+[node name="CodeViewport" type="SubViewport" parent="."]
+transparent_bg = true
+size = Vector2i(920, 560)
+render_target_update_mode = 2
+
+[node name="Root" type="Control" parent="CodeViewport"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Frame" type="PanelContainer" parent="CodeViewport/Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Style_frame")
+
+[node name="VBox" type="VBoxContainer" parent="CodeViewport/Root/Frame"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="TopBar" type="ColorRect" parent="CodeViewport/Root/Frame/VBox"]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+color = Color(0.015, 0.12, 0.16, 1)
+
+[node name="Mode" type="Label" parent="CodeViewport/Root/Frame/VBox/TopBar"]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 6.0
+offset_right = 126.0
+offset_bottom = 36.0
+theme_override_colors/font_color = Color(0.005, 0.08, 0.11, 1)
+theme_override_colors/font_shadow_color = Color(0.35, 1, 0.94, 0.25)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 18
+text = " NORMAL "
+
+[node name="ModeBlock" type="ColorRect" parent="CodeViewport/Root/Frame/VBox/TopBar"]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 119.0
+offset_bottom = 37.0
+show_behind_parent = true
+color = Color(0.1, 0.95, 0.86, 1)
+
+[node name="Path" type="Label" parent="CodeViewport/Root/Frame/VBox/TopBar"]
+layout_mode = 0
+offset_left = 136.0
+offset_top = 7.0
+offset_right = 900.0
+offset_bottom = 37.0
+theme_override_colors/font_color = Color(0.46, 0.92, 1, 1)
+theme_override_font_sizes/font_size = 17
+text = "agent://thread/live.gd"
+text_overrun_behavior = 3
+
+[node name="Code" type="CodeEdit" parent="CodeViewport/Root/Frame/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+theme_override_colors/background_color = Color(0.008, 0.018, 0.028, 1)
+theme_override_colors/font_color = Color(0.76, 0.9, 0.94, 1)
+theme_override_colors/font_readonly_color = Color(0.76, 0.9, 0.94, 1)
+theme_override_colors/current_line_color = Color(0.02, 0.16, 0.2, 0.65)
+theme_override_colors/line_number_color = Color(0.18, 0.5, 0.58, 1)
+theme_override_colors/caret_color = Color(0.22, 1, 0.92, 1)
+theme_override_colors/selection_color = Color(0.05, 0.42, 0.5, 0.65)
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("Style_code")
+theme_override_styles/scroll = SubResource("Style_scroll")
+theme_override_styles/scroll_focus = SubResource("Style_scroll")
+theme_override_styles/scroll_background = SubResource("Style_scroll_bg")
+editable = false
+line_numbers_drawn = true
+highlight_current_line = true
+gutters_draw_line_numbers = true
+minimap_draw = true
+minimap_width = 72
+draw_tabs = true
+scroll_smooth = true
+
+[node name="StatusBar" type="ColorRect" parent="CodeViewport/Root/Frame/VBox"]
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+color = Color(0.015, 0.12, 0.16, 1)
+
+[node name="Position" type="Label" parent="CodeViewport/Root/Frame/VBox/StatusBar"]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 5.0
+offset_right = 300.0
+offset_bottom = 34.0
+theme_override_colors/font_color = Color(0.26, 0.94, 1, 1)
+theme_override_font_sizes/font_size = 16
+text = "1/1  100%  GDSCRIPT"
+
+[node name="Hint" type="Label" parent="CodeViewport/Root/Frame/VBox/StatusBar"]
+layout_mode = 0
+offset_left = 325.0
+offset_top = 5.0
+offset_right = 900.0
+offset_bottom = 34.0
+theme_override_colors/font_color = Color(0.38, 0.69, 0.74, 1)
+theme_override_font_sizes/font_size = 15
+text = "PINCH-DRAG SCROLL  //  DESKTOP SIM: J/K · g/G · C"
+horizontal_alignment = 2

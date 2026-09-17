@@ -1,0 +1,71 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scenes/privacy/privacy_veil.gd" id="1_veil"]
+
+[sub_resource type="StandardMaterial3D" id="Material_border"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.05, 0.92, 1, 0.9)
+emission_enabled = true
+emission = Color(0.02, 0.72, 1, 1)
+emission_energy_multiplier = 2.4
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="StandardMaterial3D" id="Material_glass"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.002, 0.01, 0.018, 0.985)
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="QuadMesh" id="Mesh_border"]
+material = SubResource("Material_border")
+size = Vector2(1.16, 0.43)
+
+[sub_resource type="QuadMesh" id="Mesh_glass"]
+material = SubResource("Material_glass")
+size = Vector2(1.13, 0.4)
+
+[node name="PrivacyVeil" type="Node3D"]
+visible = false
+script = ExtResource("1_veil")
+
+[node name="Border" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0, -0.008)
+cast_shadow = 0
+mesh = SubResource("Mesh_border")
+
+[node name="Glass" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = SubResource("Mesh_glass")
+
+[node name="TitleLabel" type="Label3D" parent="."]
+position = Vector3(0, 0.09, 0.03)
+pixel_size = 0.0024
+text = "PRIVACY VEIL ACTIVE"
+font_size = 22
+outline_size = 6
+width = 430.0
+modulate = Color(0.42, 0.96, 1, 1)
+no_depth_test = true
+
+[node name="StatusLabel" type="Label3D" parent="."]
+position = Vector3(0, -0.025, 0.03)
+pixel_size = 0.0022
+text = "AGENT CONTENT CONCEALED\nRUNS CONTINUE // AUDIO INPUT STOPPED"
+font_size = 13
+outline_size = 5
+width = 430.0
+modulate = Color(0.48, 0.73, 0.78, 1)
+no_depth_test = true
+
+[node name="HintLabel" type="Label3D" parent="."]
+position = Vector3(0, -0.135, 0.03)
+pixel_size = 0.0018
+text = "PINCH PALM PRIVACY VEIL TO RESTORE"
+font_size = 10
+outline_size = 4
+width = 430.0
+modulate = Color(0.16, 0.86, 1, 0.92)
+no_depth_test = true

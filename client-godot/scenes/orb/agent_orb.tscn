@@ -1,0 +1,139 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scenes/orb/agent_orb.gd" id="1_orb"]
+
+[sub_resource type="SphereMesh" id="Mesh_shell"]
+radius = 0.18
+height = 0.36
+radial_segments = 32
+rings = 16
+
+[sub_resource type="SphereMesh" id="Mesh_core"]
+radius = 0.092
+height = 0.184
+radial_segments = 32
+rings = 16
+
+[sub_resource type="SphereMesh" id="Mesh_dot"]
+radius = 0.032
+height = 0.064
+radial_segments = 20
+rings = 10
+
+[sub_resource type="TorusMesh" id="Mesh_outer_ring"]
+inner_radius = 0.286
+outer_radius = 0.294
+rings = 64
+ring_segments = 6
+
+[sub_resource type="TorusMesh" id="Mesh_orbit_ring"]
+inner_radius = 0.225
+outer_radius = 0.231
+rings = 64
+ring_segments = 6
+
+[sub_resource type="TorusMesh" id="Mesh_inner_ring"]
+inner_radius = 0.14
+outer_radius = 0.146
+rings = 48
+ring_segments = 6
+
+[sub_resource type="TorusMesh" id="Mesh_selection_ring"]
+inner_radius = 0.326
+outer_radius = 0.334
+rings = 64
+ring_segments = 6
+
+[sub_resource type="BoxMesh" id="Mesh_needle"]
+size = Vector3(0.004, 0.22, 0.004)
+
+[sub_resource type="SphereShape3D" id="Shape_target"]
+radius = 0.35
+
+[node name="AgentOrb" type="Area3D" groups=["interactable"]]
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("1_orb")
+
+[node name="VisualRoot" type="Node3D" parent="."]
+
+[node name="HoloShell" type="MeshInstance3D" parent="VisualRoot"]
+cast_shadow = 0
+mesh = SubResource("Mesh_shell")
+
+[node name="Core" type="MeshInstance3D" parent="VisualRoot"]
+cast_shadow = 0
+mesh = SubResource("Mesh_core")
+
+[node name="CoreDot" type="MeshInstance3D" parent="VisualRoot"]
+position = Vector3(0, 0, 0.08)
+cast_shadow = 0
+mesh = SubResource("Mesh_dot")
+
+[node name="OuterRing" type="MeshInstance3D" parent="VisualRoot"]
+rotation_degrees = Vector3(90, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Mesh_outer_ring")
+
+[node name="OrbitGimbal" type="Node3D" parent="VisualRoot"]
+rotation_degrees = Vector3(7, 18, -9)
+
+[node name="OrbitRing" type="MeshInstance3D" parent="VisualRoot/OrbitGimbal"]
+rotation_degrees = Vector3(90, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Mesh_orbit_ring")
+
+[node name="InnerGimbal" type="Node3D" parent="VisualRoot"]
+rotation_degrees = Vector3(-12, -20, 8)
+
+[node name="InnerRing" type="MeshInstance3D" parent="VisualRoot/InnerGimbal"]
+rotation_degrees = Vector3(90, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Mesh_inner_ring")
+
+[node name="TickRing" type="MultiMeshInstance3D" parent="VisualRoot"]
+cast_shadow = 0
+
+[node name="StatusSegments" type="MultiMeshInstance3D" parent="VisualRoot"]
+position = Vector3(0, 0, 0.006)
+cast_shadow = 0
+
+[node name="NeedlePivot" type="Node3D" parent="VisualRoot"]
+
+[node name="Needle" type="MeshInstance3D" parent="VisualRoot/NeedlePivot"]
+position = Vector3(0, 0.11, 0.012)
+cast_shadow = 0
+mesh = SubResource("Mesh_needle")
+
+[node name="SelectionRing" type="MeshInstance3D" parent="VisualRoot"]
+position = Vector3(0, 0, -0.004)
+rotation_degrees = Vector3(90, 0, 0)
+visible = false
+cast_shadow = 0
+mesh = SubResource("Mesh_selection_ring")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("Shape_target")
+
+[node name="TitleLabel" type="Label3D" parent="."]
+position = Vector3(0, -0.42, 0)
+text = "Agent"
+font_size = 16
+outline_size = 5
+billboard = 1
+
+[node name="StatusLabel" type="Label3D" parent="."]
+position = Vector3(0, 0.415, 0)
+text = "IDLE"
+font_size = 12
+outline_size = 4
+billboard = 1
+
+[node name="TelemetryLabel" type="Label3D" parent="."]
+position = Vector3(0.245, -0.285, 0)
+text = "A-00 // LINK"
+font_size = 8
+outline_size = 3
+horizontal_alignment = 2
+billboard = 1

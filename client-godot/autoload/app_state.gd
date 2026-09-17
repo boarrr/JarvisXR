@@ -1,0 +1,190 @@
+extends Node
+
+signal connection_state_changed(value: String)
+signal backend_mode_changed(value: String)
+signal provider_identity_changed(provider_name: String, model_name: String)
+signal session_changed(value: String)
+signal focused_thread_changed(thread_id: String)
+signal hovered_target_changed(target_id: String)
+signal listening_state_changed(value: String)
+signal transcript_changed(value: String)
+signal ui_mode_changed(value: String)
+signal text_input_active_changed(value: bool)
+signal approval_requested(request: Dictionary)
+signal approval_resolved(approval_id: String)
+signal privacy_veil_changed(value: bool)
+signal thread_added(thread: AgentThread)
+signal thread_updated(thread: AgentThread)
+signal thread_removed(thread_id: String)
+
+var connection_state: String = "offline":
+	set(value):
+		if connection_state == value:
+			return
+		connection_state = value
+		connection_state_changed.emit(value)
+
+var backend_mode: String = "fake":
+	set(value):
+		if backend_mode == value:
+			return
+		backend_mode = value
+		backend_mode_changed.emit(value)
+
+var provider_name: String = "fake"
+var model_name: String = "local-deterministic"
+
+var session_id: String = "":
+	set(value):
+		if session_id == value:
+			return
+		session_id = value
+		session_changed.emit(value)
+
+var focused_thread_id: String = "":
+	set(value):
+		if focused_thread_id == value:
+			return
+		focused_thread_id = value
+		focused_thread_changed.emit(value)
+
+var hovered_target_id: String = "":
+	set(value):
+		if hovered_target_id == value:
+			return
+		hovered_target_id = value
+		hovered_target_changed.emit(value)
+
+var listening_state: String = "idle":
+	set(value):
+		if listening_state == value:
+			return
+		listening_state = value
+		listening_state_changed.emit(value)
+
+var current_transcript: String = "":
+	set(value):
+		if current_transcript == value:
+			return
+		current_transcript = value
+		transcript_changed.emit(value)
+
+var ui_mode: String = "desktop":
+	set(value):
+		if ui_mode == value:
+			return
+		ui_mode = value
+		ui_mode_changed.emit(value)
+
+var text_input_active: bool = false:
+	set(value):
+		if text_input_active == value:
+			return
+		text_input_active = value
+		text_input_active_changed.emit(value)
+
+var privacy_veil_active: bool = false:
+	set(value):
+		if privacy_veil_active == value:
+			return
+		privacy_veil_active = value
+		privacy_veil_changed.emit(value)
+
+var threads_by_id: Dictionary = {}
+var ordered_thread_ids: Array[String] = []
+var approval_requests: Dictionary = {}
+
+
+func set_provider_identity(provider: String, model: String) -> void:
+	var normalized_provider := provider.strip_edges().to_lower()
+	var normalized_model := model.strip_edges()
+	if normalized_provider.is_empty():
+		normalized_provider = "unknown"
+	if normalized_model.is_empty():
+		normalized_model = "unspecified"
+	if provider_name == normalized_provider and model_name == normalized_model:
+		return
+	provider_name = normalized_provider
+	model_name = normalized_model
+	provider_identity_changed.emit(provider_name, model_name)
+
+
+func add_thread(thread: AgentThread) -> bool:
+	if thread == null or thread.id.is_empty():
+		push_warning("[STATE] Ignored thread without a stable ID")
+		return false
+
+	var already_exists := threads_by_id.has(thread.id)
+	threads_by_id[thread.id] = thread
+	if not already_exists:
+		ordered_thread_ids.append(thread.id)
+		thread_added.emit(thread)
+	else:
+		thread_updated.emit(thread)
+	return true
+
+
+func get_thread(thread_id: String) -> AgentThread:
+	return threads_by_id.get(thread_id) as AgentThread
+
+
+func update_thread(thread: AgentThread) -> bool:
+	if thread == null or not threads_by_id.has(thread.id):
+		return false
+	threads_by_id[thread.id] = thread
+	thread.updated_at = Time.get_datetime_string_from_system(true, false)
+	thread_updated.emit(thread)
+	return true
+
+
+func focus_thread(thread_id: String) -> bool:
+	if not thread_id.is_empty() and not threads_by_id.has(thread_id):
+		push_warning("[STATE] Cannot focus unknown thread: %s" % thread_id)
+		return false
+	focused_thread_id = thread_id
+	return true
+
+
+func remove_thread(thread_id: String) -> bool:
+	if not threads_by_id.has(thread_id):
+		return false
+	threads_by_id.erase(thread_id)
+	ordered_thread_ids.erase(thread_id)
+	if focused_thread_id == thread_id:
+		focused_thread_id = ""
+	if hovered_target_id == thread_id:
+		hovered_target_id = ""
+	var approval_ids_to_remove: Array[String] = []
+	for approval_id_variant in approval_requests:
+		var approval_id: String = approval_id_variant
+		var request: Dictionary = approval_requests[approval_id]
+		if str(request.get("thread_id", "")) == thread_id:
+			approval_ids_to_remove.append(approval_id)
+	for approval_id in approval_ids_to_remove:
+		resolve_approval(approval_id)
+	thread_removed.emit(thread_id)
+	return true
+
+
+func add_approval(request: Dictionary) -> bool:
+	var approval_id := str(request.get("approval_id", ""))
+	if approval_id.is_empty():
+		return false
+	approval_requests[approval_id] = request.duplicate(true)
+	approval_requested.emit(approval_requests[approval_id])
+	return true
+
+
+func resolve_approval(approval_id: String) -> bool:
+	if not approval_requests.has(approval_id):
+		return false
+	approval_requests.erase(approval_id)
+	approval_resolved.emit(approval_id)
+	return true
+
+
+func get_next_approval() -> Dictionary:
+	if approval_requests.is_empty():
+		return {}
+	var approval_id: String = approval_requests.keys().front()
+	return (approval_requests[approval_id] as Dictionary).duplicate(true)

@@ -1,0 +1,274 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://scenes/hud/palm_console.gd" id="1_console"]
+[ext_resource type="Script" path="res://interaction/spatial_action_target.gd" id="2_target"]
+
+[sub_resource type="StandardMaterial3D" id="Material_border"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.02, 0.88, 1, 0.88)
+emission_enabled = true
+emission = Color(0.02, 0.75, 1, 1)
+emission_energy_multiplier = 2.2
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="StandardMaterial3D" id="Material_glass"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.006, 0.03, 0.045, 0.94)
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="StandardMaterial3D" id="Material_action"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.015, 0.29, 0.35, 0.94)
+emission_enabled = true
+emission = Color(0.03, 0.72, 0.78, 1)
+emission_energy_multiplier = 1.25
+cull_mode = 2
+no_depth_test = true
+
+[sub_resource type="QuadMesh" id="Mesh_border"]
+material = SubResource("Material_border")
+size = Vector2(0.49, 0.625)
+
+[sub_resource type="QuadMesh" id="Mesh_glass"]
+material = SubResource("Material_glass")
+size = Vector2(0.475, 0.61)
+
+[sub_resource type="QuadMesh" id="Mesh_action"]
+material = SubResource("Material_action")
+size = Vector2(0.215, 0.09)
+
+[sub_resource type="BoxShape3D" id="Shape_action"]
+size = Vector3(0.215, 0.09, 0.035)
+
+[sub_resource type="QuadMesh" id="Mesh_action_wide"]
+material = SubResource("Material_action")
+size = Vector2(0.447, 0.072)
+
+[sub_resource type="BoxShape3D" id="Shape_action_wide"]
+size = Vector3(0.447, 0.072, 0.035)
+
+[node name="PalmConsole" type="Node3D"]
+visible = false
+script = ExtResource("1_console")
+
+[node name="Border" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0, -0.008)
+cast_shadow = 0
+mesh = SubResource("Mesh_border")
+
+[node name="Glass" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = SubResource("Mesh_glass")
+
+[node name="Title" type="Label3D" parent="."]
+position = Vector3(-0.215, 0.22, 0.025)
+pixel_size = 0.0017
+text = "PALM COMMAND // HANDS ONLY"
+font_size = 13
+outline_size = 4
+width = 255.0
+horizontal_alignment = 0
+modulate = Color(0.33, 0.96, 1, 1)
+no_depth_test = true
+
+[node name="ProviderLabel" type="Label3D" parent="."]
+position = Vector3(-0.215, 0.182, 0.025)
+pixel_size = 0.0017
+text = "FAKE // LOCAL-DETERMINISTIC"
+font_size = 9
+outline_size = 3
+width = 255.0
+horizontal_alignment = 0
+modulate = Color(0.15, 0.75, 0.79, 1)
+no_depth_test = true
+
+[node name="StatusLabel" type="Label3D" parent="."]
+position = Vector3(-0.215, -0.282, 0.025)
+pixel_size = 0.0017
+text = "LINK CONNECTED // MIC IDLE"
+font_size = 9
+outline_size = 3
+width = 255.0
+horizontal_alignment = 0
+modulate = Color(0.32, 0.92, 0.68, 1)
+no_depth_test = true
+
+[node name="FocusTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(-0.116, 0.106, 0.025)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "palm:focus_next"
+
+[node name="Mesh" type="MeshInstance3D" parent="FocusTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FocusTarget"]
+shape = SubResource("Shape_action")
+
+[node name="Label" type="Label3D" parent="FocusTarget"]
+position = Vector3(0, 0, 0.014)
+pixel_size = 0.0017
+text = "NEXT AGENT"
+font_size = 12
+outline_size = 4
+width = 120.0
+modulate = Color(0.75, 1, 1, 1)
+no_depth_test = true
+
+[node name="CodeTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(0.116, 0.106, 0.025)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "palm:code_toggle"
+
+[node name="Mesh" type="MeshInstance3D" parent="CodeTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CodeTarget"]
+shape = SubResource("Shape_action")
+
+[node name="Label" type="Label3D" parent="CodeTarget"]
+position = Vector3(0, 0, 0.014)
+pixel_size = 0.0017
+text = "CODE TRACE"
+font_size = 12
+outline_size = 4
+width = 120.0
+modulate = Color(0.75, 1, 1, 1)
+no_depth_test = true
+
+[node name="VoiceTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(-0.116, -0.005, 0.025)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "palm:voice_toggle"
+
+[node name="Mesh" type="MeshInstance3D" parent="VoiceTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VoiceTarget"]
+shape = SubResource("Shape_action")
+
+[node name="Label" type="Label3D" parent="VoiceTarget"]
+position = Vector3(0, 0, 0.014)
+pixel_size = 0.0017
+text = "ASK / VOICE"
+font_size = 12
+outline_size = 4
+width = 120.0
+modulate = Color(0.75, 1, 1, 1)
+no_depth_test = true
+
+[node name="DismissTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(0.116, -0.005, 0.025)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "palm:dismiss"
+
+[node name="Mesh" type="MeshInstance3D" parent="DismissTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DismissTarget"]
+shape = SubResource("Shape_action")
+
+[node name="Label" type="Label3D" parent="DismissTarget"]
+position = Vector3(0, 0, 0.014)
+pixel_size = 0.0017
+text = "DISMISS"
+font_size = 12
+outline_size = 4
+width = 120.0
+modulate = Color(0.75, 1, 1, 1)
+no_depth_test = true
+
+[node name="CognitionTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(-0.116, -0.105, 0.025)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "palm:cognition_toggle"
+
+[node name="Mesh" type="MeshInstance3D" parent="CognitionTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CognitionTarget"]
+shape = SubResource("Shape_action")
+
+[node name="Label" type="Label3D" parent="CognitionTarget"]
+position = Vector3(0, 0, 0.014)
+pixel_size = 0.0017
+text = "COGNITION"
+font_size = 10
+outline_size = 4
+width = 120.0
+modulate = Color(0.82, 0.76, 1, 1)
+no_depth_test = true
+
+[node name="MissionTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(0.116, -0.105, 0.025)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "palm:mission_toggle"
+
+[node name="Mesh" type="MeshInstance3D" parent="MissionTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MissionTarget"]
+shape = SubResource("Shape_action")
+
+[node name="Label" type="Label3D" parent="MissionTarget"]
+position = Vector3(0, 0, 0.014)
+pixel_size = 0.0017
+text = "MISSION MAP"
+font_size = 10
+outline_size = 4
+width = 120.0
+modulate = Color(0.74, 0.92, 1, 1)
+no_depth_test = true
+
+[node name="PrivacyTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(0, -0.207, 0.025)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "palm:privacy_toggle"
+
+[node name="Mesh" type="MeshInstance3D" parent="PrivacyTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action_wide")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PrivacyTarget"]
+shape = SubResource("Shape_action_wide")
+
+[node name="Label" type="Label3D" parent="PrivacyTarget"]
+position = Vector3(0, 0, 0.014)
+pixel_size = 0.0017
+text = "PRIVACY VEIL // CONCEAL"
+font_size = 11
+outline_size = 4
+width = 235.0
+modulate = Color(0.52, 0.9, 1, 1)
+no_depth_test = true
