@@ -4,13 +4,16 @@ import argparse
 import asyncio
 from collections import deque
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+import ssl
 from typing import Any
 
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
+from . import __version__
+from .auth import PairingManager
 from .config import Settings
 from .coordinator import AgentCoordinator
 from .observability import configure_logging, log_record
@@ -26,6 +29,7 @@ from .providers import (
 from .storage import SQLiteStore
 from .thread_service import ThreadNotFoundError, ThreadService
 from .tools import ToolRegistry
+from .workspace import WorkspaceManager
 
 
 @dataclass(slots=True)
@@ -34,6 +38,8 @@ class Session:
     connection: ServerConnection
     focused_thread_id: str = ""
     ready: bool = False
+    device_id: str = ""
+    device_name: str = ""
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     command_times: deque[float] = field(default_factory=deque)
 
@@ -56,6 +62,11 @@ class SpatialAgentServer:
         self.threads = ThreadService(self.store)
         self.tools = ToolRegistry()
         self.permissions = PermissionService()
+        self.workspaces = WorkspaceManager(settings.workspaces_file)
+        self.workspaces.load()
+        self.pairing = PairingManager(
+            self.store, ttl_seconds=settings.pairing_code_ttl_seconds
+        )
         if settings.provider == "council":
             self.provider = CouncilProvider(
                 OpenAIProvider(
@@ -83,6 +94,17 @@ class SpatialAgentServer:
 
     async def initialize(self) -> None:
         await self.threads.initialize()
+        if self.settings.auth_required:
+            code = await asyncio.to_thread(self.pairing.issue_code)
+            print(
+                f"[spatial-agent] Pairing code: {code} "
+                f"(valid {int(self.settings.pairing_code_ttl_seconds)} seconds)",
+                flush=True,
+            )
+            log_record(
+                "pairing_code_issued",
+                ttl_seconds=int(self.settings.pairing_code_ttl_seconds),
+            )
 
     async def handle_connection(self, connection: ServerConnection) -> None:
         session = Session(new_id("sess"), connection)
@@ -143,7 +165,28 @@ class SpatialAgentServer:
             if session.ready:
                 await emit("error", "", {"code": "session_exists", "message": "Session is already ready"})
                 return
+            if self.settings.auth_required:
+                token = str(command.payload.get("auth_token", ""))
+                device = await asyncio.to_thread(self.pairing.verify, token)
+                if device is None:
+                    await emit(
+                        "error",
+                        "",
+                        {
+                            "code": "auth_required",
+                            "message": "Pair this device with session.pair before session.hello",
+                        },
+                    )
+                    return
+                session.device_id = device.id
+                session.device_name = device.name
             session.ready = True
+            await asyncio.to_thread(
+                self.store.record_audit,
+                "session_opened",
+                session_id=session.id,
+                device_id=session.device_id,
+            )
             await emit(
                 "session.ready",
                 "",
@@ -151,13 +194,23 @@ class SpatialAgentServer:
                     "protocol_version": 1,
                     "provider": self.provider.name,
                     "model": getattr(self.provider, "model", "local-deterministic"),
+                    "daemon_version": __version__,
+                    "auth": (
+                        "paired"
+                        if session.device_id
+                        else ("open-loopback" if not self.settings.auth_required else "required")
+                    ),
                     "capabilities": [
                         "threads",
                         "streaming",
                         "cancel",
                         "approvals",
                         "provider_metadata",
+                        "pairing" if self.settings.auth_required else "open_loopback",
                         *(["dual_provider_council"] if self.provider.name == "council" else []),
+                    ],
+                    "workspaces": [
+                        workspace.to_wire() for workspace in self.workspaces.list_workspaces()
                     ],
                     "tools": [
                         {
@@ -168,6 +221,41 @@ class SpatialAgentServer:
                         for tool in self.tools.list_tools()
                     ],
                 },
+            )
+            return
+
+        if command.type == "session.pair":
+            if not self.settings.auth_required:
+                await emit(
+                    "error",
+                    "",
+                    {
+                        "code": "pairing_disabled",
+                        "message": "This daemon does not require pairing",
+                    },
+                )
+                return
+            result = await asyncio.to_thread(
+                self.pairing.redeem,
+                str(command.payload.get("code", "")),
+                str(command.payload.get("device_name", "")),
+            )
+            if result is None:
+                await emit(
+                    "error",
+                    "",
+                    {"code": "pairing_invalid", "message": "Pairing code is invalid or expired"},
+                )
+                return
+            token, device = result
+            await asyncio.to_thread(
+                self.store.record_audit, "device_paired", device_id=device.id
+            )
+            log_record("device_paired", device_id=device.id, device_name=device.name)
+            await emit(
+                "session.paired",
+                "",
+                {"device_id": device.id, "device_name": device.name, "token": token},
             )
             return
 
@@ -253,12 +341,22 @@ class SpatialAgentServer:
 
     async def serve_forever(self) -> None:
         await self.initialize()
+        ssl_context: ssl.SSLContext | None = None
+        if self.settings.tls_certificate_path and self.settings.tls_private_key_path:
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ssl_context.load_cert_chain(
+                str(self.settings.tls_certificate_path),
+                str(self.settings.tls_private_key_path),
+            )
         log_record(
             "server_started",
             host=self.settings.host,
             port=self.settings.port,
             provider=self.provider.name,
             database=str(self.settings.database_path),
+            auth_required=self.settings.auth_required,
+            tls=bool(ssl_context),
+            workspaces=len(self.workspaces.list_workspaces()),
         )
         async with serve(
             self.handle_connection,
@@ -268,6 +366,7 @@ class SpatialAgentServer:
             max_queue=32,
             ping_interval=20,
             ping_timeout=20,
+            ssl=ssl_context,
         ) as websocket_server:
             await websocket_server.serve_forever()
 
@@ -289,17 +388,12 @@ def main() -> None:
     configure_logging()
     arguments = build_argument_parser().parse_args()
     environment = Settings.from_environment()
-    settings = Settings(
+    settings = replace(
+        environment,
         host=arguments.host or environment.host,
         port=arguments.port or environment.port,
         database_path=arguments.database or environment.database_path,
         provider=arguments.provider or environment.provider,
-        anthropic_model=environment.anthropic_model,
-        openai_model=environment.openai_model,
-        max_output_tokens=environment.max_output_tokens,
-        max_packet_bytes=environment.max_packet_bytes,
-        commands_per_minute=environment.commands_per_minute,
-        fake_chunk_delay_seconds=environment.fake_chunk_delay_seconds,
     )
     try:
         asyncio.run(SpatialAgentServer(settings).serve_forever())

@@ -13,6 +13,7 @@ MAX_TEXT_LENGTH = 20_000
 CLIENT_COMMAND_TYPES = frozenset(
     {
         "session.hello",
+        "session.pair",
         "thread.list",
         "thread.create",
         "thread.focus",
@@ -117,7 +118,8 @@ def parse_client_message(raw: str, *, max_bytes: int) -> Envelope:
 def validate_command_payload(command: Envelope) -> None:
     payload = command.payload
     allowed_fields = {
-        "session.hello": {"client", "protocol_version"},
+        "session.hello": {"client", "protocol_version", "auth_token"},
+        "session.pair": {"code", "device_name"},
         "thread.list": set(),
         "thread.create": {"title"},
         "thread.focus": set(),
@@ -138,6 +140,10 @@ def validate_command_payload(command: Envelope) -> None:
         if payload.get("protocol_version") != PROTOCOL_VERSION:
             raise ProtocolError("unsupported_version", "session.hello must request protocol version 1")
         _optional_text(payload, "client", 120)
+        _optional_text(payload, "auth_token", 256)
+    elif command.type == "session.pair":
+        _required_text(payload, "code", 64)
+        _optional_text(payload, "device_name", 80)
     elif command.type in {"thread.archive", "run.cancel"}:
         _require_thread_id(command)
     elif command.type == "thread.create":

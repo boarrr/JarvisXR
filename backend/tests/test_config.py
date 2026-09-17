@@ -43,6 +43,24 @@ class ConfigurationTests(unittest.TestCase):
         for provider in ("fake", "claude", "openai", "council"):
             Settings(provider=provider).validate()
 
+    def test_non_loopback_bind_requires_auth_and_tls(self) -> None:
+        with self.assertRaises(ValueError):
+            Settings(host="0.0.0.0").validate()
+        with self.assertRaises(ValueError):
+            Settings(host="0.0.0.0", auth_required=True).validate()
+        Settings(
+            host="0.0.0.0",
+            auth_required=True,
+            tls_certificate_path=Path("cert.pem"),
+            tls_private_key_path=Path("key.pem"),
+        ).validate()
+        with self.assertRaises(ValueError):
+            Settings(tls_certificate_path=Path("cert.pem")).validate()
+
+    def test_pairing_ttl_is_bounded(self) -> None:
+        with self.assertRaises(ValueError):
+            Settings(pairing_code_ttl_seconds=5.0).validate()
+
 
 if __name__ == "__main__":
     unittest.main()

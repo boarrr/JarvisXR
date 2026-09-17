@@ -38,6 +38,22 @@ class Message:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class Device:
+    id: str
+    name: str
+    created_at: str
+    last_seen_at: str
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "created_at": self.created_at,
+            "last_seen_at": self.last_seen_at,
+        }
+
+
 @dataclass(slots=True)
 class Thread:
     id: str

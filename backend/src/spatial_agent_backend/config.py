@@ -35,6 +35,23 @@ def load_local_environment(path: Path) -> None:
         os.environ.setdefault(key, value)
 
 
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _truthy(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _optional_path(value: str) -> Path | None:
+    stripped = value.strip()
+    return Path(stripped) if stripped else None
+
+
+def _is_loopback(host: str) -> bool:
+    normalized = host.strip().lower()
+    return normalized in LOOPBACK_HOSTS or normalized.startswith("127.")
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     host: str = "127.0.0.1"
@@ -47,10 +64,22 @@ class Settings:
     max_packet_bytes: int = 1_048_576
     commands_per_minute: int = 120
     fake_chunk_delay_seconds: float = 0.015
+    workspaces_file: Path = Path("data/workspaces.json")
+    mcp_config_path: Path = Path("data/mcp.json")
+    auth_required: bool = False
+    tls_certificate_path: Path | None = None
+    tls_private_key_path: Path | None = None
+    pairing_code_ttl_seconds: float = 600.0
+    shell_allowlist: tuple[str, ...] = ()
 
     @classmethod
     def from_environment(cls) -> "Settings":
         load_local_environment(Path(os.getenv("SPATIAL_AGENT_ENV_FILE", ".env")))
+        allowlist = tuple(
+            item.strip()
+            for item in os.getenv("SPATIAL_AGENT_SHELL_ALLOWLIST", "").split(",")
+            if item.strip()
+        )
         return cls(
             host=os.getenv("SPATIAL_AGENT_HOST", "127.0.0.1"),
             port=int(os.getenv("SPATIAL_AGENT_PORT", "8787")),
@@ -62,6 +91,15 @@ class Settings:
             max_packet_bytes=int(os.getenv("SPATIAL_AGENT_MAX_PACKET_BYTES", "1048576")),
             commands_per_minute=int(os.getenv("SPATIAL_AGENT_COMMANDS_PER_MINUTE", "120")),
             fake_chunk_delay_seconds=float(os.getenv("SPATIAL_AGENT_FAKE_DELAY", "0.015")),
+            workspaces_file=Path(os.getenv("SPATIAL_AGENT_WORKSPACES_FILE", "data/workspaces.json")),
+            mcp_config_path=Path(os.getenv("SPATIAL_AGENT_MCP_CONFIG", "data/mcp.json")),
+            auth_required=_truthy(os.getenv("SPATIAL_AGENT_AUTH_REQUIRED", "0")),
+            tls_certificate_path=_optional_path(os.getenv("SPATIAL_AGENT_TLS_CERT", "")),
+            tls_private_key_path=_optional_path(os.getenv("SPATIAL_AGENT_TLS_KEY", "")),
+            pairing_code_ttl_seconds=float(
+                os.getenv("SPATIAL_AGENT_PAIRING_TTL_SECONDS", "600")
+            ),
+            shell_allowlist=allowlist,
         )
 
     def validate(self) -> None:
@@ -75,3 +113,20 @@ class Settings:
             raise ValueError("SPATIAL_AGENT_MAX_PACKET_BYTES must be at least 1024")
         if self.commands_per_minute < 1:
             raise ValueError("SPATIAL_AGENT_COMMANDS_PER_MINUTE must be positive")
+        if (self.tls_certificate_path is None) != (self.tls_private_key_path is None):
+            raise ValueError(
+                "SPATIAL_AGENT_TLS_CERT and SPATIAL_AGENT_TLS_KEY must be set together"
+            )
+        if self.pairing_code_ttl_seconds < 30:
+            raise ValueError("SPATIAL_AGENT_PAIRING_TTL_SECONDS must be at least 30")
+        if not _is_loopback(self.host):
+            if not self.auth_required:
+                raise ValueError(
+                    "Refusing to bind a non-loopback host without "
+                    "SPATIAL_AGENT_AUTH_REQUIRED=1"
+                )
+            if self.tls_certificate_path is None:
+                raise ValueError(
+                    "Refusing to bind a non-loopback host without TLS; set "
+                    "SPATIAL_AGENT_TLS_CERT and SPATIAL_AGENT_TLS_KEY"
+                )

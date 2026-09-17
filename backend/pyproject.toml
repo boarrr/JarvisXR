@@ -25,6 +25,7 @@ hosted = [
 
 [project.scripts]
 spatial-agent-backend = "spatial_agent_backend.server:main"
+spatial-agent-pair = "spatial_agent_backend.pairing_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
