@@ -16,6 +16,10 @@ extends Node
 @onready var _desktop_composer: DesktopComposer = $DesktopComposer
 @onready var _pointer_hud: CanvasLayer = $PointerHUD
 @onready var _privacy_veil: PrivacyVeil = $PrivacyVeil
+@onready var _workspace_panel: WorkspacePanel = $WorkspacePanel
+@onready var _diff_review_panel: DiffReviewPanel = $DiffReviewPanel
+@onready var _file_viewer: FileViewer = $FileViewer
+@onready var _daemon_settings_panel: DaemonSettingsPanel = $DaemonSettingsPanel
 
 var _approval_mode_active := false
 var _restore_code_viewer := false
@@ -57,6 +61,7 @@ func _ready() -> void:
 	_speech_service.failed.connect(_on_speech_failed)
 	AppState.approval_requested.connect(_on_approval_requested)
 	AppState.approval_resolved.connect(_on_approval_resolved)
+	EventBus.cockpit_panel_requested.connect(_on_cockpit_panel_requested)
 	AppState.listening_state = _speech_service.get_state()
 
 	AppState.ui_mode = "xr_hands" if xr_active else ("hand_lab" if lab_active else "desktop")
@@ -150,6 +155,25 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_cognition_layer.toggle_enabled()
 			elif event.target_id == "palm:mission_toggle":
 				_mission_topology.toggle_enabled()
+			elif event.target_id == "palm:cockpit_toggle":
+				_toggle_cockpit_review()
+			elif event.target_id == "diff:apply":
+				_diff_review_panel.decide("apply")
+			elif event.target_id == "diff:reject":
+				_diff_review_panel.decide("reject")
+			elif event.target_id == "file:up":
+				_file_viewer.navigate_up()
+			elif event.target_id == "file:refresh":
+				_file_viewer.refresh_listing()
+			elif event.target_id == "file:back":
+				_file_viewer.go_back()
+			elif event.target_id.begins_with("file:dir:"):
+				_file_viewer.activate_entry(event.target_id.trim_prefix("file:dir:"), true)
+			elif event.target_id.begins_with("file:file:"):
+				_file_viewer.activate_entry(event.target_id.trim_prefix("file:file:"), false)
+			elif event.target_id == "daemon:refresh":
+				_backend_bridge.send_command("workspace.list", {})
+				_backend_bridge.send_command("tool.catalog", {})
 			elif event.target_id == "palm:privacy_toggle":
 				_toggle_privacy_veil()
 			elif event.target_id == "palm:voice_toggle":
@@ -210,6 +234,38 @@ func _focus_next_thread() -> void:
 	var current_index := AppState.ordered_thread_ids.find(AppState.focused_thread_id)
 	var next_index := (current_index + 1) % AppState.ordered_thread_ids.size()
 	AppState.focus_thread(AppState.ordered_thread_ids[next_index])
+
+
+func _toggle_cockpit_review() -> void:
+	if _diff_review_panel.visible:
+		_diff_review_panel.close()
+		return
+	if _file_viewer.visible:
+		_file_viewer.close()
+		return
+	var focused_thread_id := AppState.focused_thread_id
+	if not focused_thread_id.is_empty() and not AppState.get_latest_diff_for_thread(focused_thread_id).is_empty():
+		_diff_review_panel.open_focused_thread()
+		return
+	_file_viewer.open_focused_thread()
+
+
+func _on_cockpit_panel_requested(panel: String) -> void:
+	match panel:
+		"workspace":
+			_workspace_panel.toggle()
+		"diff":
+			if _diff_review_panel.visible:
+				_diff_review_panel.close()
+			else:
+				_diff_review_panel.open_focused_thread()
+		"files":
+			if _file_viewer.visible:
+				_file_viewer.close()
+			else:
+				_file_viewer.open_focused_thread()
+		"daemon":
+			_daemon_settings_panel.toggle()
 
 
 func _respond_to_next_approval(decision: String) -> bool:
@@ -316,6 +372,10 @@ func _on_approval_requested(_request: Dictionary) -> void:
 	_code_viewer.visible = false
 	_thread_panel.visible = false
 	_quick_intent_panel.visible = false
+	_workspace_panel.visible = false
+	_diff_review_panel.visible = false
+	_file_viewer.visible = false
+	_daemon_settings_panel.visible = false
 	_cognition_layer.set_blocked(true)
 	_mission_topology.set_blocked(true)
 	_desktop_composer.visible = false

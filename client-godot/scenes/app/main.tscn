@@ -1,4 +1,4 @@
-[gd_scene load_steps=42 format=3]
+[gd_scene load_steps=46 format=3]
 
 [ext_resource type="Script" path="res://scenes/app/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/user/user_rig.tscn" id="2_rig"]
@@ -27,6 +27,10 @@
 [ext_resource type="PackedScene" path="res://services/spatial_audio_cue_service.tscn" id="25_audio"]
 [ext_resource type="Script" path="res://scenes/hud/hand_lab.gd" id="26_hand_lab"]
 [ext_resource type="Script" path="res://scenes/hud/reactor_field.gd" id="27_reactor"]
+[ext_resource type="Script" path="res://scenes/panels/workspace_panel.gd" id="28_workspace"]
+[ext_resource type="Script" path="res://scenes/panels/diff_review_panel.gd" id="29_diff_review"]
+[ext_resource type="Script" path="res://scenes/panels/file_viewer.gd" id="30_file_viewer"]
+[ext_resource type="Script" path="res://scenes/panels/daemon_settings_panel.gd" id="31_daemon_settings"]
 
 [sub_resource type="Environment" id="Environment_development"]
 background_mode = 1
@@ -141,6 +145,18 @@ script = ExtResource("24_anchors")
 [node name="ThreadPanel" parent="." instance=ExtResource("7_thread_panel")]
 
 [node name="CodeViewer" parent="." instance=ExtResource("15_code_viewer")]
+
+[node name="WorkspacePanel" type="Node3D" parent="."]
+script = ExtResource("28_workspace")
+
+[node name="DiffReviewPanel" type="Node3D" parent="."]
+script = ExtResource("29_diff_review")
+
+[node name="FileViewer" type="Node3D" parent="."]
+script = ExtResource("30_file_viewer")
+
+[node name="DaemonSettingsPanel" type="Node3D" parent="."]
+script = ExtResource("31_daemon_settings")
 
 [node name="QuickIntentPanel" parent="." instance=ExtResource("20_quick_intent")]
 

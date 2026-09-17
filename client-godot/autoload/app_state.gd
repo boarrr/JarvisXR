@@ -153,6 +153,14 @@ func get_diff(run_id: String) -> Dictionary:
 	return (diffs_by_run[run_id] as Dictionary).duplicate(true)
 
 
+func get_latest_diff_for_thread(thread_id: String) -> Dictionary:
+	for run_id in diffs_by_run.keys():
+		var diff: Dictionary = diffs_by_run[run_id]
+		if str(diff.get("thread_id", "")) == thread_id:
+			return diff.duplicate(true)
+	return {}
+
+
 func resolve_diff(run_id: String, payload: Dictionary) -> void:
 	if not diffs_by_run.has(run_id):
 		return

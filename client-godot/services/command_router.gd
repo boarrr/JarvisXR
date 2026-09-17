@@ -33,7 +33,11 @@ func get_last_feedback() -> String:
 
 
 func get_help_text() -> String:
-	return "/new TITLE · /focus NAME · /rename TITLE · /archive · /cancel · /tool status|clock|note · /list"
+	return (
+		"/new TITLE · /focus NAME · /rename TITLE · /archive · /cancel · /list\n"
+		+ "/pair CODE · /workspaces · /workspace NAME · /files · /diff · /daemon\n"
+		+ "/apply · /reject · /tools · /tool status|clock|note"
+	)
 
 
 func _route_command(text: String) -> bool:
@@ -93,8 +97,86 @@ func _route_command(text: String) -> bool:
 				bridge.send_command("message.send", {"content": text}, AppState.focused_thread_id),
 				"Approval-gated tool requested"
 			)
+		"/pair":
+			if argument.is_empty():
+				return _report(false, "Usage: /pair CODE")
+			var pair_transport = ServiceRegistry.backend_transport
+			if pair_transport == null or not pair_transport.has_method("pair"):
+				return _report(false, "The active transport does not support pairing")
+			return _report(
+				bool(pair_transport.call("pair", argument)),
+				"Pairing requested for this device"
+			)
+		"/workspaces":
+			EventBus.cockpit_panel_requested.emit("workspace")
+			return _report(true, "Workspace panel toggled")
+		"/workspace":
+			if argument.is_empty():
+				EventBus.cockpit_panel_requested.emit("workspace")
+				return _report(true, "Workspace panel toggled")
+			if AppState.focused_thread_id.is_empty():
+				return _report(false, "Focus a thread before binding a workspace")
+			var workspace := _resolve_workspace(argument)
+			if workspace.is_empty():
+				return _report(false, "No matching workspace")
+			return _report(
+				bridge.send_command(
+					"workspace.bind",
+					{"workspace_id": str(workspace.get("id", ""))},
+					AppState.focused_thread_id
+				),
+				"Bound workspace: %s" % str(workspace.get("name", ""))
+			)
+		"/files":
+			EventBus.cockpit_panel_requested.emit("files")
+			return _report(true, "File viewer toggled")
+		"/diff":
+			EventBus.cockpit_panel_requested.emit("diff")
+			return _report(true, "Diff review toggled")
+		"/daemon":
+			EventBus.cockpit_panel_requested.emit("daemon")
+			return _report(true, "Daemon panel toggled")
+		"/apply", "/reject":
+			if AppState.focused_thread_id.is_empty():
+				return _report(false, "Focus a thread before deciding a diff")
+			var pending := AppState.get_latest_diff_for_thread(AppState.focused_thread_id)
+			if pending.is_empty():
+				return _report(false, "No pending diff for the focused thread")
+			var decision := "apply" if command == "/apply" else "reject"
+			return _report(
+				bridge.send_command(
+					"diff.decision",
+					{"run_id": str(pending.get("run_id", "")), "decision": decision},
+					AppState.focused_thread_id
+				),
+				"Diff %s requested" % decision
+			)
+		"/tools":
+			bridge.send_command("tool.catalog", {})
+			return _report(
+				true,
+				"Tool catalog: %d tools · %d MCP servers" % [
+					AppState.tool_catalog.size(), AppState.mcp_servers.size()
+				]
+			)
 		_:
 			return _report(false, "Unknown command. Use /help")
+
+
+func _resolve_workspace(query: String) -> Dictionary:
+	var normalized := query.strip_edges().to_lower()
+	if normalized.is_empty():
+		return {}
+	for workspace in AppState.workspaces:
+		if str(workspace.get("id", "")).to_lower() == normalized:
+			return workspace
+	for workspace in AppState.workspaces:
+		if str(workspace.get("name", "")).to_lower() == normalized:
+			return workspace
+	for workspace in AppState.workspaces:
+		if normalized in str(workspace.get("name", "")).to_lower():
+			return workspace
+	return {}
 
 
 func _resolve_thread(query: String) -> String:

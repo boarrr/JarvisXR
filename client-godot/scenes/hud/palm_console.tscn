@@ -32,11 +32,11 @@ no_depth_test = true
 
 [sub_resource type="QuadMesh" id="Mesh_border"]
 material = SubResource("Material_border")
-size = Vector2(0.49, 0.625)
+size = Vector2(0.49, 0.735)
 
 [sub_resource type="QuadMesh" id="Mesh_glass"]
 material = SubResource("Material_glass")
-size = Vector2(0.475, 0.61)
+size = Vector2(0.475, 0.72)
 
 [sub_resource type="QuadMesh" id="Mesh_action"]
 material = SubResource("Material_action")
@@ -246,6 +246,31 @@ font_size = 10
 outline_size = 4
 width = 120.0
 modulate = Color(0.74, 0.92, 1, 1)
+no_depth_test = true
+
+[node name="CockpitTarget" type="Area3D" parent="." groups=["interactable"]]
+position = Vector3(0, -0.302, 0.025)
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+script = ExtResource("2_target")
+target_id = "palm:cockpit_toggle"
+
+[node name="Mesh" type="MeshInstance3D" parent="CockpitTarget"]
+cast_shadow = 0
+mesh = SubResource("Mesh_action_wide")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CockpitTarget"]
+shape = SubResource("Shape_action_wide")
+
+[node name="Label" type="Label3D" parent="CockpitTarget"]
+position = Vector3(0, 0, 0.014)
+pixel_size = 0.0017
+text = "WORKSPACE // FILES // DIFF"
+font_size = 11
+outline_size = 4
+width = 235.0
+modulate = Color(0.62, 0.88, 1, 1)
 no_depth_test = true
 
 [node name="PrivacyTarget" type="Area3D" parent="." groups=["interactable"]]

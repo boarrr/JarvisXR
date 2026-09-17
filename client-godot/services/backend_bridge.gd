@@ -125,7 +125,9 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 		"run.workspace":
 			AppState.set_run_workspace(event.thread_id, event.payload)
 		"diff.proposed":
-			AppState.set_diff(event.payload)
+			var diff := event.payload.duplicate(true)
+			diff["thread_id"] = event.thread_id
+			AppState.set_diff(diff)
 		"diff.applied", "diff.rejected":
 			AppState.resolve_diff(str(event.payload.get("run_id", "")), event.payload)
 		"file.tree":
