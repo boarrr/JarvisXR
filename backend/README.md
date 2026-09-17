@@ -90,6 +90,23 @@ Council runs both provider adapters concurrently against the same eligible conve
 
 Do not expose the service beyond loopback without authentication, TLS termination, origin restrictions, and a deployment-specific rate policy.
 
+## Rev 2: pairing, workspaces, and MCP
+
+- `SPATIAL_AGENT_AUTH_REQUIRED=1` gates sessions behind `session.pair`; codes are
+  issued with `spatial-agent-pair` (or printed at startup), single use, and
+  stored only as hashes. A non-loopback bind additionally requires
+  `SPATIAL_AGENT_TLS_CERT` and `SPATIAL_AGENT_TLS_KEY`.
+- `SPATIAL_AGENT_WORKSPACES_FILE` lists repositories; every bound agent run gets
+  an isolated `git worktree` on a `spatial/agent-<run_id>` branch. Diffs stream
+  to the client and apply/reject decisions are audited.
+- `SPATIAL_AGENT_MCP_CONFIG` declares MCP servers (stdio or streamable HTTP).
+  Tools are namespaced `mcp.<server>.<tool>`; permissions come from policy,
+  then annotations, defaulting to approval-required. Hosted providers gain a
+  bounded tool-calling loop; Council stays text-only by design.
+- `SPATIAL_AGENT_SHELL_ALLOWLIST` reserves a comma-separated allowlist hook for
+  shell command policy; the default is an empty allowlist (every side effect is
+  reviewed).
+
 ## Tool safety
 
 Three narrow tools are registered:

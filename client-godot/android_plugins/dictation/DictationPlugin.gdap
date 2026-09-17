@@ -1,0 +1,4 @@
+[config]
+name="AndroidDictation"
+binary_type="local"
+binary="DictationPlugin.aar"

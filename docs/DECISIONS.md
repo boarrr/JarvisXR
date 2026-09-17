@@ -195,3 +195,45 @@
 - **Context:** Stable placement is useful, but raw room meshes and persistent home geometry create a disproportionate privacy burden.
 - **Decision:** Store at most 16 allowlisted semantic transforms in memory, reject raw-scene-mesh classifications, and keep vendor Scene API disabled until a reviewed adapter exists.
 - **Consequences:** Current panels can publish safe placement anchors and a future Meta adapter has a narrow contract. No room scan or persistent spatial map is claimed.
+
+## ADR-029: Headset is a terminal; the daemon owns the workspace
+
+- **Status:** Accepted (rev 2)
+- **Context:** Standing alone on a headset fights Horizon OS background suspension, thermals, and the developer toolchain, while the code and MCP servers live on the developer machine.
+- **Decision:** Keep agents, repositories, credentials, and durable state in a companion daemon; the headset stores only cached review state.
+- **Consequences:** Agent work requires a reachable daemon (USB, LAN, or tunnel), and the client remains a replaceable presentation surface.
+
+## ADR-030: Agent changes use one git worktree per run
+
+- **Status:** Accepted (rev 2)
+- **Context:** Agents that write code need isolation from the user's checkout and a cheap undo path.
+- **Decision:** Create a `git worktree` on a `spatial/agent-<run_id>` branch per run; apply commits on that branch, reject deletes it.
+- **Consequences:** The user's checkout is never touched by an agent, concurrent runs cannot collide, and diffs become the natural review payload.
+
+## ADR-031: Reviews show code; telemetry stays content-blind
+
+- **Status:** Accepted (rev 2), revises ADR-024 for code context
+- **Context:** Approving code changes requires seeing them, while the cognition layer must not become a second copy of sensitive content.
+- **Decision:** Diff review, file browsing, and tool arguments for review surfaces may render code and diffs. Approval impact previews and cognition telemetry remain argument-free and content-blind.
+- **Consequences:** Consent screens for code are informative; the telemetry boundary still omits prompt text, code, and arguments.
+
+## ADR-032: MCP permissions derive from policy, annotations, and approval
+
+- **Status:** Accepted (rev 2)
+- **Context:** MCP servers are arbitrary third-party code with heterogeneous safety claims.
+- **Decision:** Resolve each tool to an existing permission level from explicit policy first, then annotations, defaulting to approval-required; keep side effects behind the spatial approval gate.
+- **Consequences:** Remote tool inventories cannot grant themselves safe-read status, and misconfigured policy fails closed.
+
+## ADR-033: LAN access requires pairing, TLS, and explicit configuration
+
+- **Status:** Accepted (rev 2)
+- **Context:** The prototype trusted loopback only; a wireless headset needs a larger reach without opening an unauthenticated service.
+- **Decision:** Keep loopback open for development; require device pairing, hashed tokens, TLS, and an explicit `SPATIAL_AGENT_AUTH_REQUIRED=1` for any non-loopback bind, validated at startup.
+- **Consequences:** Wireless use is a deliberate deployment step rather than a default, and the daemon cannot silently expose itself.
+
+## ADR-034: Android dictation is a replaceable platform adapter
+
+- **Status:** Accepted (rev 2)
+- **Context:** The desktop whisper.cpp process cannot run inside an APK, but headset users still need free-form input.
+- **Decision:** Add an `AndroidSpeechService` adapter over an optional `AndroidDictation` plugin wrapping the platform recognizer; keep whisper.cpp as the desktop adapter and quick intents as the fallback.
+- **Consequences:** Only finalized text crosses the protocol; without the plugin the app degrades to hand-only intents, and plugin builds remain a user-toolchain step.

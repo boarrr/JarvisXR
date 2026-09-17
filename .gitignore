@@ -11,4 +11,6 @@ client-godot/.godot/
 client-godot/*.wav
 client-godot/addons/godotopenxrvendors/
 client-godot/android/
+client-godot/android_plugins/*/build/
+client-godot/android_plugins/*/.gradle/
 build/

@@ -7,7 +7,8 @@ extends Node
 @onready var _fake_backend_transport: FakeBackendTransport = $BackendBridge/FakeBackendTransport
 @onready var _websocket_backend_client: BackendClient = $BackendBridge/WebSocketBackendClient
 @onready var _command_router: CommandRouter = $CommandRouter
-@onready var _speech_service: LocalWhisperSpeechService = $LocalWhisperSpeechService
+@onready var _desktop_speech_service: LocalWhisperSpeechService = $LocalWhisperSpeechService
+var _speech_service: SpeechService = null
 @onready var _code_viewer: CodeViewer = $CodeViewer
 @onready var _cognition_layer: CognitionLayer = $CognitionLayer
 @onready var _mission_topology: MissionTopology = $MissionTopology
@@ -55,6 +56,10 @@ func _ready() -> void:
 		push_error("[APP] Failed to connect InteractionManager to the interaction source")
 		return
 	_interaction_manager.interaction_event.connect(_on_interaction_event)
+	_speech_service = _select_speech_service()
+	if _speech_service == null:
+		push_error("[APP] No speech service adapter is available")
+		return
 	_speech_service.listening_changed.connect(_on_speech_state_changed)
 	_speech_service.partial_transcript.connect(_on_partial_transcript)
 	_speech_service.final_transcript.connect(_on_final_transcript)
@@ -234,6 +239,15 @@ func _focus_next_thread() -> void:
 	var current_index := AppState.ordered_thread_ids.find(AppState.focused_thread_id)
 	var next_index := (current_index + 1) % AppState.ordered_thread_ids.size()
 	AppState.focus_thread(AppState.ordered_thread_ids[next_index])
+
+
+func _select_speech_service() -> SpeechService:
+	if OS.get_name() == "Android" and Engine.has_singleton(AndroidSpeechService.SINGLETON_NAME):
+		var android_speech := AndroidSpeechService.new()
+		android_speech.name = "AndroidSpeechService"
+		add_child(android_speech)
+		return android_speech
+	return _desktop_speech_service
 
 
 func _toggle_cockpit_review() -> void:

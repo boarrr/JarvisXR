@@ -44,10 +44,25 @@ Local rendered checks at 1440×900, Balanced (2× MSAA), full 3D scale and the 6
 
 Automated verification currently includes 28 Python tests (26 passed; two optional installed-provider-SDK checks skipped in the minimal environment) plus 19 Godot test scenes. `scripts/test_all.sh` runs the entire suite, including Council separation/failure cancellation, impact minimization, joint/pinch interpretation, quick intents, cognition privacy/history behavior, mission topology, Privacy Veil, procedural spatial audio, semantic anchors, code-viewer/diff geometry, fixture sockets, reconnect, and the real full-stack path. Hand Lab adds joint-based ray selection, buffered clicks, scrolling, two-hand movement/scale, tracking loss, privacy/approval gates, transcript pagination and adaptive-quality coverage.
 
+## Rev 2: spatial dev cockpit
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| Paired LAN access with hashed device tokens | Complete in code; deployment-dependent | Pairing flow, expiry, one-time use, revocation, and TLS-required validation covered by backend tests |
+| Isolated agent worktrees with apply/reject | Complete | Worktree lifecycle, diff parsing, commit, reject, path traversal, and audit tests |
+| MCP host with stdio transport and policy mapping | Complete | Fixture MCP server tests: initialize, tools/list, tools/call, resources, config validation, unreachable-server handling |
+| Provider tool-calling loop behind approvals | Complete in code; credential-dependent | Scripted-provider loop tests for safe, approved, denied, unknown, and cancelled tool calls |
+| Protocol v2 (workspaces, diffs, files, catalog) | Complete | Schema update, server integration flow tests, v1 compatibility gating, client bridge reducers |
+| Cockpit panels | Complete at simulator level | Workspace, diff review, file viewer, and daemon panels covered by `cockpit_panels_smoke`; hand-ergonomics pending hardware |
+| Android dictation adapter boundary | Complete in code; plugin build user-gated | Adapter state machine tested with an injected bridge; Kotlin plugin source and build helper included |
+| Portable Android XR export preset | Complete in project; toolchain-dependent | Vendor-neutral Khronos preset alongside the pinned Meta preset |
+
+Automated verification for rev 2 currently includes 64 Python tests (62 passed; the same two optional provider-SDK checks skipped) plus 22 Godot test scenes, with `scripts/test_all.sh` refreshing Godot's class cache and running the complete original suite plus cockpit transport, cockpit panel, and Android dictation boundary coverage.
+
 ## Deliberate hardware/service gates
 
 Three checks cannot be completed honestly without external state owned by the user:
 
 1. A live hosted response requires the corresponding API key and sends prompt content to OpenAI or Anthropic; Council requires both and sends context to both.
-2. Real desktop push-to-talk acceptance requires microphone permission and a downloaded local Whisper model; Quest currently uses hand-only quick intents.
-3. Hand tracking, passthrough comfort, spatial-audio loudness, Android signing, and headset performance require the user's OpenXR runtime, SDK setup, and physical Quest; no final workflow is intended to require controllers.
+2. Real desktop push-to-talk acceptance requires microphone permission and a downloaded local Whisper model; Quest dictation additionally requires building the optional Android plugin with the user's Android toolchain.
+3. Hand tracking, passthrough comfort, spatial-audio loudness, Android signing, headset performance, and real MCP server processes require the user's OpenXR runtime, SDK setup, and physical Quest; no final workflow is intended to require controllers.

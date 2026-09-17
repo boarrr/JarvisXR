@@ -12,7 +12,7 @@ plugin_target="$client_root/addons/godotopenxrvendors"
 apk_path="$project_root/build/quest/spatial-agent.apk"
 
 usage() {
-	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|deploy"
+	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|deploy"
 }
 
 require_command() {
@@ -134,6 +134,41 @@ tunnel_backend() {
 	printf '%s\n' "Quest localhost:8787 now reaches the Mac backend without LAN exposure."
 }
 
+lan_backend() {
+	lan_ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)
+	if [ -z "$lan_ip" ]; then
+		lan_ip="<your-host>"
+	fi
+	printf '%s\n' "Start the daemon so paired devices on the same network can reach it:"
+	printf '%s\n' "  SPATIAL_AGENT_HOST=0.0.0.0 \\"
+	printf '%s\n' "  SPATIAL_AGENT_AUTH_REQUIRED=1 \\"
+	printf '%s\n' "  SPATIAL_AGENT_TLS_CERT=/path/to/cert.pem \\"
+	printf '%s\n' "  SPATIAL_AGENT_TLS_KEY=/path/to/key.pem \\"
+	printf '%s\n' "  .venv/bin/spatial-agent-backend"
+	printf '%s\n' "Then set spatial_agent/backend_websocket_url to wss://$lan_ip:8787/ws,"
+	printf '%s\n' "issue a code with .venv/bin/spatial-agent-pair, and pair with /pair CODE."
+}
+
+dictation_plugin() {
+	plugin_source="$project_root/client-godot/android_plugins/dictation"
+	if [ ! -d "$plugin_source" ]; then
+		printf '%s\n' "Dictation plugin source not found: $plugin_source" >&2
+		exit 2
+	fi
+	if ! command -v gradle >/dev/null 2>&1; then
+		printf '%s\n' "Gradle was not found. Install Gradle 8.x, then rerun this command." >&2
+		exit 2
+	fi
+	(cd "$plugin_source" && gradle assembleRelease --quiet)
+	plugin_target="$client_root/android/plugins/AndroidDictation"
+	mkdir -p "$plugin_target"
+	cp "$plugin_source/build/outputs/aar/dictation-release.aar" \
+		"$plugin_target/DictationPlugin.aar"
+	cp "$plugin_source/DictationPlugin.gdap" "$plugin_target/DictationPlugin.gdap"
+	printf '%s\n' "Installed dictation plugin at $plugin_target"
+	printf '%s\n' "Export with Gradle build enabled so the plugin is packaged into the APK."
+}
+
 install_apk() {
 	require_command "$adb_bin"
 	if [ ! -f "$apk_path" ]; then
@@ -161,6 +196,12 @@ case "$action" in
 		;;
 	tunnel)
 		tunnel_backend
+		;;
+	lan)
+		lan_backend
+		;;
+	dictation-plugin)
+		dictation_plugin
 		;;
 	deploy)
 		export_debug

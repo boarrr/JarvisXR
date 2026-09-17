@@ -20,6 +20,10 @@ cd "$project_root/backend"
 export PYTHONPATH="$project_root/backend/src${PYTHONPATH:+:$PYTHONPATH}"
 "$backend_python" -W error::ResourceWarning -m unittest discover -s tests -v
 
+# Refresh Godot's global class cache so newly added class_name scripts are
+# visible to the headless smoke scenes on a fresh checkout.
+"$godot_bin" --headless --path "$project_root/client-godot" --import >/dev/null 2>&1 || true
+
 for scene in \
 	milestone_0_smoke \
 	openxr_hand_source_smoke \
@@ -38,7 +42,8 @@ for scene in \
 	cockpit_panels_smoke \
 	backend_client_smoke \
 	command_and_approval_smoke \
-	speech_service_smoke
+	speech_service_smoke \
+	android_speech_service_smoke
 do
 	"$godot_bin" --headless --path "$project_root/client-godot" "res://tests/$scene.tscn"
 done

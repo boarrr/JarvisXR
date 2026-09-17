@@ -37,12 +37,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func begin_editing() -> bool:
-	if AppState.focused_thread_id.is_empty() or AppState.privacy_veil_active or not AppState.approval_requests.is_empty() or AppState.ui_mode == "xr_hands":
+	if AppState.focused_thread_id.is_empty() or AppState.privacy_veil_active or not AppState.approval_requests.is_empty():
 		return false
 	_editing = true
 	_panel.visible = true
 	AppState.text_input_active = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if AppState.ui_mode != "xr_hands":
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_line_edit.grab_focus()
 	_line_edit.caret_column = _line_edit.text.length()
 	_feedback_label.text = _router.get_help_text() if _router != null else "Type a message"
@@ -54,7 +55,10 @@ func end_editing() -> void:
 	_panel.visible = false
 	AppState.text_input_active = false
 	_line_edit.release_focus()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if AppState.ui_mode == "hand_lab" else Input.MOUSE_MODE_CAPTURED
+	if AppState.ui_mode == "hand_lab":
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif AppState.ui_mode != "xr_hands":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func is_editing() -> bool:
