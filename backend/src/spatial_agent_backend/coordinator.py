@@ -13,6 +13,14 @@ from .providers import AgentProvider
 from .providers.base import ToolCall
 from .thread_service import ThreadNotFoundError, ThreadService
 from .tools import ToolRegistry
+from .workspace import (
+    FileDiff,
+    WorkspaceError,
+    WorkspaceManager,
+    Worktree,
+    list_directory,
+    read_file_bounded,
+)
 
 
 EmitEvent = Callable[[str, str, dict[str, Any]], Awaitable[None]]
@@ -28,6 +36,7 @@ class ActiveRun:
     message_id: str
     cancel_event: asyncio.Event
     task: asyncio.Task[None] | None = None
+    worktree: Worktree | None = None
 
 
 @dataclass(slots=True)
@@ -52,13 +61,17 @@ class AgentCoordinator:
         provider: AgentProvider,
         tools: ToolRegistry,
         permissions: PermissionService,
+        workspaces: WorkspaceManager | None = None,
     ) -> None:
         self.threads = threads
         self.provider = provider
         self.tools = tools
         self.permissions = permissions
+        self.workspaces = workspaces
         self._runs: dict[str, ActiveRun] = {}
         self._approvals: dict[str, PendingApproval] = {}
+        self._worktrees_by_run: dict[str, Worktree] = {}
+        self._latest_run_by_thread: dict[str, str] = {}
 
     async def submit_message(
         self,
@@ -236,6 +249,7 @@ class AgentCoordinator:
         try:
             thread = await self.threads.set_status(run.thread_id, "working")
             await emit("agent.status", run.thread_id, {"status": "working", "run_id": run.run_id})
+            await self._prepare_worktree(run, thread, emit)
             await emit(
                 "agent.message.started",
                 run.thread_id,
@@ -504,6 +518,128 @@ class AgentCoordinator:
             run_id=run.run_id,
             detail=fields,
         )
+
+    async def _prepare_worktree(self, run: ActiveRun, thread: Any, emit: EmitEvent) -> None:
+        if self.workspaces is None:
+            return
+        workspace_id = str((thread.metadata or {}).get("workspace_id", ""))
+        if not workspace_id:
+            return
+        if self.workspaces.get(workspace_id) is None:
+            await emit(
+                "error",
+                run.thread_id,
+                {
+                    "code": "workspace_not_found",
+                    "message": f"Workspace '{workspace_id}' is not registered",
+                },
+            )
+            return
+        try:
+            worktree = await self.workspaces.create_worktree(workspace_id, run.run_id)
+        except WorkspaceError as error:
+            await emit(
+                "error",
+                run.thread_id,
+                {"code": "workspace_error", "message": str(error)},
+            )
+            return
+        run.worktree = worktree
+        self._worktrees_by_run[run.run_id] = worktree
+        self._latest_run_by_thread[run.thread_id] = run.run_id
+        store = getattr(self.threads, "store", None)
+        record = getattr(store, "record_run", None)
+        if record is not None:
+            record(
+                run.run_id,
+                session_id=run.session_id,
+                thread_id=run.thread_id,
+                workspace_id=workspace_id,
+                worktree_path=str(worktree.path),
+                branch=worktree.branch,
+                base_commit=worktree.base_commit,
+                status="active",
+            )
+        self._audit("worktree_created", run, workspace_id=workspace_id, branch=worktree.branch)
+        await emit(
+            "run.workspace",
+            run.thread_id,
+            {"run_id": run.run_id, **worktree.to_wire()},
+        )
+
+    def worktree_for_run(self, run_id: str) -> Worktree | None:
+        return self._worktrees_by_run.get(run_id)
+
+    def latest_worktree(self, thread_id: str) -> Worktree | None:
+        run_id = self._latest_run_by_thread.get(thread_id)
+        return self._worktrees_by_run.get(run_id) if run_id else None
+
+    async def _thread_root(self, thread_id: str):
+        worktree = self.latest_worktree(thread_id)
+        if worktree is not None:
+            return worktree.path
+        if self.workspaces is None:
+            raise WorkspaceError("No workspace manager is configured")
+        thread = await self.threads.get_thread(thread_id)
+        workspace_id = str((thread.metadata or {}).get("workspace_id", ""))
+        workspace = self.workspaces.get(workspace_id) if workspace_id else None
+        if workspace is None:
+            raise WorkspaceError("No workspace is bound to this thread")
+        return workspace.path
+
+    async def list_thread_files(self, thread_id: str, relative_path: str = "") -> list[dict[str, Any]]:
+        root = await self._thread_root(thread_id)
+        return await asyncio.to_thread(list_directory, root, relative_path)
+
+    async def read_thread_file(self, thread_id: str, relative_path: str) -> dict[str, Any]:
+        root = await self._thread_root(thread_id)
+        return await asyncio.to_thread(read_file_bounded, root, relative_path)
+
+    async def diff_for_thread(self, thread_id: str) -> tuple[list[FileDiff], bool, str]:
+        worktree = self.latest_worktree(thread_id)
+        if worktree is None or self.workspaces is None:
+            raise WorkspaceError("No agent worktree is available for this thread")
+        files, truncated = await self.workspaces.diff(worktree)
+        return files, truncated, worktree.run_id
+
+    async def decide_diff(self, run_id: str, decision: str) -> dict[str, Any]:
+        worktree = self._worktrees_by_run.get(run_id)
+        if worktree is None or self.workspaces is None:
+            raise WorkspaceError("Unknown diff run")
+        if decision == "apply":
+            commit = await self.workspaces.commit(
+                worktree, f"spatial agent run {run_id}"
+            )
+            await self.workspaces.remove_worktree_directory(worktree)
+            result: dict[str, Any] = {
+                "run_id": run_id,
+                "decision": "apply",
+                "branch": worktree.branch,
+                "commit": commit,
+            }
+        else:
+            await self.workspaces.remove_worktree(worktree)
+            result = {
+                "run_id": run_id,
+                "decision": "reject",
+                "branch": worktree.branch,
+            }
+        self._worktrees_by_run.pop(run_id, None)
+        for thread_id, latest_run_id in list(self._latest_run_by_thread.items()):
+            if latest_run_id == run_id:
+                self._latest_run_by_thread.pop(thread_id, None)
+        store = getattr(self.threads, "store", None)
+        update = getattr(store, "update_run_status", None)
+        if update is not None:
+            update(run_id, "applied" if decision == "apply" else "rejected")
+        record = getattr(store, "record_audit", None)
+        if record is not None:
+            record(
+                "diff_applied" if decision == "apply" else "diff_rejected",
+                run_id=run_id,
+                detail=dict(result),
+            )
+        return result
 
     async def _finish_cancelled(self, run: ActiveRun, emit: EmitEvent) -> None:
         await self.threads.complete_message(run.thread_id, run.message_id, cancelled=True)

@@ -19,7 +19,14 @@ from .coordinator import AgentCoordinator
 from .mcp_host import McpHost
 from .observability import configure_logging, log_record
 from .permissions import PermissionService
-from .protocol import Envelope, ProtocolError, make_event, new_id, parse_client_message
+from .protocol import (
+    Envelope,
+    ProtocolError,
+    V2_COMMAND_TYPES,
+    make_event,
+    new_id,
+    parse_client_message,
+)
 from .providers import (
     ClaudeProvider,
     CouncilProvider,
@@ -30,7 +37,7 @@ from .providers import (
 from .storage import SQLiteStore
 from .thread_service import ThreadNotFoundError, ThreadService
 from .tools import ToolRegistry
-from .workspace import WorkspaceManager
+from .workspace import WorkspaceError, WorkspaceManager
 
 
 @dataclass(slots=True)
@@ -39,6 +46,7 @@ class Session:
     connection: ServerConnection
     focused_thread_id: str = ""
     ready: bool = False
+    protocol_version: int = 1
     device_id: str = ""
     device_name: str = ""
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -95,7 +103,9 @@ class SpatialAgentServer:
             )
         else:
             self.provider = FakeProvider(chunk_delay_seconds=settings.fake_chunk_delay_seconds)
-        self.coordinator = AgentCoordinator(self.threads, self.provider, self.tools, self.permissions)
+        self.coordinator = AgentCoordinator(
+            self.threads, self.provider, self.tools, self.permissions, self.workspaces
+        )
 
     async def initialize(self) -> None:
         await self.threads.initialize()
@@ -193,6 +203,7 @@ class SpatialAgentServer:
                     return
                 session.device_id = device.id
                 session.device_name = device.name
+            session.protocol_version = int(command.payload.get("protocol_version", 1))
             session.ready = True
             await asyncio.to_thread(
                 self.store.record_audit,
@@ -204,7 +215,7 @@ class SpatialAgentServer:
                 "session.ready",
                 "",
                 {
-                    "protocol_version": 1,
+                    "protocol_version": session.protocol_version,
                     "provider": self.provider.name,
                     "model": getattr(self.provider, "model", "local-deterministic"),
                     "daemon_version": __version__,
@@ -219,7 +230,11 @@ class SpatialAgentServer:
                         "cancel",
                         "approvals",
                         "provider_metadata",
+                        "workspaces",
+                        "diff_review",
+                        "tool_catalog",
                         "pairing" if self.settings.auth_required else "open_loopback",
+                        *(["mcp"] if self.mcp.connected_server_ids() else []),
                         *(["dual_provider_council"] if self.provider.name == "council" else []),
                     ],
                     "workspaces": [
@@ -288,6 +303,17 @@ class SpatialAgentServer:
             command_type=command.type,
         )
 
+        if command.type in V2_COMMAND_TYPES and session.protocol_version < 2:
+            await emit(
+                "error",
+                command.thread_id,
+                {
+                    "code": "unsupported_version",
+                    "message": f"{command.type} requires protocol version 2",
+                },
+            )
+            return
+
         if command.type == "thread.list":
             threads = await self.threads.list_threads()
             await emit("thread.snapshot", "", {"threads": [thread.to_wire() for thread in threads]})
@@ -336,8 +362,122 @@ class SpatialAgentServer:
                 content=str(command.payload["transcript"]),
                 emit=emit,
             )
+        elif command.type == "workspace.list":
+            await emit(
+                "workspace.snapshot",
+                "",
+                {
+                    "workspaces": [
+                        workspace.to_wire() for workspace in self.workspaces.list_workspaces()
+                    ]
+                },
+            )
+        elif command.type == "workspace.bind":
+            thread = await self.threads.get_thread(command.thread_id)
+            workspace_id = str(command.payload.get("workspace_id", "")).strip()
+            if workspace_id and self.workspaces.get(workspace_id) is None:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "workspace_not_found", "message": "Unknown workspace"},
+                )
+                return
+            metadata = dict(thread.metadata)
+            metadata["workspace_id"] = workspace_id
+            thread.metadata = metadata
+            thread.touch()
+            await self.threads.persist_thread(thread.id)
+            await emit("thread.updated", command.thread_id, {"thread": thread.to_wire()})
+        elif command.type == "file.list":
+            path = str(command.payload.get("path", ""))
+            try:
+                entries = await self.coordinator.list_thread_files(command.thread_id, path)
+            except WorkspaceError as error:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "workspace_unavailable", "message": str(error)},
+                )
+                return
+            await emit("file.tree", command.thread_id, {"path": path, "entries": entries})
+        elif command.type == "file.read":
+            path = str(command.payload.get("path", ""))
+            try:
+                content = await self.coordinator.read_thread_file(command.thread_id, path)
+            except WorkspaceError as error:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "workspace_unavailable", "message": str(error)},
+                )
+                return
+            await emit("file.content", command.thread_id, content)
+        elif command.type == "diff.get":
+            try:
+                files, truncated, run_id = await self.coordinator.diff_for_thread(command.thread_id)
+            except WorkspaceError as error:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "workspace_unavailable", "message": str(error)},
+                )
+                return
+            await emit(
+                "diff.proposed",
+                command.thread_id,
+                {
+                    "run_id": run_id,
+                    "truncated": truncated,
+                    "files": [file_diff.to_wire() for file_diff in files],
+                },
+            )
+        elif command.type == "diff.decision":
+            run_id = str(command.payload["run_id"])
+            decision = str(command.payload["decision"])
+            run = await asyncio.to_thread(self.store.get_run, run_id)
+            if run is None or run["session_id"] != session.id:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "diff_not_found", "message": "Unknown diff run"},
+                )
+                return
+            try:
+                result = await self.coordinator.decide_diff(run_id, decision)
+            except WorkspaceError as error:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "diff_not_found", "message": str(error)},
+                )
+                return
+            await emit(
+                "diff.applied" if decision == "apply" else "diff.rejected",
+                command.thread_id,
+                result,
+            )
+            thread = await self.threads.get_thread(command.thread_id)
+            await emit("thread.updated", command.thread_id, {"thread": thread.to_wire()})
+        elif command.type == "tool.catalog":
+            await emit("tool.catalog", "", self._tool_catalog_payload())
         else:
             await emit("error", command.thread_id, {"code": "unknown_command", "message": "Unknown command"})
+
+    def _tool_catalog_payload(self) -> dict[str, Any]:
+        return {
+            "tools": [
+                {
+                    "id": tool.tool_id,
+                    "description": tool.description,
+                    "permission_level": tool.permission_level.value,
+                    "source": tool.source,
+                    "server_id": tool.server_id,
+                    "annotations": dict(tool.annotations),
+                }
+                for tool in self.tools.list_tools()
+            ],
+            "mcp_servers": self.mcp.connected_server_ids(),
+        }
 
     async def _send(self, session: Session, event: Envelope) -> None:
         try:

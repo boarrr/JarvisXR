@@ -216,11 +216,8 @@ class WorkspaceManager:
         )
 
     async def remove_worktree(self, worktree: Worktree) -> None:
+        await self.remove_worktree_directory(worktree)
         workspace = self._require_workspace(worktree.workspace_id)
-        if worktree.path.exists():
-            await self._git(
-                workspace.path, "worktree", "remove", "--force", str(worktree.path)
-            )
         try:
             await self._git(workspace.path, "branch", "-D", worktree.branch)
         except WorkspaceError:
@@ -230,6 +227,14 @@ class WorkspaceManager:
             workspace_id=worktree.workspace_id,
             run_id=worktree.run_id,
         )
+
+    async def remove_worktree_directory(self, worktree: Worktree) -> None:
+        """Remove the worktree checkout while keeping its branch and commits."""
+        workspace = self._require_workspace(worktree.workspace_id)
+        if worktree.path.exists():
+            await self._git(
+                workspace.path, "worktree", "remove", "--force", str(worktree.path)
+            )
 
     async def diff(self, worktree: Worktree) -> tuple[list[FileDiff], bool]:
         await self._git(worktree.path, "add", "-A")
@@ -296,37 +301,11 @@ class WorkspaceManager:
 
     async def read_file(self, workspace_id: str, relative_path: str) -> dict[str, Any]:
         workspace = self._require_workspace(workspace_id)
-        target = _resolve_inside(workspace.path, relative_path)
-        if not target.is_file():
-            raise WorkspaceError("File does not exist")
-        size = target.stat().st_size
-        data = target.read_bytes()[:MAX_FILE_BYTES]
-        if b"\x00" in data[:8192]:
-            return {"path": relative_path, "size": size, "binary": True, "content": ""}
-        return {
-            "path": relative_path,
-            "size": size,
-            "binary": False,
-            "truncated": size > MAX_FILE_BYTES,
-            "content": data.decode("utf-8", errors="replace"),
-        }
+        return read_file_bounded(workspace.path, relative_path)
 
     def list_tree(self, workspace_id: str, relative_path: str = "") -> list[dict[str, Any]]:
         workspace = self._require_workspace(workspace_id)
-        base = _resolve_inside(workspace.path, relative_path) if relative_path else workspace.path
-        if not base.is_dir():
-            raise WorkspaceError("Directory does not exist")
-        entries: list[dict[str, Any]] = []
-        for entry in sorted(base.iterdir(), key=lambda item: (item.is_file(), item.name.lower())):
-            if entry.name in SKIPPED_TREE_ENTRIES or entry.is_symlink():
-                continue
-            if len(entries) >= MAX_TREE_ENTRIES:
-                break
-            relative = str(entry.relative_to(workspace.path))
-            entry_type = "dir" if entry.is_dir() else "file"
-            size = entry.stat().st_size if entry_type == "file" else 0
-            entries.append({"name": entry.name, "path": relative, "type": entry_type, "size": size})
-        return entries
+        return list_directory(workspace.path, relative_path)
 
     async def _git(self, cwd: Path, *arguments: str) -> str:
         process = await asyncio.create_subprocess_exec(
@@ -389,6 +368,40 @@ def _resolve_inside(root: Path, relative_path: str) -> Path:
     if candidate != resolved_root and resolved_root not in candidate.parents:
         raise WorkspaceError("Path escapes the workspace")
     return candidate
+
+
+def read_file_bounded(root: Path, relative_path: str) -> dict[str, Any]:
+    target = _resolve_inside(root, relative_path)
+    if not target.is_file():
+        raise WorkspaceError("File does not exist")
+    size = target.stat().st_size
+    data = target.read_bytes()[:MAX_FILE_BYTES]
+    if b"\x00" in data[:8192]:
+        return {"path": relative_path, "size": size, "binary": True, "content": ""}
+    return {
+        "path": relative_path,
+        "size": size,
+        "binary": False,
+        "truncated": size > MAX_FILE_BYTES,
+        "content": data.decode("utf-8", errors="replace"),
+    }
+
+
+def list_directory(root: Path, relative_path: str = "") -> list[dict[str, Any]]:
+    base = _resolve_inside(root, relative_path) if relative_path else root
+    if not base.is_dir():
+        raise WorkspaceError("Directory does not exist")
+    entries: list[dict[str, Any]] = []
+    for entry in sorted(base.iterdir(), key=lambda item: (item.is_file(), item.name.lower())):
+        if entry.name in SKIPPED_TREE_ENTRIES or entry.is_symlink():
+            continue
+        if len(entries) >= MAX_TREE_ENTRIES:
+            break
+        relative = str(entry.relative_to(root))
+        entry_type = "dir" if entry.is_dir() else "file"
+        size = entry.stat().st_size if entry_type == "file" else 0
+        entries.append({"name": entry.name, "path": relative, "type": entry_type, "size": size})
+    return entries
 
 
 def _parse_unified_diff(raw: str) -> list[FileDiff]:

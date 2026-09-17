@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://spatial-agent.local/protocol/v1/events.schema.json",
-  "title": "Spatial Agent protocol v1 envelope",
+  "$id": "https://spatial-agent.local/protocol/v2/events.schema.json",
+  "title": "Spatial Agent protocol v2 envelope",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -15,7 +15,10 @@
   ],
   "properties": {
     "v": {
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "type": {
       "type": "string",
@@ -52,6 +55,82 @@
         "properties": {
           "payload": {
             "$ref": "#/$defs/sessionHelloPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "session.pair"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/sessionPairPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "workspace.bind"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/workspaceBindPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "file.list",
+              "file.read"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/filePathPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "diff.decision"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/diffDecisionPayload"
           }
         }
       }
@@ -116,7 +195,10 @@
           "type": {
             "enum": [
               "thread.archive",
-              "run.cancel"
+              "run.cancel",
+              "workspace.list",
+              "tool.catalog",
+              "diff.get"
             ]
           }
         }
@@ -320,6 +402,152 @@
       "if": {
         "properties": {
           "type": {
+            "const": "session.paired"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/sessionPairedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "workspace.snapshot"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/workspaceSnapshotPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "run.workspace"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/runWorkspacePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "diff.proposed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/diffProposedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "diff.applied",
+              "diff.rejected"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/diffDecisionResultPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "file.tree"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/fileTreePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "file.content"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "thread_id": {
+            "minLength": 1
+          },
+          "payload": {
+            "$ref": "#/$defs/fileContentPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "tool.catalog"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/toolCatalogPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
             "const": "error"
           }
         }
@@ -350,7 +578,431 @@
           "maxLength": 120
         },
         "protocol_version": {
-          "const": 1
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "auth_token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "sessionPairPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "device_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      }
+    },
+    "sessionPairedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device_id",
+        "device_name",
+        "token"
+      ],
+      "properties": {
+        "device_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "device_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "token": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "workspaceBindPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workspace_id": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    },
+    "filePathPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "diffDecisionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "decision"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "apply",
+            "reject"
+          ]
+        }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "path",
+        "base_branch"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_branch": {
+          "type": "string"
+        }
+      }
+    },
+    "workspaceSnapshotPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaces"
+      ],
+      "properties": {
+        "workspaces": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/workspace"
+          }
+        }
+      }
+    },
+    "runWorkspacePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "workspace_id",
+        "branch",
+        "base_commit"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_commit": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "diffHunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "header",
+        "old_start",
+        "new_start",
+        "lines"
+      ],
+      "properties": {
+        "header": {
+          "type": "string"
+        },
+        "old_start": {
+          "type": "integer"
+        },
+        "new_start": {
+          "type": "integer"
+        },
+        "lines": {
+          "type": "array",
+          "maxItems": 400,
+          "items": {
+            "type": "string",
+            "maxLength": 400
+          }
+        }
+      }
+    },
+    "fileDiff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "change",
+        "additions",
+        "deletions",
+        "hunks"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "change": {
+          "type": "string",
+          "enum": [
+            "added",
+            "modified",
+            "deleted",
+            "renamed",
+            "binary"
+          ]
+        },
+        "additions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hunks": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/diffHunk"
+          }
+        }
+      }
+    },
+    "diffProposedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "files",
+        "truncated"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/fileDiff"
+          }
+        }
+      }
+    },
+    "diffDecisionResultPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "decision"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "apply",
+            "reject"
+          ]
+        },
+        "branch": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        }
+      }
+    },
+    "fileEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "path",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "dir",
+            "file"
+          ]
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "fileTreePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "entries"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "$ref": "#/$defs/fileEntry"
+          }
+        }
+      }
+    },
+    "fileContentPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "size",
+        "binary",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "binary": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "content": {
+          "type": "string"
+        }
+      }
+    },
+    "toolInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description",
+        "permission_level"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "permission_level": {
+          "type": "string",
+          "enum": [
+            "safe_read",
+            "sensitive_read",
+            "write_reversible",
+            "write_external",
+            "destructive",
+            "forbidden"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "server_id": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object"
+        }
+      }
+    },
+    "toolCatalogPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tools"
+      ],
+      "properties": {
+        "tools": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/toolInfo"
+          }
+        },
+        "mcp_servers": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

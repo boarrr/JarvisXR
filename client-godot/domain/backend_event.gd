@@ -1,7 +1,8 @@
 class_name BackendEvent
 extends RefCounted
 
-const PROTOCOL_VERSION := 1
+const PROTOCOL_VERSION := 2
+const SUPPORTED_VERSIONS := [1, 2]
 
 var version: int = PROTOCOL_VERSION
 var type: String
@@ -30,7 +31,7 @@ func _init(
 
 func is_valid() -> bool:
 	return (
-		version == PROTOCOL_VERSION
+		version in SUPPORTED_VERSIONS
 		and not type.is_empty()
 		and not event_id.is_empty()
 		and payload != null
@@ -50,7 +51,7 @@ func to_envelope() -> Dictionary:
 
 
 static func from_envelope(envelope: Dictionary) -> BackendEvent:
-	if int(envelope.get("v", 0)) != PROTOCOL_VERSION:
+	if int(envelope.get("v", 0)) not in SUPPORTED_VERSIONS:
 		return null
 	if not envelope.get("type", null) is String or str(envelope.get("type", "")).is_empty():
 		return null

@@ -16,6 +16,14 @@ signal privacy_veil_changed(value: bool)
 signal thread_added(thread: AgentThread)
 signal thread_updated(thread: AgentThread)
 signal thread_removed(thread_id: String)
+signal workspaces_changed(workspaces: Array)
+signal run_workspace_changed(thread_id: String)
+signal diff_changed(run_id: String)
+signal diff_resolved(run_id: String)
+signal file_tree_changed(thread_id: String)
+signal file_content_changed(thread_id: String)
+signal tool_catalog_changed()
+signal pairing_changed(device_id: String, device_name: String)
 
 var connection_state: String = "offline":
 	set(value):
@@ -93,6 +101,91 @@ var privacy_veil_active: bool = false:
 var threads_by_id: Dictionary = {}
 var ordered_thread_ids: Array[String] = []
 var approval_requests: Dictionary = {}
+var workspaces: Array = []
+var worktrees_by_thread: Dictionary = {}
+var diffs_by_run: Dictionary = {}
+var file_tree: Array = []
+var file_tree_path: String = ""
+var file_tree_thread_id: String = ""
+var file_content: Dictionary = {}
+var tool_catalog: Array = []
+var mcp_servers: Array[String] = []
+var paired_device: Dictionary = {}
+
+
+func set_workspaces(values: Array) -> void:
+	workspaces.clear()
+	for value in values:
+		if value is Dictionary:
+			workspaces.append((value as Dictionary).duplicate(true))
+	workspaces_changed.emit(workspaces)
+
+
+func get_workspace(workspace_id: String) -> Dictionary:
+	for workspace in workspaces:
+		if str(workspace.get("id", "")) == workspace_id:
+			return workspace
+	return {}
+
+
+func set_run_workspace(thread_id: String, payload: Dictionary) -> void:
+	worktrees_by_thread[thread_id] = payload.duplicate(true)
+	run_workspace_changed.emit(thread_id)
+
+
+func get_run_workspace(thread_id: String) -> Dictionary:
+	if not worktrees_by_thread.has(thread_id):
+		return {}
+	return (worktrees_by_thread[thread_id] as Dictionary).duplicate(true)
+
+
+func set_diff(payload: Dictionary) -> void:
+	var run_id := str(payload.get("run_id", ""))
+	if run_id.is_empty():
+		return
+	diffs_by_run[run_id] = payload.duplicate(true)
+	diff_changed.emit(run_id)
+
+
+func get_diff(run_id: String) -> Dictionary:
+	if not diffs_by_run.has(run_id):
+		return {}
+	return (diffs_by_run[run_id] as Dictionary).duplicate(true)
+
+
+func resolve_diff(run_id: String, payload: Dictionary) -> void:
+	if not diffs_by_run.has(run_id):
+		return
+	diffs_by_run.erase(run_id)
+	diff_resolved.emit(run_id)
+	EventBus.debug_message.emit(
+		"Diff %s %s" % [run_id, str(payload.get("decision", "resolved"))]
+	)
+
+
+func set_file_tree(thread_id: String, path: String, entries: Array) -> void:
+	file_tree_thread_id = thread_id
+	file_tree_path = path
+	file_tree = entries.duplicate(true)
+	file_tree_changed.emit(thread_id)
+
+
+func set_file_content(thread_id: String, payload: Dictionary) -> void:
+	file_content = payload.duplicate(true)
+	file_content_changed.emit(thread_id)
+
+
+func set_tool_catalog(payload: Dictionary) -> void:
+	tool_catalog = (payload.get("tools", []) as Array).duplicate(true)
+	mcp_servers.clear()
+	for server in payload.get("mcp_servers", []):
+		mcp_servers.append(str(server))
+	tool_catalog_changed.emit()
+
+
+func set_paired_device(device_id: String, device_name: String) -> void:
+	paired_device = {"device_id": device_id, "device_name": device_name}
+	pairing_changed.emit(device_id, device_name)
 
 
 func set_provider_identity(provider: String, model: String) -> void:

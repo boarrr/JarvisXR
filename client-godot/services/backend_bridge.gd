@@ -115,6 +115,29 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 			var approval_id := str(event.payload.get("approval_id", ""))
 			if not approval_id.is_empty():
 				AppState.resolve_approval(approval_id)
+		"session.paired":
+			AppState.set_paired_device(
+				str(event.payload.get("device_id", "")),
+				str(event.payload.get("device_name", ""))
+			)
+		"workspace.snapshot":
+			AppState.set_workspaces(event.payload.get("workspaces", []))
+		"run.workspace":
+			AppState.set_run_workspace(event.thread_id, event.payload)
+		"diff.proposed":
+			AppState.set_diff(event.payload)
+		"diff.applied", "diff.rejected":
+			AppState.resolve_diff(str(event.payload.get("run_id", "")), event.payload)
+		"file.tree":
+			AppState.set_file_tree(
+				event.thread_id,
+				str(event.payload.get("path", "")),
+				event.payload.get("entries", [])
+			)
+		"file.content":
+			AppState.set_file_content(event.thread_id, event.payload)
+		"tool.catalog":
+			AppState.set_tool_catalog(event.payload)
 		"error":
 			EventBus.debug_message.emit("Backend error: %s" % event.payload.get("message", "unknown error"))
 	if event.type != "agent.message.delta":

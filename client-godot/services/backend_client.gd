@@ -1,7 +1,10 @@
 class_name BackendClient
 extends BackendTransport
 
+const TOKEN_CONFIG_PATH := "user://daemon_auth.cfg"
+
 @export var websocket_url: String = "ws://127.0.0.1:8787/ws"
+@export var auth_token: String = ""
 @export_range(1024, 4_194_304, 1024) var max_packet_bytes: int = 1_048_576
 @export var auto_reconnect: bool = true
 @export_range(0.05, 30.0, 0.05) var reconnect_initial_delay_seconds: float = 0.25
@@ -15,9 +18,11 @@ var _has_opened: bool = false
 var _stopping: bool = false
 var _reconnect_attempt: int = 0
 var _reconnect_remaining_seconds: float = -1.0
+var _protocol_version: int = BackendEvent.PROTOCOL_VERSION
 
 
 func _ready() -> void:
+	_load_auth_token()
 	set_process(false)
 
 
@@ -36,7 +41,7 @@ func _process(delta: float) -> void:
 		_reconnect_attempt = 0
 		_reconnect_remaining_seconds = -1.0
 		_set_connection_state(STATE_CONNECTED)
-		_send_command_envelope("session.hello", {"client": "godot", "protocol_version": 1}, "")
+		_send_command_envelope("session.hello", _hello_payload(), "")
 	if _socket.get_available_packet_count() > 0:
 		_receive_available_packets()
 	if _socket == null:
@@ -101,6 +106,48 @@ func send_command(command_type: String, payload: Dictionary = {}, thread_id: Str
 	return _send_command_envelope(command_type, payload, thread_id)
 
 
+func pair(code: String) -> bool:
+	if _socket == null or _socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return false
+	if code.strip_edges().is_empty():
+		return false
+	return _send_command_envelope(
+		"session.pair",
+		{"code": code.strip_edges(), "device_name": OS.get_model_name()},
+		""
+	)
+
+
+func is_pairing_supported() -> bool:
+	return true
+
+
+func get_protocol_version() -> int:
+	return _protocol_version
+
+
+func _hello_payload() -> Dictionary:
+	var payload := {
+		"client": "godot",
+		"protocol_version": BackendEvent.PROTOCOL_VERSION,
+	}
+	if not auth_token.is_empty():
+		payload["auth_token"] = auth_token
+	return payload
+
+
+func _load_auth_token() -> void:
+	var config := ConfigFile.new()
+	if config.load(TOKEN_CONFIG_PATH) == OK:
+		auth_token = str(config.get_value("daemon", "token", ""))
+
+
+func _save_auth_token() -> void:
+	var config := ConfigFile.new()
+	config.set_value("daemon", "token", auth_token)
+	config.save(TOKEN_CONFIG_PATH)
+
+
 func build_command_envelope(command_type: String, payload: Dictionary = {}, thread_id: String = "") -> Dictionary:
 	_command_counter += 1
 	return {
@@ -148,13 +195,23 @@ func _handle_text_packet(text: String) -> void:
 		return
 	var event := BackendEvent.from_envelope(parsed)
 	if event == null:
-		_emit_local_error("invalid_envelope", "Backend packet does not match protocol v1")
+		_emit_local_error("invalid_envelope", "Backend packet does not match protocol v1 or v2")
 		return
 	if event.type == "session.ready":
 		_session_id = event.session_id
+		_protocol_version = int(event.payload.get("protocol_version", 1))
 	backend_event_received.emit(event)
-	if event.type == "session.ready":
+	if event.type == "session.paired":
+		var token := str(event.payload.get("token", ""))
+		if not token.is_empty():
+			auth_token = token
+			_save_auth_token()
+		_send_command_envelope("session.hello", _hello_payload(), "")
+	elif event.type == "session.ready":
 		_send_command_envelope("thread.list", {}, "")
+		if _protocol_version >= 2:
+			_send_command_envelope("workspace.list", {}, "")
+			_send_command_envelope("tool.catalog", {}, "")
 
 
 func _handle_socket_closed() -> void:

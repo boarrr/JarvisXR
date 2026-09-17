@@ -65,6 +65,53 @@ class ProtocolTests(unittest.TestCase):
             parse_client_message(command("thread.list"), max_bytes=8)
         self.assertEqual(raised.exception.code, "packet_too_large")
 
+    def test_accepts_v2_envelope_and_negotiation(self) -> None:
+        value = json.loads(command("session.hello", payload={"protocol_version": 2}))
+        value["v"] = 2
+        parsed = parse_client_message(json.dumps(value), max_bytes=4096)
+        self.assertEqual(parsed.v, 2)
+        self.assertEqual(parsed.payload["protocol_version"], 2)
+        with self.assertRaises(ProtocolError):
+            parse_client_message(
+                command("session.hello", payload={"protocol_version": 3}), max_bytes=4096
+            )
+
+    def test_v2_commands_validate_payloads(self) -> None:
+        parsed = parse_client_message(
+            command(
+                "workspace.bind",
+                thread_id="thread_1",
+                payload={"workspace_id": "ws_abc"},
+            ),
+            max_bytes=4096,
+        )
+        self.assertEqual(parsed.payload["workspace_id"], "ws_abc")
+
+        with self.assertRaises(ProtocolError):
+            parse_client_message(
+                command("workspace.bind", payload={"workspace_id": "ws_abc"}),
+                max_bytes=4096,
+            )
+        with self.assertRaises(ProtocolError) as raised:
+            parse_client_message(
+                command(
+                    "diff.decision",
+                    thread_id="thread_1",
+                    payload={"run_id": "run_1", "decision": "maybe"},
+                ),
+                max_bytes=4096,
+            )
+        self.assertEqual(raised.exception.code, "invalid_payload")
+        with self.assertRaises(ProtocolError):
+            parse_client_message(
+                command(
+                    "file.read",
+                    thread_id="thread_1",
+                    payload={"path": "a", "extra": True},
+                ),
+                max_bytes=4096,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

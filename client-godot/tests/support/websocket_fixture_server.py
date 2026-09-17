@@ -117,8 +117,8 @@ def serve(port: int, connection_count: int = 1, ready_file: Path | None = None) 
                 connection.settimeout(5.0)
                 accept_websocket(connection)
                 hello = receive_text_frame(connection)
-                if hello.get("v") != 1 or hello.get("type") != "session.hello":
-                    raise ValueError("client did not send protocol-v1 session.hello")
+                if hello.get("v") not in (1, 2) or hello.get("type") != "session.hello":
+                    raise ValueError("client did not send a protocol v1/v2 session.hello")
                 session_id = (
                     "sess_loopback"
                     if connection_count == 1
@@ -130,22 +130,49 @@ def serve(port: int, connection_count: int = 1, ready_file: Path | None = None) 
                         "session.ready",
                         f"evt_loopback_{connection_index + 1:03d}_ready",
                         session_id,
-                        {"server": "fixture"},
+                        {"server": "fixture", "protocol_version": 2},
                     ),
                 )
-                thread_list = receive_text_frame(connection)
-                if thread_list.get("type") != "thread.list" or thread_list.get("session_id") != session_id:
-                    raise ValueError("thread.list was not scoped to the ready session")
-                send_text_frame(
-                    connection,
-                    envelope(
-                        "thread.snapshot",
-                        f"evt_loopback_{connection_index + 1:03d}_snapshot",
-                        session_id,
-                        {"threads": []},
-                    ),
-                )
-                time.sleep(0.15)
+                connection.settimeout(0.5)
+                while True:
+                    try:
+                        message = receive_text_frame(connection)
+                    except (TimeoutError, ConnectionError, ValueError, OSError):
+                        break
+                    if message.get("session_id") != session_id:
+                        continue
+                    message_type = message.get("type")
+                    if message_type == "thread.list":
+                        send_text_frame(
+                            connection,
+                            envelope(
+                                "thread.snapshot",
+                                f"evt_loopback_{connection_index + 1:03d}_snapshot",
+                                session_id,
+                                {"threads": []},
+                            ),
+                        )
+                    elif message_type == "workspace.list":
+                        send_text_frame(
+                            connection,
+                            envelope(
+                                "workspace.snapshot",
+                                f"evt_loopback_{connection_index + 1:03d}_workspaces",
+                                session_id,
+                                {"workspaces": []},
+                            ),
+                        )
+                    elif message_type == "tool.catalog":
+                        send_text_frame(
+                            connection,
+                            envelope(
+                                "tool.catalog",
+                                f"evt_loopback_{connection_index + 1:03d}_tools",
+                                session_id,
+                                {"tools": [], "mcp_servers": []},
+                            ),
+                        )
+                time.sleep(0.05)
 
 
 def main() -> None:

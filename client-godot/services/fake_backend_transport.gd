@@ -29,12 +29,16 @@ const INITIAL_STATUSES := [
 @export_range(0.0, 2.0, 0.01) var stream_start_latency_seconds: float = 0.18
 @export_range(5.0, 200.0, 1.0) var characters_per_second: float = 52.0
 
+const DEMO_WORKSPACE_ID := "ws_demo"
+
 var _session_id: String = ""
 var _focused_thread_id: String = ""
 var _threads_by_id: Dictionary = {}
 var _ordered_thread_ids: Array[String] = []
 var _streams: Dictionary = {}
 var _pending_approvals: Dictionary = {}
+var _worktrees_by_thread: Dictionary = {}
+var _diffs_by_run: Dictionary = {}
 var _event_counter: int = 0
 var _message_counter: int = 0
 var _run_counter: int = 0
@@ -66,8 +70,13 @@ func start() -> void:
 		"transport": get_mode(),
 		"provider": "fake",
 		"model": "local-deterministic",
+		"protocol_version": BackendEvent.PROTOCOL_VERSION,
+		"auth": "open-loopback",
+		"workspaces": [DEMO_WORKSPACE_ID],
 	})
 	_emit_thread_snapshot()
+	_emit_workspace_snapshot()
+	_emit_tool_catalog()
 
 
 func stop() -> void:
@@ -111,6 +120,24 @@ func send_command(command_type: String, payload: Dictionary = {}, thread_id: Str
 			return _inject_status(thread_id, str(payload.get("status", "idle")))
 		"debug.approval.request":
 			return _request_fake_approval(thread_id, payload)
+		"workspace.list":
+			_emit_workspace_snapshot()
+			return true
+		"workspace.bind":
+			return _bind_workspace(thread_id, str(payload.get("workspace_id", "")))
+		"file.list":
+			return _emit_file_tree(thread_id, str(payload.get("path", "")))
+		"file.read":
+			return _emit_file_content(thread_id, str(payload.get("path", "")))
+		"diff.get":
+			return _emit_diff(thread_id)
+		"diff.decision":
+			return _decide_diff(thread_id, payload)
+		"tool.catalog":
+			_emit_tool_catalog()
+			return true
+		"debug.workspace.diff":
+			return _inject_workspace_diff(thread_id, payload)
 		_:
 			_emit_error("unknown_command", "Unknown command: %s" % command_type, thread_id)
 			return false
@@ -174,6 +201,8 @@ func _reset_fake_state() -> void:
 	_ordered_thread_ids.clear()
 	_streams.clear()
 	_pending_approvals.clear()
+	_worktrees_by_thread.clear()
+	_diffs_by_run.clear()
 	_focused_thread_id = ""
 	_event_counter = 0
 	_message_counter = 0
@@ -187,6 +216,12 @@ func _seed_initial_threads() -> void:
 		var title: String = THREAD_TITLES[(number - 1) % THREAD_TITLES.size()]
 		var status: String = INITIAL_STATUSES[(number - 1) % INITIAL_STATUSES.size()]
 		_insert_thread(_make_thread(thread_id, title, status, number))
+		if number == 1:
+			var thread: Dictionary = _threads_by_id[thread_id]
+			var metadata: Dictionary = thread["metadata"]
+			metadata["workspace_id"] = DEMO_WORKSPACE_ID
+			thread["metadata"] = metadata
+			_threads_by_id[thread_id] = thread
 	_next_thread_number = initial_thread_count + 1
 
 
@@ -440,6 +475,22 @@ func _start_response(thread_id: String, scenario: String, prompt: String = "") -
 		"terminal_status": terminal_status,
 	}
 	_emit_event("agent.status", thread_id, {"status": "working", "run_id": run_id})
+	var metadata: Dictionary = thread.get("metadata", {})
+	var workspace_id := str(metadata.get("workspace_id", ""))
+	if not workspace_id.is_empty():
+		_worktrees_by_thread[thread_id] = {
+			"run_id": run_id,
+			"workspace_id": workspace_id,
+			"branch": "spatial/agent-%s" % run_id,
+			"base_commit": "fake_base_commit",
+			"files": _sample_diff_files(),
+		}
+		_emit_event("run.workspace", thread_id, {
+			"run_id": run_id,
+			"workspace_id": workspace_id,
+			"branch": "spatial/agent-%s" % run_id,
+			"base_commit": "fake_base_commit",
+		})
 	_emit_event(
 		"agent.message.started",
 		thread_id,
@@ -643,6 +694,222 @@ func _emit_thread_snapshot() -> void:
 		var thread: Dictionary = _threads_by_id[thread_id]
 		threads.append(thread.duplicate(true))
 	_emit_event("thread.snapshot", "", {"threads": threads})
+
+
+func _emit_workspace_snapshot() -> void:
+	_emit_event("workspace.snapshot", "", {
+		"workspaces": [{
+			"id": DEMO_WORKSPACE_ID,
+			"name": "Demo Workspace",
+			"path": "~/Projects/demo",
+			"base_branch": "main",
+		}],
+	})
+
+
+func _emit_tool_catalog() -> void:
+	_emit_event("tool.catalog", "", {
+		"mcp_servers": ["demo.filesystem"],
+		"tools": [
+			{
+				"id": "system.clock",
+				"description": "Read the backend's current UTC clock.",
+				"permission_level": "safe_read",
+				"source": "native",
+				"server_id": "",
+				"annotations": {},
+			},
+			{
+				"id": "system.diagnostics",
+				"description": "Read non-sensitive service health and uptime.",
+				"permission_level": "safe_read",
+				"source": "native",
+				"server_id": "",
+				"annotations": {},
+			},
+			{
+				"id": "demo.write_note",
+				"description": "Simulate writing a note without changing any external system.",
+				"permission_level": "write_reversible",
+				"source": "native",
+				"server_id": "",
+				"annotations": {},
+			},
+			{
+				"id": "mcp.demo.filesystem.read_file",
+				"description": "Read a file from the demo workspace.",
+				"permission_level": "safe_read",
+				"source": "mcp",
+				"server_id": "demo.filesystem",
+				"annotations": {"readOnlyHint": true},
+			},
+			{
+				"id": "mcp.demo.filesystem.write_file",
+				"description": "Write a file in the demo workspace.",
+				"permission_level": "write_reversible",
+				"source": "mcp",
+				"server_id": "demo.filesystem",
+				"annotations": {},
+			},
+		],
+	})
+
+
+func _bind_workspace(thread_id: String, workspace_id: String) -> bool:
+	if not _threads_by_id.has(thread_id):
+		return false
+	var thread: Dictionary = _threads_by_id[thread_id]
+	var metadata: Dictionary = thread.get("metadata", {})
+	metadata["workspace_id"] = workspace_id
+	thread["metadata"] = metadata
+	thread["updated_at"] = _timestamp()
+	_threads_by_id[thread_id] = thread
+	_emit_event("thread.updated", thread_id, {"thread": thread.duplicate(true)})
+	return true
+
+
+func _emit_file_tree(thread_id: String, path: String) -> bool:
+	if not _threads_by_id.has(thread_id):
+		return false
+	var entries: Array = []
+	if path.is_empty():
+		entries = [
+			{"name": "services", "path": "services", "type": "dir", "size": 0},
+			{"name": "README.md", "path": "README.md", "type": "file", "size": 64},
+			{"name": "app.py", "path": "app.py", "type": "file", "size": 16},
+		]
+	elif path == "services":
+		entries = [
+			{"name": "agent_client.gd", "path": "services/agent_client.gd", "type": "file", "size": 320},
+			{"name": "protocol.gd", "path": "services/protocol.gd", "type": "file", "size": 180},
+		]
+	_emit_event("file.tree", thread_id, {"path": path, "entries": entries})
+	return true
+
+
+func _emit_file_content(thread_id: String, path: String) -> bool:
+	if not _threads_by_id.has(thread_id):
+		return false
+	if path.is_empty():
+		_emit_error("invalid_path", "A file path is required", thread_id)
+		return false
+	var content := _fake_file_content(path)
+	_emit_event("file.content", thread_id, {
+		"path": path,
+		"size": content.length(),
+		"binary": false,
+		"truncated": false,
+		"content": content,
+	})
+	return true
+
+
+func _fake_file_content(path: String) -> String:
+	match path:
+		"app.py":
+			return "print('hello')\n"
+		"README.md":
+			return "# Demo workspace\n\nOffline fake workspace used by the cockpit.\n"
+		"services/agent_client.gd":
+			return preload("res://services/demo_code.gd").SOURCE
+		"services/protocol.gd":
+			return "class_name Protocol\n\nconst VERSION := 2\n"
+		_:
+			return "// %s\n" % path
+
+
+func _emit_diff(thread_id: String) -> bool:
+	var worktree := _worktrees_by_thread.get(thread_id, {}) as Dictionary
+	if worktree.is_empty():
+		_emit_error("workspace_unavailable", "No agent worktree is available for this thread", thread_id)
+		return false
+	var run_id := str(worktree.get("run_id", ""))
+	var files: Array = worktree.get("files", [])
+	_diffs_by_run[run_id] = {"thread_id": thread_id, "files": files.duplicate(true)}
+	_emit_event("diff.proposed", thread_id, {
+		"run_id": run_id,
+		"truncated": false,
+		"files": files,
+	})
+	return true
+
+
+func _inject_workspace_diff(thread_id: String, payload: Dictionary) -> bool:
+	if not _threads_by_id.has(thread_id):
+		return false
+	var worktree := _worktrees_by_thread.get(thread_id, {}) as Dictionary
+	if worktree.is_empty():
+		_event_counter += 1
+		worktree = {
+			"run_id": "run_fake_diff_%03d" % _event_counter,
+			"workspace_id": DEMO_WORKSPACE_ID,
+			"branch": "spatial/agent-fake",
+			"base_commit": "fake_base_commit",
+		}
+		_worktrees_by_thread[thread_id] = worktree
+	var files: Array = payload.get("files", _sample_diff_files())
+	worktree["files"] = files.duplicate(true)
+	_worktrees_by_thread[thread_id] = worktree
+	return _emit_diff(thread_id)
+
+
+func _decide_diff(thread_id: String, payload: Dictionary) -> bool:
+	var run_id := str(payload.get("run_id", ""))
+	var decision := str(payload.get("decision", ""))
+	if not _diffs_by_run.has(run_id) or decision not in ["apply", "reject"]:
+		return false
+	_diffs_by_run.erase(run_id)
+	if worktree_exists_for_run(run_id):
+		_worktrees_by_thread.erase(thread_id)
+	if decision == "apply":
+		_emit_event("diff.applied", thread_id, {
+			"run_id": run_id,
+			"decision": "apply",
+			"branch": "spatial/agent-%s" % run_id,
+			"commit": "fakecommit%s" % run_id.replace("run_", ""),
+		})
+	else:
+		_emit_event("diff.rejected", thread_id, {
+			"run_id": run_id,
+			"decision": "reject",
+			"branch": "spatial/agent-%s" % run_id,
+		})
+	if _threads_by_id.has(thread_id):
+		var thread: Dictionary = _threads_by_id[thread_id]
+		thread["updated_at"] = _timestamp()
+		_threads_by_id[thread_id] = thread
+		_emit_event("thread.updated", thread_id, {"thread": thread.duplicate(true)})
+	return true
+
+
+func worktree_exists_for_run(run_id: String) -> bool:
+	for worktree_variant in _worktrees_by_thread.values():
+		var worktree: Dictionary = worktree_variant
+		if str(worktree.get("run_id", "")) == run_id:
+			return true
+	return false
+
+
+func _sample_diff_files() -> Array:
+	return [{
+		"path": "services/agent_client.gd",
+		"change": "modified",
+		"additions": 3,
+		"deletions": 1,
+		"hunks": [{
+			"header": "@@ -1,5 +1,7 @@",
+			"old_start": 1,
+			"new_start": 1,
+			"lines": [
+				" func route_agent_delta(event: BackendEvent) -> void:",
+				'-    if event.type == "agent.message.delta":',
+				"+    if event.sequence <= last_sequence:",
+				"+        return",
+				"+    transcript.append(event.delta)",
+				'     status_changed.emit("streaming")',
+			],
+		}],
+	}]
 
 
 func _emit_event(event_type: String, thread_id: String, payload: Dictionary) -> void:

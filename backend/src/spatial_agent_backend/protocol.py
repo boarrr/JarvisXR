@@ -7,7 +7,9 @@ from typing import Any
 from uuid import uuid4
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
+LEGACY_PROTOCOL_VERSION = 1
+SUPPORTED_PROTOCOL_VERSIONS = frozenset({LEGACY_PROTOCOL_VERSION, PROTOCOL_VERSION})
 MAX_TEXT_LENGTH = 20_000
 
 CLIENT_COMMAND_TYPES = frozenset(
@@ -23,6 +25,25 @@ CLIENT_COMMAND_TYPES = frozenset(
         "run.cancel",
         "approval.respond",
         "voice.transcript.final",
+        "workspace.list",
+        "workspace.bind",
+        "file.list",
+        "file.read",
+        "diff.get",
+        "diff.decision",
+        "tool.catalog",
+    }
+)
+
+V2_COMMAND_TYPES = frozenset(
+    {
+        "workspace.list",
+        "workspace.bind",
+        "file.list",
+        "file.read",
+        "diff.get",
+        "diff.decision",
+        "tool.catalog",
     }
 )
 
@@ -98,8 +119,8 @@ def parse_client_message(raw: str, *, max_bytes: int) -> Envelope:
     required = {"v", "type", "event_id", "session_id", "thread_id", "timestamp", "payload"}
     if set(value) != required:
         raise ProtocolError("invalid_envelope", "Command envelope fields do not match protocol v1")
-    if value["v"] != PROTOCOL_VERSION:
-        raise ProtocolError("unsupported_version", "Only protocol version 1 is supported")
+    if value["v"] not in SUPPORTED_PROTOCOL_VERSIONS:
+        raise ProtocolError("unsupported_version", "Only protocol versions 1 and 2 are supported")
     if not isinstance(value["type"], str) or value["type"] not in CLIENT_COMMAND_TYPES:
         raise ProtocolError("unknown_command", "Unknown client command")
     for key in ("event_id", "session_id", "thread_id", "timestamp"):
@@ -129,6 +150,13 @@ def validate_command_payload(command: Envelope) -> None:
         "run.cancel": set(),
         "approval.respond": {"approval_id", "decision"},
         "voice.transcript.final": {"transcript"},
+        "workspace.list": set(),
+        "workspace.bind": {"workspace_id"},
+        "file.list": {"path"},
+        "file.read": {"path"},
+        "diff.get": set(),
+        "diff.decision": {"run_id", "decision"},
+        "tool.catalog": set(),
     }
     unexpected_fields = set(payload) - allowed_fields[command.type]
     if unexpected_fields:
@@ -137,8 +165,10 @@ def validate_command_payload(command: Envelope) -> None:
             f"Unexpected payload fields for {command.type}: {', '.join(sorted(unexpected_fields))}",
         )
     if command.type == "session.hello":
-        if payload.get("protocol_version") != PROTOCOL_VERSION:
-            raise ProtocolError("unsupported_version", "session.hello must request protocol version 1")
+        if payload.get("protocol_version") not in SUPPORTED_PROTOCOL_VERSIONS:
+            raise ProtocolError(
+                "unsupported_version", "session.hello must request protocol version 1 or 2"
+            )
         _optional_text(payload, "client", 120)
         _optional_text(payload, "auth_token", 256)
     elif command.type == "session.pair":
@@ -146,6 +176,19 @@ def validate_command_payload(command: Envelope) -> None:
         _optional_text(payload, "device_name", 80)
     elif command.type in {"thread.archive", "run.cancel"}:
         _require_thread_id(command)
+    elif command.type == "workspace.bind":
+        _require_thread_id(command)
+        _optional_text(payload, "workspace_id", 80)
+    elif command.type == "file.list" or command.type == "file.read":
+        _require_thread_id(command)
+        _optional_text(payload, "path", 512)
+    elif command.type == "diff.get":
+        _require_thread_id(command)
+    elif command.type == "diff.decision":
+        _require_thread_id(command)
+        _required_text(payload, "run_id", 160)
+        if payload.get("decision") not in {"apply", "reject"}:
+            raise ProtocolError("invalid_payload", "decision must be 'apply' or 'reject'")
     elif command.type == "thread.create":
         _optional_text(payload, "title", 120)
     elif command.type == "thread.rename":

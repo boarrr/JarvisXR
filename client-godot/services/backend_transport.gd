@@ -32,6 +32,14 @@ func send_command(_command_type: String, _payload: Dictionary = {}, _thread_id: 
 	return false
 
 
+func pair(_code: String) -> bool:
+	return false
+
+
+func is_pairing_supported() -> bool:
+	return false
+
+
 func _set_connection_state(state: String) -> void:
 	if _connection_state == state:
 		return

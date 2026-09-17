@@ -34,6 +34,7 @@ for scene in \
 	milestone_3_smoke \
 	code_viewer_smoke \
 	transport_boundary_smoke \
+	cockpit_transport_smoke \
 	backend_client_smoke \
 	command_and_approval_smoke \
 	speech_service_smoke

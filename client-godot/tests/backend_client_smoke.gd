@@ -18,12 +18,19 @@ func _run() -> void:
 	_check(not client.send_command("thread.list"), "commands are rejected while disconnected")
 
 	var initial_command := client.build_command_envelope("thread.focus", {}, "thread_demo")
-	_check(initial_command["v"] == 1, "commands use protocol v1")
+	_check(initial_command["v"] == 2, "commands use protocol v2")
 	_check(initial_command["type"] == "thread.focus", "command type is preserved")
 	_check(str(initial_command["event_id"]).begins_with("cmd_godot_"), "command has a stable identifier")
 	_check(initial_command["session_id"] == "", "pre-session command has an empty session ID")
 	_check(initial_command["thread_id"] == "thread_demo", "command carries thread identity")
 	_check(initial_command["payload"] is Dictionary, "command payload is an object")
+
+	var hello_payload := client._hello_payload()
+	_check(int(hello_payload["protocol_version"]) == 2, "hello requests protocol v2")
+	_check(not hello_payload.has("auth_token"), "hello omits an empty auth token")
+	client.auth_token = "token_smoke"
+	_check(client._hello_payload()["auth_token"] == "token_smoke", "hello carries a stored auth token")
+	client.auth_token = ""
 
 	var ready_envelope := {
 		"v": 1,
@@ -44,7 +51,7 @@ func _run() -> void:
 	_check(scoped_command["session_id"] == "sess_test", "session.ready scopes later commands")
 
 	var invalid_version := ready_envelope.duplicate(true)
-	invalid_version["v"] = 2
+	invalid_version["v"] = 3
 	_check(BackendEvent.from_envelope(invalid_version) == null, "unsupported versions are rejected")
 	client._handle_text_packet(JSON.stringify(invalid_version))
 	_check(_received_events.back().type == "error", "invalid envelope emits a normalized error")
