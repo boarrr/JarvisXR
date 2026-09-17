@@ -16,6 +16,7 @@ from . import __version__
 from .auth import PairingManager
 from .config import Settings
 from .coordinator import AgentCoordinator
+from .mcp_host import McpHost
 from .observability import configure_logging, log_record
 from .permissions import PermissionService
 from .protocol import Envelope, ProtocolError, make_event, new_id, parse_client_message
@@ -67,6 +68,10 @@ class SpatialAgentServer:
         self.pairing = PairingManager(
             self.store, ttl_seconds=settings.pairing_code_ttl_seconds
         )
+        self.mcp = McpHost(settings.mcp_config_path)
+        self.mcp.load()
+        for error in self.mcp.load_errors:
+            log_record("mcp_config_error", error=error)
         if settings.provider == "council":
             self.provider = CouncilProvider(
                 OpenAIProvider(
@@ -105,6 +110,14 @@ class SpatialAgentServer:
                 "pairing_code_issued",
                 ttl_seconds=int(self.settings.pairing_code_ttl_seconds),
             )
+        failures = await self.mcp.start()
+        for server_id, error in failures.items():
+            log_record("mcp_server_unavailable", server_id=server_id, error=error)
+        for server_id in self.mcp.connected_server_ids():
+            registered = self.tools.register_mcp_server(
+                self.mcp, server_id, self.mcp.cached_tools(server_id)
+            )
+            log_record("mcp_server_ready", server_id=server_id, tools=registered)
 
     async def handle_connection(self, connection: ServerConnection) -> None:
         session = Session(new_id("sess"), connection)
@@ -212,6 +225,7 @@ class SpatialAgentServer:
                     "workspaces": [
                         workspace.to_wire() for workspace in self.workspaces.list_workspaces()
                     ],
+                    "mcp_servers": self.mcp.connected_server_ids(),
                     "tools": [
                         {
                             "id": tool.tool_id,
@@ -368,7 +382,10 @@ class SpatialAgentServer:
             ping_timeout=20,
             ssl=ssl_context,
         ) as websocket_server:
-            await websocket_server.serve_forever()
+            try:
+                await websocket_server.serve_forever()
+            finally:
+                await self.mcp.stop()
 
 
 def build_argument_parser() -> argparse.ArgumentParser:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from .domain import Message, Thread
 from .storage import SQLiteStore
@@ -58,11 +59,35 @@ class ThreadService:
                 self._threads.pop(thread_id, None)
             return archived
 
-    async def add_message(self, thread_id: str, role: str, content: str = "", *, streaming: bool = False) -> Message:
+    async def add_message(
+        self,
+        thread_id: str,
+        role: str,
+        content: str = "",
+        *,
+        streaming: bool = False,
+        metadata: dict[str, Any] | None = None,
+    ) -> Message:
         async with self._lock:
             thread = self._require_thread(thread_id)
             message = Message.create(thread_id, role, content, streaming=streaming)
+            if metadata:
+                message.metadata.update(metadata)
             thread.add_message(message)
+            await asyncio.to_thread(self.store.save_thread, thread)
+            return message
+
+    async def record_tool_calls(
+        self, thread_id: str, message_id: str, tool_calls: list[dict[str, Any]]
+    ) -> Message:
+        async with self._lock:
+            thread = self._require_thread(thread_id)
+            message = next((item for item in thread.messages if item.id == message_id), None)
+            if message is None:
+                raise LookupError(message_id)
+            existing = message.metadata.setdefault("tool_calls", [])
+            existing.extend(tool_calls)
+            thread.touch()
             await asyncio.to_thread(self.store.save_thread, thread)
             return message
 

@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .domain import Message
 from .observability import log_record
-from .permissions import PermissionService
+from .permissions import PermissionService, ToolDefinition
 from .protocol import new_id
 from .providers import AgentProvider
+from .providers.base import ToolCall
 from .thread_service import ThreadNotFoundError, ThreadService
 from .tools import ToolRegistry
 
 
 EmitEvent = Callable[[str, str, dict[str, Any]], Awaitable[None]]
+
+MAX_TOOL_ITERATIONS = 6
 
 
 @dataclass(slots=True)
@@ -36,6 +39,10 @@ class PendingApproval:
     tool_id: str
     tool_input: dict[str, Any]
     emit: EmitEvent
+    decision: asyncio.Future[str] | None = None
+    call_id: str = ""
+    source: str = "native"
+    server_id: str = ""
 
 
 class AgentCoordinator:
@@ -115,6 +122,11 @@ class AgentCoordinator:
         approval = self._approvals.get(approval_id)
         if approval is None or approval.session_id != session_id:
             return False
+        if approval.decision is not None:
+            self._approvals.pop(approval_id, None)
+            if not approval.decision.done():
+                approval.decision.set_result(decision)
+            return True
         self._approvals.pop(approval_id, None)
         tool = self.tools.get(approval.tool_id)
         if tool is None:
@@ -212,7 +224,9 @@ class AgentCoordinator:
             if approval.session_id == session_id
         ]
         for approval_id in approval_ids:
-            self._approvals.pop(approval_id, None)
+            approval = self._approvals.pop(approval_id, None)
+            if approval is not None and approval.decision is not None and not approval.decision.done():
+                approval.decision.cancel()
 
     async def _drive_provider(self, run: ActiveRun, emit: EmitEvent) -> None:
         sequence = 0
@@ -227,33 +241,62 @@ class AgentCoordinator:
                 run.thread_id,
                 {"message_id": run.message_id, "role": "assistant", "run_id": run.run_id},
             )
-            async for delta in self.provider.stream_reply(thread.messages, run.cancel_event):
-                if run.cancel_event.is_set():
-                    break
-                if first_delta_at is None:
-                    first_delta_at = loop.time()
-                    log_record(
-                        "first_token",
-                        session_id=run.session_id,
-                        thread_id=run.thread_id,
-                        run_id=run.run_id,
-                        latency_ms=round((first_delta_at - started_at) * 1000),
+            tool_specs = self.tools.list_tool_specs() if self.provider.supports_tools else []
+            iterations = 0
+            while True:
+                iterations += 1
+                if iterations > MAX_TOOL_ITERATIONS:
+                    await emit(
+                        "error",
+                        run.thread_id,
+                        {
+                            "code": "tool_loop_limit",
+                            "message": "Tool iteration limit reached for this run",
+                        },
                     )
-                sequence += 1
-                await self.threads.append_delta(run.thread_id, run.message_id, delta)
-                await emit(
-                    "agent.message.delta",
+                    break
+                pending_calls: list[ToolCall] = []
+                async for event in self.provider.stream_turn(thread.messages, tool_specs, run.cancel_event):
+                    if run.cancel_event.is_set():
+                        break
+                    if event.kind == "delta" and event.text:
+                        if first_delta_at is None:
+                            first_delta_at = loop.time()
+                            log_record(
+                                "first_token",
+                                session_id=run.session_id,
+                                thread_id=run.thread_id,
+                                run_id=run.run_id,
+                                latency_ms=round((first_delta_at - started_at) * 1000),
+                            )
+                        sequence += 1
+                        await self.threads.append_delta(run.thread_id, run.message_id, event.text)
+                        await emit(
+                            "agent.message.delta",
+                            run.thread_id,
+                            {
+                                "message_id": run.message_id,
+                                "delta": event.text,
+                                "sequence": sequence,
+                                "run_id": run.run_id,
+                            },
+                        )
+                    elif event.kind == "tool_call" and event.tool_call is not None:
+                        pending_calls.append(event.tool_call)
+                if run.cancel_event.is_set():
+                    await self._finish_cancelled(run, emit)
+                    return
+                if not pending_calls:
+                    break
+                await self.threads.record_tool_calls(
                     run.thread_id,
-                    {
-                        "message_id": run.message_id,
-                        "delta": delta,
-                        "sequence": sequence,
-                        "run_id": run.run_id,
-                    },
+                    run.message_id,
+                    [call.to_wire() for call in pending_calls],
                 )
-            if run.cancel_event.is_set():
-                await self._finish_cancelled(run, emit)
-                return
+                for call in pending_calls:
+                    await self._handle_tool_call(run, call, emit)
+                thread = await self.threads.get_thread(run.thread_id)
+
             await self.threads.complete_message(run.thread_id, run.message_id)
             await self.threads.set_status(run.thread_id, "complete")
             await emit(
@@ -287,6 +330,181 @@ class AgentCoordinator:
             if self._runs.get(run.thread_id) is run:
                 self._runs.pop(run.thread_id, None)
 
+    async def _handle_tool_call(self, run: ActiveRun, call: ToolCall, emit: EmitEvent) -> None:
+        tool = self.tools.get(call.tool_name)
+        if tool is None:
+            message = f"Unknown tool: {call.tool_name}"
+            await self.threads.add_message(
+                run.thread_id,
+                "tool",
+                message,
+                metadata={"tool_call_id": call.call_id, "tool_name": call.tool_name},
+            )
+            await emit(
+                "tool.failed",
+                run.thread_id,
+                {"run_id": run.run_id, "tool_id": call.tool_name, "call_id": call.call_id, "message": message},
+            )
+            return
+        if not self.permissions.may_execute(tool):
+            message = f"Tool is not available: {tool.tool_id}"
+            await self.threads.add_message(
+                run.thread_id,
+                "tool",
+                message,
+                metadata={"tool_call_id": call.call_id, "tool_name": tool.tool_id},
+            )
+            await emit(
+                "tool.failed",
+                run.thread_id,
+                {"run_id": run.run_id, "tool_id": tool.tool_id, "call_id": call.call_id, "message": message},
+            )
+            return
+
+        approval_id = ""
+        if self.permissions.requires_approval(tool):
+            approval_id, decision = await self._request_call_approval(run, call, tool, emit)
+            if decision != "approve":
+                message = f"User denied {tool.tool_id}."
+                await self.threads.add_message(
+                    run.thread_id,
+                    "tool",
+                    message,
+                    metadata={"tool_call_id": call.call_id, "tool_name": tool.tool_id},
+                )
+                await self.threads.set_status(run.thread_id, "working")
+                await emit("agent.status", run.thread_id, {"status": "working", "run_id": run.run_id})
+                await emit(
+                    "tool.failed",
+                    run.thread_id,
+                    {
+                        "approval_id": approval_id,
+                        "run_id": run.run_id,
+                        "tool_id": tool.tool_id,
+                        "call_id": call.call_id,
+                        "message": "Denied by user",
+                    },
+                )
+                self._audit("tool_denied", run, tool_id=tool.tool_id, approval_id=approval_id)
+                return
+        else:
+            await self.threads.set_status(run.thread_id, "working")
+
+        await emit(
+            "tool.running",
+            run.thread_id,
+            {"run_id": run.run_id, "tool_id": tool.tool_id, "call_id": call.call_id},
+        )
+        try:
+            result = await asyncio.wait_for(
+                tool.handler(call.arguments), timeout=tool.timeout_seconds
+            )
+        except Exception as error:
+            message = str(error) or "Tool failed"
+            await self.threads.add_message(
+                run.thread_id,
+                "tool",
+                message,
+                metadata={"tool_call_id": call.call_id, "tool_name": tool.tool_id},
+            )
+            await emit(
+                "tool.failed",
+                run.thread_id,
+                {
+                    "approval_id": approval_id,
+                    "run_id": run.run_id,
+                    "tool_id": tool.tool_id,
+                    "call_id": call.call_id,
+                    "message": message,
+                },
+            )
+            self._audit("tool_failed", run, tool_id=tool.tool_id, approval_id=approval_id)
+            return
+
+        text = str(result.get("message", "Tool completed"))
+        await self.threads.add_message(
+            run.thread_id,
+            "tool",
+            text,
+            metadata={"tool_call_id": call.call_id, "tool_name": tool.tool_id},
+        )
+        await emit(
+            "tool.completed",
+            run.thread_id,
+            {
+                "approval_id": approval_id,
+                "run_id": run.run_id,
+                "tool_id": tool.tool_id,
+                "call_id": call.call_id,
+                "output": result,
+            },
+        )
+        self._audit("tool_completed", run, tool_id=tool.tool_id, approval_id=approval_id)
+
+    async def _request_call_approval(
+        self, run: ActiveRun, call: ToolCall, tool: ToolDefinition, emit: EmitEvent
+    ) -> tuple[str, str]:
+        approval_id = new_id("approval")
+        decision: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        self._approvals[approval_id] = PendingApproval(
+            approval_id=approval_id,
+            session_id=run.session_id,
+            thread_id=run.thread_id,
+            run_id=run.run_id,
+            tool_id=tool.tool_id,
+            tool_input=call.arguments,
+            emit=emit,
+            decision=decision,
+            call_id=call.call_id,
+            source=tool.source,
+            server_id=tool.server_id,
+        )
+        await self.threads.set_status(run.thread_id, "waiting_user")
+        await emit("agent.status", run.thread_id, {"status": "waiting_user", "run_id": run.run_id})
+        await emit(
+            "approval.required",
+            run.thread_id,
+            {
+                "approval_id": approval_id,
+                "run_id": run.run_id,
+                "tool_id": tool.tool_id,
+                "tool_name": tool.description,
+                "summary": f"Allow {tool.description or tool.tool_id}?",
+                "permission_level": tool.permission_level.value,
+                "source": tool.source,
+                "server_id": tool.server_id,
+                "call_id": call.call_id,
+                "impact_preview": dict(tool.impact_preview),
+            },
+        )
+        log_record(
+            "approval_required",
+            session_id=run.session_id,
+            thread_id=run.thread_id,
+            run_id=run.run_id,
+            tool_id=tool.tool_id,
+            source=tool.source,
+        )
+        try:
+            decision_value = await decision
+        except asyncio.CancelledError:
+            self._approvals.pop(approval_id, None)
+            raise
+        return approval_id, decision_value
+
+    def _audit(self, event_type: str, run: ActiveRun, **fields: Any) -> None:
+        store = getattr(self.threads, "store", None)
+        record = getattr(store, "record_audit", None)
+        if record is None:
+            return
+        record(
+            event_type,
+            session_id=run.session_id,
+            thread_id=run.thread_id,
+            run_id=run.run_id,
+            detail=fields,
+        )
+
     async def _finish_cancelled(self, run: ActiveRun, emit: EmitEvent) -> None:
         await self.threads.complete_message(run.thread_id, run.message_id, cancelled=True)
         await self.threads.set_status(run.thread_id, "idle")
@@ -314,7 +532,11 @@ class AgentCoordinator:
             "diagnostics": "system.diagnostics",
             "note": "demo.write_note",
         }
-        tool_id = tool_aliases.get(tool_name.lower(), "demo.write_note")
+        tool_id = tool_aliases.get(tool_name.lower(), "")
+        if not tool_id and self.tools.get(tool_name):
+            tool_id = tool_name
+        if not tool_id:
+            tool_id = "demo.write_note"
         tool_input: dict[str, Any] = {}
         if tool_id == "demo.write_note":
             note_text = argument if tool_name.lower() == "note" else request
@@ -338,6 +560,8 @@ class AgentCoordinator:
             tool_id=tool.tool_id,
             tool_input=tool_input,
             emit=emit,
+            source=tool.source,
+            server_id=tool.server_id,
         )
         await emit("agent.status", thread_id, {"status": "waiting_user", "run_id": run_id})
         await emit(
@@ -353,6 +577,8 @@ class AgentCoordinator:
                     f"({len(str(tool_input.get('text', '')))} characters)?"
                 ),
                 "permission_level": tool.permission_level.value,
+                "source": tool.source,
+                "server_id": tool.server_id,
                 # This deliberately describes the action class, never its arguments.
                 "impact_preview": dict(tool.impact_preview),
             },

@@ -53,6 +53,8 @@ class ServerIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.temporary_directory = TemporaryDirectory()
         settings = Settings(
             database_path=Path(self.temporary_directory.name) / "server.db",
+            workspaces_file=Path(self.temporary_directory.name) / "workspaces.json",
+            mcp_config_path=Path(self.temporary_directory.name) / "mcp.json",
             fake_chunk_delay_seconds=0.001,
         )
         self.application = SpatialAgentServer(settings)

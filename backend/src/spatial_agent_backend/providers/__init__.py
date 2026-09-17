@@ -1,4 +1,10 @@
-from .base import AgentProvider, ProviderConfigurationError
+from .base import (
+    AgentProvider,
+    ProviderConfigurationError,
+    ProviderStreamEvent,
+    ToolCall,
+    ToolSpec,
+)
 from .claude import ClaudeProvider
 from .council import CouncilProvider
 from .fake import FakeProvider
@@ -11,4 +17,7 @@ __all__ = [
     "FakeProvider",
     "OpenAIProvider",
     "ProviderConfigurationError",
+    "ProviderStreamEvent",
+    "ToolCall",
+    "ToolSpec",
 ]
