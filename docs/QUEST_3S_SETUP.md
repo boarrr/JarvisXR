@@ -33,6 +33,37 @@ The plugin is not bundled in this repository because its compiled multi-platform
 
 If `doctor` reports Java or SDK problems, fix them in Godot Editor Settings. It deliberately does not alter machine-wide SDK configuration.
 
+### Troubleshooting the first export
+
+Verified on macOS with Godot 4.7.2, Corretto JDK 17, Android SDK 35/36:
+
+- **"A valid Java SDK path is required in Editor Settings."** `JAVA_HOME` is not
+  enough for the export check. Set Editor Settings → Export → Android →
+  `Java SDK Path` to the JDK 17 home (for example
+  `/Library/Java/JavaVirtualMachines/amazon-corretto-17.jdk/Contents/Home`).
+  The value lives in `~/Library/Application Support/Godot/editor_settings-4.7.tres`.
+  Close the editor before editing that file by hand, or it will overwrite it.
+- **"ETC2/ASTC texture compression is required for Android export."** Rev 2
+  enables `rendering/textures/vram_compression/import_etc2_astc=true` in
+  `project.godot`. If you export an older copy, enable it in Project Settings.
+- **"No project icon specified."** Rev 2 ships `client-godot/icon.svg` and sets
+  `config/icon`. Add any 128×128 icon if you fork the project.
+- **"Trying to build from a gradle built template, but no version info for it
+  exists."** Godot expects the marker at `client-godot/android/.build_version`
+  (the *parent* of `android/build`) containing the template identifier, e.g.
+  `4.7.2.stable`. `Project → Install Android Build Template` writes it; if the
+  headless `quest.sh setup` step idles without writing it (observed when a
+  Godot editor session holds the project, or on some headless runs), create the
+  file by hand:
+
+  ```sh
+  printf '4.7.2.stable\n' > client-godot/android/.build_version
+  ```
+
+  Also make sure `client-godot/android/build/build.gradle` exists; if not,
+  extract `android_source.zip` from the export templates into
+  `client-godot/android/build/`.
+
 The helper honors a JDK-17 `JAVA_HOME` and, on macOS, automatically discovers an installed JDK 17 with `/usr/libexec/java_home -v 17`. It scopes that path to setup/export commands and does not replace the machine's default Java.
 
 ## 3. Start a backend
