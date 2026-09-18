@@ -30,6 +30,7 @@ from .protocol import (
 from .providers import (
     ClaudeProvider,
     CouncilProvider,
+    DeepSeekProvider,
     FakeProvider,
     OpenAIProvider,
     ProviderConfigurationError,
@@ -94,6 +95,11 @@ class SpatialAgentServer:
         elif settings.provider == "claude":
             self.provider = ClaudeProvider(
                 model=settings.anthropic_model,
+                max_output_tokens=settings.max_output_tokens,
+            )
+        elif settings.provider == "deepseek":
+            self.provider = DeepSeekProvider(
+                model=settings.deepseek_model,
                 max_output_tokens=settings.max_output_tokens,
             )
         elif settings.provider == "openai":
@@ -535,7 +541,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--database", type=Path, help="Override SPATIAL_AGENT_DB")
     parser.add_argument(
         "--provider",
-        choices=("fake", "claude", "openai", "council"),
+        choices=("fake", "claude", "openai", "deepseek", "council"),
         help="Override SPATIAL_AGENT_PROVIDER",
     )
     return parser

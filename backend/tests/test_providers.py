@@ -12,10 +12,12 @@ from spatial_agent_backend.permissions import PermissionLevel, PermissionService
 from spatial_agent_backend.providers import (
     ClaudeProvider,
     CouncilProvider,
+    DeepSeekProvider,
     FakeProvider,
     OpenAIProvider,
     ProviderConfigurationError,
 )
+from spatial_agent_backend.providers.base import ToolSpec
 
 
 class StubProvider:
@@ -98,6 +100,48 @@ class FakeResponsesResource:
 class FakeOpenAIClient:
     def __init__(self) -> None:
         self.responses = FakeResponsesResource()
+
+
+class FakeChatCompletionsStream:
+    def __init__(self, chunks: list) -> None:
+        self._chunks = chunks
+
+    def __aiter__(self):
+        return self._iterate()
+
+    async def _iterate(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class FakeChatCompletionsResource:
+    def __init__(self, chunks: list) -> None:
+        self.chunks = chunks
+        self.request: dict = {}
+
+    async def create(self, **request):
+        self.request = request
+        return FakeChatCompletionsStream(self.chunks)
+
+
+class FakeChatClient:
+    def __init__(self, chunks: list) -> None:
+        self.chat = SimpleNamespace(
+            completions=FakeChatCompletionsResource(chunks)
+        )
+
+
+def chat_chunk(content: str | None = None, tool_calls: list | None = None):
+    delta = SimpleNamespace(content=content, tool_calls=tool_calls)
+    return SimpleNamespace(choices=[SimpleNamespace(delta=delta)])
+
+
+def tool_delta(index: int, call_id: str | None, name: str | None, arguments: str | None):
+    return SimpleNamespace(
+        index=index,
+        id=call_id,
+        function=SimpleNamespace(name=name, arguments=arguments),
+    )
 
 
 async def no_op_handler(_tool_input: dict) -> dict:
@@ -215,6 +259,122 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertNotIn("temperature", client.responses.request)
+
+    async def test_deepseek_provider_normalizes_chat_stream(self) -> None:
+        client = FakeChatClient(
+            [
+                chat_chunk(content="deepseek "),
+                chat_chunk(content="reply"),
+            ]
+        )
+        provider = DeepSeekProvider(
+            model="deepseek-chat", max_output_tokens=512, client=client
+        )
+        messages = [
+            Message.create("thread_test", "system", "Be precise"),
+            Message.create("thread_test", "user", "Show the trace"),
+        ]
+        chunks = [
+            chunk async for chunk in provider.stream_reply(messages, asyncio.Event())
+        ]
+        self.assertEqual(chunks, ["deepseek ", "reply"])
+        request = client.chat.completions.request
+        self.assertEqual(request["model"], "deepseek-chat")
+        self.assertEqual(request["max_tokens"], 512)
+        self.assertTrue(request["stream"])
+        self.assertEqual(
+            request["messages"],
+            [
+                {"role": "system", "content": "Be precise"},
+                {"role": "user", "content": "Show the trace"},
+            ],
+        )
+
+    async def test_deepseek_provider_emits_tool_calls(self) -> None:
+        client = FakeChatClient(
+            [
+                chat_chunk(
+                    tool_calls=[
+                        tool_delta(0, "call_1", "mcp.fixture.echo", '{"text": ')
+                    ]
+                ),
+                chat_chunk(tool_calls=[tool_delta(0, None, None, '"hi"}')]),
+            ]
+        )
+        provider = DeepSeekProvider(
+            model="deepseek-chat", max_output_tokens=128, client=client
+        )
+        tools = [
+            ToolSpec(
+                name="mcp.fixture.echo",
+                description="Echo",
+                input_schema={"type": "object"},
+            )
+        ]
+        events = [
+            event
+            async for event in provider.stream_turn(
+                [Message.create("thread_test", "user", "echo this")],
+                tools,
+                asyncio.Event(),
+            )
+        ]
+        tool_events = [event for event in events if event.kind == "tool_call"]
+        self.assertEqual(len(tool_events), 1)
+        call = tool_events[0].tool_call
+        self.assertEqual(call.call_id, "call_1")
+        self.assertEqual(call.tool_name, "mcp.fixture.echo")
+        self.assertEqual(call.arguments, {"text": "hi"})
+        self.assertEqual(events[-1].kind, "done")
+        self.assertEqual(
+            client.chat.completions.request["tools"],
+            [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "mcp.fixture.echo",
+                        "description": "Echo",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+        )
+
+    def test_deepseek_maps_tool_history_to_chat_format(self) -> None:
+        provider = DeepSeekProvider(
+            model="deepseek-chat", max_output_tokens=64, client=FakeChatClient([])
+        )
+        assistant = Message.create("thread_test", "assistant", "")
+        assistant.metadata = {
+            "tool_calls": [
+                {
+                    "call_id": "call_1",
+                    "name": "mcp.fixture.echo",
+                    "arguments": {"text": "hi"},
+                }
+            ]
+        }
+        tool = Message.create("thread_test", "tool", "echo: hi")
+        tool.metadata = {"tool_call_id": "call_1", "tool_name": "mcp.fixture.echo"}
+        messages = provider._chat_messages([assistant, tool])
+        self.assertEqual(messages[0]["tool_calls"][0]["id"], "call_1")
+        self.assertIsNone(messages[0]["content"])
+        self.assertEqual(
+            messages[1],
+            {"role": "tool", "tool_call_id": "call_1", "content": "echo: hi"},
+        )
+
+    def test_deepseek_provider_requires_backend_only_secret(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(ProviderConfigurationError):
+                DeepSeekProvider(model="deepseek-chat", max_output_tokens=128)
+
+    @unittest.skipUnless(importlib.util.find_spec("openai"), "OpenAI extra is not installed")
+    def test_installed_deepseek_adapter_constructs_without_network_access(self) -> None:
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-only-key"}, clear=True):
+            provider = DeepSeekProvider(model="deepseek-chat", max_output_tokens=128)
+        self.assertEqual(provider.name, "deepseek")
+        self.assertEqual(provider.model, "deepseek-chat")
 
     @unittest.skipUnless(importlib.util.find_spec("anthropic"), "Claude extra is not installed")
     def test_installed_claude_adapter_constructs_without_network_access(self) -> None:

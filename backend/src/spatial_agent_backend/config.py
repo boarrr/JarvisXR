@@ -60,6 +60,7 @@ class Settings:
     provider: str = "fake"
     anthropic_model: str = "claude-sonnet-5"
     openai_model: str = "gpt-6-astra"
+    deepseek_model: str = "deepseek-chat"
     max_output_tokens: int = 1024
     max_packet_bytes: int = 1_048_576
     commands_per_minute: int = 120
@@ -87,6 +88,7 @@ class Settings:
             provider=os.getenv("SPATIAL_AGENT_PROVIDER", "fake").strip().lower(),
             anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5"),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-6-astra"),
+            deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
             max_output_tokens=int(os.getenv("SPATIAL_AGENT_MAX_OUTPUT_TOKENS", "1024")),
             max_packet_bytes=int(os.getenv("SPATIAL_AGENT_MAX_PACKET_BYTES", "1048576")),
             commands_per_minute=int(os.getenv("SPATIAL_AGENT_COMMANDS_PER_MINUTE", "120")),
@@ -103,9 +105,10 @@ class Settings:
         )
 
     def validate(self) -> None:
-        if self.provider not in {"fake", "claude", "openai", "council"}:
+        if self.provider not in {"fake", "claude", "openai", "deepseek", "council"}:
             raise ValueError(
-                "SPATIAL_AGENT_PROVIDER must be 'fake', 'claude', 'openai', or 'council'"
+                "SPATIAL_AGENT_PROVIDER must be 'fake', 'claude', 'openai', "
+                "'deepseek', or 'council'"
             )
         if not 1 <= self.port <= 65535:
             raise ValueError("SPATIAL_AGENT_PORT must be between 1 and 65535")

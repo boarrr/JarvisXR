@@ -1,6 +1,6 @@
 # Spatial Agent XR
 
-A Quest-ready Godot 4.7 spatial agent workbench with a complete desktop simulator. Eight data-driven agent orbs run out of the box in offline mode; the same client can connect to the included local WebSocket backend for persistent threads, streaming responses, cancellation, safe telemetry, approval-gated tools, OpenAI, Claude, or an explicit dual-provider Council mode.
+A Quest-ready Godot 4.7 spatial agent workbench with a complete desktop simulator. Eight data-driven agent orbs run out of the box in offline mode; the same client can connect to the included local WebSocket backend for persistent threads, streaming responses, cancellation, safe telemetry, approval-gated tools, OpenAI, Claude, DeepSeek, or an explicit dual-provider Council mode.
 
 > **Rev 2 (spatial dev cockpit):** the headset is now a terminal for a companion daemon that owns the workspace. Agents work in isolated `git worktree` branches, MCP servers (filesystem, git, shell, browser, GitHub) expose real tools behind the approval gate, LAN devices pair with a short code over TLS, and new cockpit panels cover workspace state, diff review, file browsing, and daemon settings. See [Spatial Dev Cockpit](docs/SPATIAL_DEV_COCKPIT.md) and the new ADRs in [Decisions](docs/DECISIONS.md).
 
@@ -14,7 +14,7 @@ A Quest-ready Godot 4.7 spatial agent workbench with a complete desktop simulato
 - Vim-inspired floating code trace with streamed fenced-code extraction, line numbers, syntax highlighting, minimap, semantic scrolling, and a bounded animated 3D sculpture for fenced diffs.
 - Keyboard composer and commands for create, focus, rename, archive, cancel, list, and the safe tool demonstration.
 - Versioned provider-neutral WebSocket protocol, reconnection with snapshot restoration, packet limits, strict command validation, and per-session rate limiting.
-- SQLite persistence and a provider abstraction with deterministic fake, OpenAI Responses, Claude, and explicit OpenAI+Claude Council adapters.
+- SQLite persistence and a provider abstraction with deterministic fake, OpenAI Responses, Claude, DeepSeek chat completions, and explicit OpenAI+Claude Council adapters.
 - Explicit backend-authoritative approval UI with modal world-space Approve/Deny pinch targets and a content-blind **Ghost Future** showing route, scope, side effects, and reversibility before consent. The included `demo.write_note` tool is simulated and makes no external change.
 - Privacy-oriented local push-to-talk boundary using `whisper.cpp`; microphone audio is not sent over WebSocket and temporary recordings are deleted by default.
 - A real `XROrigin3D`/`XRCamera3D` runtime that activates only when OpenXR is initialized, with optical-hand-only joint polling, stabilized hand ray, thumb-index pinch hysteresis, pinch-drag code scrolling, and two-hand Code Trace transforms. Controller-inferred skeletons are rejected.
@@ -118,7 +118,7 @@ backend_mode="websocket"
 backend_websocket_url="ws://127.0.0.1:8787/ws"
 ```
 
-The backend binds to loopback and writes `backend/data/spatial_agent.db` by default. Copy `backend/.env.example` to `backend/.env` and select `fake`, `openai`, `claude`, or `council`. Council requires both keys, sends eligible context to both providers, and can roughly double provider cost. Provider keys never enter Godot or the APK. See [backend setup](backend/README.md).
+The backend binds to loopback and writes `backend/data/spatial_agent.db` by default. Copy `backend/.env.example` to `backend/.env` and select `fake`, `openai`, `claude`, `deepseek`, or `council`. Council requires both keys, sends eligible context to both providers, and can roughly double provider cost. Provider keys never enter Godot or the APK. See [backend setup](backend/README.md).
 
 ## Optional local voice
 
@@ -139,7 +139,7 @@ Hold V while speaking and release it to transcribe. Recognition runs as a child 
 
 - Fake mode is fully offline.
 - Local-backend mode stores conversation text in an unencrypted local SQLite file.
-- OpenAI and Claude modes send prompt text and conversation context to the selected provider; both are opt-in and require backend-only environment keys.
+- OpenAI, Claude, and DeepSeek modes send prompt text and conversation context to the selected provider; all are opt-in and require backend-only environment keys.
 - Council mode sends the same eligible context to both OpenAI and Anthropic, displays the two perspectives separately, applies no hidden tie-break, and may roughly double token/API cost.
 - Local voice temporarily writes a WAV under Godot's per-user data directory, then deletes it after transcription unless retention is explicitly enabled.
 - Backend logs contain identifiers, event types, timing, and error classes—not prompt bodies or credentials.

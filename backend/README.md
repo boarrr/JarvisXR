@@ -21,13 +21,14 @@ The default endpoint is `ws://127.0.0.1:8787/ws`; the default database is `data/
 
 The `.env` loader accepts literal `KEY=VALUE` pairs and never executes shell expansion. Existing process environment variables take precedence. `.env` is ignored by Git.
 
-## OpenAI, Claude, or Council
+## OpenAI, Claude, DeepSeek, or Council
 
 Install one hosted SDK or both:
 
 ```sh
 .venv/bin/python -m pip install -e '.[openai]'
 .venv/bin/python -m pip install -e '.[claude]'
+.venv/bin/python -m pip install -e '.[deepseek]'
 # or
 .venv/bin/python -m pip install -e '.[hosted]'
 ```
@@ -48,6 +49,14 @@ Claude configuration:
 SPATIAL_AGENT_PROVIDER=claude
 ANTHROPIC_API_KEY=your-api-key
 ANTHROPIC_MODEL=claude-sonnet-5
+```
+
+DeepSeek configuration (OpenAI-compatible chat completions, tool calling supported):
+
+```dotenv
+SPATIAL_AGENT_PROVIDER=deepseek
+DEEPSEEK_API_KEY=your-api-key
+DEEPSEEK_MODEL=deepseek-chat
 ```
 
 Start the backend after editing `.env`:
@@ -77,12 +86,14 @@ Council runs both provider adapters concurrently against the same eligible conve
 | `SPATIAL_AGENT_HOST` | `127.0.0.1` | Bind address |
 | `SPATIAL_AGENT_PORT` | `8787` | WebSocket port |
 | `SPATIAL_AGENT_DB` | `data/spatial_agent.db` | SQLite path |
-| `SPATIAL_AGENT_PROVIDER` | `fake` | `fake`, `openai`, `claude`, or `council` |
+| `SPATIAL_AGENT_PROVIDER` | `fake` | `fake`, `openai`, `claude`, `deepseek`, or `council` |
 | `SPATIAL_AGENT_ENV_FILE` | `.env` | Optional path to a different literal environment file |
 | `OPENAI_API_KEY` | none | Backend-only OpenAI API key |
 | `OPENAI_MODEL` | `gpt-6-astra` | OpenAI model ID |
 | `ANTHROPIC_API_KEY` | none | Backend-only Anthropic API key |
 | `ANTHROPIC_MODEL` | `claude-sonnet-5` | Claude model ID |
+| `DEEPSEEK_API_KEY` | none | Backend-only DeepSeek API key |
+| `DEEPSEEK_MODEL` | `deepseek-chat` | DeepSeek model ID |
 | `SPATIAL_AGENT_MAX_OUTPUT_TOKENS` | `1024` | Provider output ceiling |
 | `SPATIAL_AGENT_MAX_PACKET_BYTES` | `1048576` | Incoming WebSocket frame ceiling |
 | `SPATIAL_AGENT_COMMANDS_PER_MINUTE` | `120` | Per-session command limit |

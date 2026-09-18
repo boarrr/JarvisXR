@@ -18,6 +18,9 @@ claude = [
 openai = [
   "openai>=2.0,<3",
 ]
+deepseek = [
+  "openai>=2.0,<3",
+]
 hosted = [
   "anthropic==1.5.0",
   "openai>=2.0,<3",

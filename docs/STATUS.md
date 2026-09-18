@@ -24,6 +24,7 @@ Local rendered checks at 1440×900, Balanced (2× MSAA), full 3D scale and the 6
 | Tool approval blocks execution | Complete | Fake and real-backend integration tests; modal exposes separate hand-pinch Approve/Deny targets and blocks lower-priority surfaces |
 | Claude provider streams normalized text | Implemented; credential-dependent | Official async SDK adapter constructs in test; a live API request was not made because no user key was supplied |
 | OpenAI provider streams normalized text | Implemented; credential-dependent | Responses API adapter and installed SDK construct in tests; a live API request was not made because no user key was supplied |
+| DeepSeek provider streams normalized text and tool calls | Implemented; credential-dependent | Chat-completions adapter with streamed text, tool-call accumulation, and tool history mapping covered by fake-client tests; a live API request was not made because no user key was supplied |
 | OpenAI + Claude Council | Complete in code; credential-dependent | Both adapters run concurrently, cancellation is shared, labelled perspectives remain separate, and Cognition shows dual hosted egress; live calls require both user keys |
 | Push-to-talk voice routes to focus | Implemented; hardware-dependent | Local asynchronous speech boundary and routing are tested with a process fixture; a real microphone/model was not exercised by automation |
 | No client provider secret | Complete | Provider import/key lookup exists only in backend |

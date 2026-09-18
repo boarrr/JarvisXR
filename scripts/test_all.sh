@@ -14,6 +14,24 @@ if [ ! -x "$backend_python" ]; then
 	exit 2
 fi
 
+# The pinned Godot OpenXR Vendors GDExtension (required for the Quest export)
+# segfaults headless Godot 4.7.2 runs. Stash it for the duration of the test
+# run; the trap below restores it, so export helpers are unaffected.
+vendor_addon="$project_root/client-godot/addons/godotopenxrvendors"
+vendor_stash="$project_root/client-godot/addons/.godotopenxrvendors.test-stash"
+vendor_stashed=0
+if [ -d "$vendor_addon" ]; then
+	mv "$vendor_addon" "$vendor_stash"
+	vendor_stashed=1
+fi
+restore_vendor_addon() {
+	if [ "$vendor_stashed" -eq 1 ] && [ -d "$vendor_stash" ]; then
+		mv "$vendor_stash" "$vendor_addon"
+		vendor_stashed=0
+	fi
+}
+trap restore_vendor_addon EXIT INT TERM
+
 cd "$project_root/backend"
 # Always test this checkout, including in environments that ignore editable
 # installation .pth files. The venv still supplies the pinned dependencies.
@@ -66,7 +84,7 @@ cleanup() {
 		rm -rf "$test_data_dir"
 	fi
 }
-trap cleanup EXIT INT TERM
+trap 'cleanup; restore_vendor_addon' EXIT INT TERM
 
 wait_for_fixture() {
 	attempt=0

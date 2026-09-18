@@ -40,7 +40,7 @@ class ConfigurationTests(unittest.TestCase):
                 self.assertEqual(Settings.from_environment().provider, "fake")
 
     def test_all_supported_providers_validate(self) -> None:
-        for provider in ("fake", "claude", "openai", "council"):
+        for provider in ("fake", "claude", "openai", "deepseek", "council"):
             Settings(provider=provider).validate()
 
     def test_non_loopback_bind_requires_auth_and_tls(self) -> None:
