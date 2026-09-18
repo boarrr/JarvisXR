@@ -63,6 +63,12 @@ Verified on macOS with Godot 4.7.2, Corretto JDK 17, Android SDK 35/36:
   Also make sure `client-godot/android/build/build.gradle` exists; if not,
   extract `android_source.zip` from the export templates into
   `client-godot/android/build/`.
+- **Everything is suddenly slow or hangs (EXPORT, pip, backend startup).**
+  macOS XProtect scans every library a process loads; when
+  `XProtectRemediator*` processes are running, first launches can stall for
+  minutes (observed with load average > 15). Wait for those processes to
+  finish (Activity Monitor) and retry. This affected `pip install` and the
+  Python daemon startup, not the code.
 
 The helper honors a JDK-17 `JAVA_HOME` and, on macOS, automatically discovers an installed JDK 17 with `/usr/libexec/java_home -v 17`. It scopes that path to setup/export commands and does not replace the machine's default Java.
 
@@ -110,7 +116,8 @@ Once the headset has finished its first-run setup with the controllers:
    *Always allow from this computer* inside the headset.
 3. Confirm `adb devices` shows the serial as `device` (not `unauthorized`).
 4. Start the backend from the project copy:
-   `backend/.venv/bin/spatial-agent-backend` (loopback, fake provider is fine).
+   `./scripts/run_backend.sh` (equivalent to `backend/.venv/bin/spatial-agent-backend`,
+   but sets `PYTHONPATH` so it does not depend on pip's editable install state).
 5. Run `./scripts/quest.sh deploy` — exports, installs the APK, and maps
    `tcp:8787` to the Mac.
 6. Launch **Spatial Agent XR** from Library → Unknown Sources. The project

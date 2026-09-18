@@ -11,9 +11,9 @@ config_version=5
 [application]
 
 config/name="Spatial Agent XR"
-config/icon="res://icon.svg"
 run/main_scene="res://scenes/app/main.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
+config/icon="res://icon.svg"
 
 [audio]
 
@@ -153,7 +153,6 @@ code_go_bottom={
 [rendering]
 
 renderer/rendering_method="mobile"
-renderer/rendering_method.mobile="mobile"
 textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0.012, 0.016, 0.024, 1)
 
