@@ -124,7 +124,24 @@ export_debug() {
 		printf '%s\n' "JDK 17 was not found. Install it or set JAVA_HOME to its Home directory." >&2
 		exit 2
 	fi
+	# The Android build template must stay invisible to Godot's importer:
+	# generated .import sidecars break the Gradle resource merger.
+	mkdir -p "$client_root/android"
+	: > "$client_root/android/.gdignore"
+	find "$client_root/android" -name "*.import" -delete 2>/dev/null || true
+	apk_timestamp_before=$(stat -f %m "$apk_path" 2>/dev/null || printf '0')
+	set +e
 	JAVA_HOME="$java17_home" "$godot_bin" --headless --path "$client_root" --export-debug "Quest 3/3S" "$apk_path"
+	export_status=$?
+	set -e
+	apk_timestamp_after=$(stat -f %m "$apk_path" 2>/dev/null || printf '0')
+	if [ "$apk_timestamp_after" = "$apk_timestamp_before" ]; then
+		printf '%s\n' "Export did not produce a fresh APK (Godot exit code $export_status)." >&2
+		exit 1
+	fi
+	if [ "$export_status" -ne 0 ]; then
+		printf '%s\n' "Note: Godot exited with code $export_status after writing the APK (known OpenXR vendor plugin shutdown crash); the APK is fresh."
+	fi
 	printf '%s\n' "Exported: $apk_path"
 }
 

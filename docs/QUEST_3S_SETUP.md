@@ -69,6 +69,21 @@ Verified on macOS with Godot 4.7.2, Corretto JDK 17, Android SDK 35/36:
   minutes (observed with load average > 15). Wait for those processes to
   finish (Activity Monitor) and retry. This affected `pip install` and the
   Python daemon startup, not the code.
+- **"Building of Android project failed" with `gradlew: Operation timed out`.**
+  The first cold Gradle build can take 8+ minutes (dependency downloads, native
+  packaging) and exceeds Godot's internal wait. Warm it once before exporting:
+
+  ```sh
+  cd client-godot/android/build
+  JAVA_HOME=$(/usr/libexec/java_home -v 17) ANDROID_HOME=~/Library/Android/sdk \
+    ./gradlew assembleDebug
+  ```
+
+  Incremental exports after that finish in about a minute.
+- **Gradle resource merge fails on `*.webp.import` files.** Godot's importer
+  scanned `client-godot/android/` and wrote `.import` sidecars into the Gradle
+  resource folders. `quest.sh export` now deletes them and keeps a
+  `client-godot/android/.gdignore` marker; never remove that file.
 
 The helper honors a JDK-17 `JAVA_HOME` and, on macOS, automatically discovers an installed JDK 17 with `/usr/libexec/java_home -v 17`. It scopes that path to setup/export commands and does not replace the machine's default Java.
 

@@ -18,7 +18,8 @@ var _button_edges: Array[Vector2i] = []
 func _ready() -> void:
 	super._ready()
 	source_name = "hand_lab"
-	ray_smoothing = 1.0
+	origin_smoothing = 1.0
+	direction_smoothing = 1.0
 	process_physics_priority = -10
 
 

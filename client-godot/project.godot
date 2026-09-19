@@ -176,5 +176,6 @@ openxr/startup_alert=false
 openxr/extensions/hand_tracking=true
 openxr/extensions/hand_tracking_unobstructed_data_source=true
 openxr/extensions/hand_interaction_profile=true
+openxr/extensions/meta/passthrough=true
 openxr/enabled.android=true
 shaders/enabled.android=true

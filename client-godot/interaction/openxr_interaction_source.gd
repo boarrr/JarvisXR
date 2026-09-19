@@ -39,12 +39,25 @@ const REQUIRED_POSITION_FLAGS := (
 	| XRHandTracker.HAND_JOINT_FLAG_POSITION_TRACKED
 )
 
+# Optional joints rendered as hand markers and used to stabilize the index ray.
+const MARKER_JOINTS := {
+	"wrist": XRHandTracker.HAND_JOINT_WRIST,
+	"palm": XRHandTracker.HAND_JOINT_PALM,
+	"thumb_tip": XRHandTracker.HAND_JOINT_THUMB_TIP,
+	"index_proximal": XRHandTracker.HAND_JOINT_INDEX_FINGER_PHALANX_PROXIMAL,
+	"index_tip": XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP,
+	"middle_tip": XRHandTracker.HAND_JOINT_MIDDLE_FINGER_TIP,
+	"ring_tip": XRHandTracker.HAND_JOINT_RING_FINGER_TIP,
+	"pinky_tip": XRHandTracker.HAND_JOINT_PINKY_FINGER_TIP,
+}
+
 @export var xr_origin_path: NodePath
 @export_enum("right", "left") var preferred_hand: String = "right"
-@export_range(0.008, 0.06, 0.001) var pinch_begin_distance: float = 0.024
-@export_range(0.012, 0.08, 0.001) var pinch_release_distance: float = 0.036
+@export_range(0.008, 0.06, 0.001) var pinch_begin_distance: float = 0.028
+@export_range(0.012, 0.08, 0.001) var pinch_release_distance: float = 0.040
 @export_range(0.002, 0.05, 0.001) var scroll_step_metres: float = 0.012
-@export_range(0.05, 1.0, 0.05) var ray_smoothing: float = 0.42
+@export_range(0.1, 0.9, 0.01) var origin_smoothing: float = 0.4
+@export_range(0.1, 0.9, 0.01) var direction_smoothing: float = 0.22
 
 var _session_active: bool = false
 var _has_tracking_data: bool = false
@@ -162,18 +175,31 @@ func _sample_for_hand(hand_name: String) -> Dictionary:
 		return {}
 
 	var origin_transform := _xr_origin.global_transform if _xr_origin != null else Transform3D.IDENTITY
+	var joints: Dictionary = {}
+	for joint_name in MARKER_JOINTS:
+		var joint_index: int = MARKER_JOINTS[joint_name]
+		if _joint_has_tracked_position(tracker, joint_index):
+			joints[joint_name] = (
+				origin_transform * tracker.get_hand_joint_transform(joint_index)
+			).origin
 	return {
 		"hand_name": hand_name,
 		"palm_transform": origin_transform * tracker.get_hand_joint_transform(XRHandTracker.HAND_JOINT_PALM),
 		"thumb_tip": origin_transform * tracker.get_hand_joint_transform(XRHandTracker.HAND_JOINT_THUMB_TIP).origin,
 		"index_distal": origin_transform * tracker.get_hand_joint_transform(XRHandTracker.HAND_JOINT_INDEX_FINGER_PHALANX_DISTAL).origin,
 		"index_tip": origin_transform * tracker.get_hand_joint_transform(XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP).origin,
+		"index_proximal": joints.get("index_proximal", Vector3.ZERO),
+		"joints": joints,
 	}
 
 
 func get_latest_hand_sample(hand_name: String) -> Dictionary:
 	var sample: Dictionary = _latest_hand_samples.get(hand_name, {})
 	return sample.duplicate(true)
+
+
+func is_hand_pinching(hand_name: String) -> bool:
+	return bool(_hand_pinch_states.get(hand_name, false))
 
 
 func _tracker_is_usable(tracker: XRHandTracker) -> bool:
@@ -194,9 +220,18 @@ func _apply_joint_sample(sample: Dictionary) -> bool:
 	var hand_name := str(sample.get("hand_name", ""))
 	var index_tip := sample.get("index_tip", Vector3.ZERO) as Vector3
 	var index_distal := sample.get("index_distal", Vector3.ZERO) as Vector3
+	var index_proximal := sample.get("index_proximal", Vector3.ZERO) as Vector3
 	var thumb_tip := sample.get("thumb_tip", Vector3.ZERO) as Vector3
 	var palm_transform := sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D
+	# A longer baseline (proximal to tip) is far more stable than the ~2 cm
+	# distal-to-tip segment, which amplifies joint jitter into ray noise.
+	# Synthetic samples without tracked joints keep the distal baseline.
+	var joints: Dictionary = sample.get("joints", {})
 	var direction := index_tip - index_distal
+	if joints.has("index_proximal"):
+		var candidate := index_tip - index_proximal
+		if candidate.length_squared() >= 0.0004:
+			direction = candidate
 	if hand_name.is_empty() or direction.length_squared() < 0.000016:
 		_reset_tracking()
 		return false
@@ -217,8 +252,8 @@ func _apply_joint_sample(sample: Dictionary) -> bool:
 	)
 	var ray_direction := direction.normalized()
 	if _has_smoothed_ray:
-		_pointer_state.origin = _pointer_state.origin.lerp(index_tip, ray_smoothing)
-		_pointer_state.direction = _pointer_state.direction.lerp(ray_direction, ray_smoothing).normalized()
+		_pointer_state.origin = _pointer_state.origin.lerp(index_tip, origin_smoothing)
+		_pointer_state.direction = _pointer_state.direction.lerp(ray_direction, direction_smoothing).normalized()
 	else:
 		_pointer_state.origin = index_tip
 		_pointer_state.direction = ray_direction
