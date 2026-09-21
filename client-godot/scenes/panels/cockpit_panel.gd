@@ -142,7 +142,8 @@ func make_button(root: Control, rect: Rect2, text: String, target_id: String, ac
 	label.add_theme_color_override("font_color", Color(0.85, 1, 1, 1))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(label)
-	add_screen_target(target_id, rect)
+	var target := add_screen_target(target_id, rect)
+	panel.set_meta("interaction_target", target)
 	return panel
 
 

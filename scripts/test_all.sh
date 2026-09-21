@@ -59,6 +59,7 @@ for scene in \
 	cockpit_transport_smoke \
 	cockpit_panels_smoke \
 	standing_orbit_smoke \
+	daemon_config_smoke \
 	backend_client_smoke \
 	command_and_approval_smoke \
 	speech_service_smoke \

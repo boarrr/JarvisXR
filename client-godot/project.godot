@@ -162,6 +162,7 @@ desktop_hand_lab=true
 backend_mode="fake"
 backend_mode.android="websocket"
 backend_websocket_url="ws://127.0.0.1:8787/ws"
+allow_unsafe_tls=false
 speech_enabled=false
 whisper_cli_path="whisper-cli"
 whisper_model_path=""

@@ -99,10 +99,10 @@ func _configure_backend_transport() -> bool:
 	var transport: BackendTransport = _fake_backend_transport
 	match configured_mode:
 		"websocket":
-			_websocket_backend_client.websocket_url = str(ProjectSettings.get_setting(
+			_websocket_backend_client.set_default_url(str(ProjectSettings.get_setting(
 				"spatial_agent/backend_websocket_url",
 				"ws://127.0.0.1:8787/ws"
-			))
+			)))
 			transport = _websocket_backend_client
 		"fake":
 			transport = _fake_backend_transport
@@ -178,9 +178,8 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_file_viewer.activate_entry(event.target_id.trim_prefix("file:dir:"), true)
 			elif event.target_id.begins_with("file:file:"):
 				_file_viewer.activate_entry(event.target_id.trim_prefix("file:file:"), false)
-			elif event.target_id == "daemon:refresh":
-				_backend_bridge.send_command("workspace.list", {})
-				_backend_bridge.send_command("tool.catalog", {})
+			elif event.target_id.begins_with("daemon:"):
+				_daemon_settings_panel.handle_action(event.target_id)
 			elif event.target_id.begins_with("palm_screen:"):
 				_palm_console.handle_screen_action(event.target_id)
 			elif event.target_id == "palm:privacy_toggle":

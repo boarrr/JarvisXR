@@ -2,9 +2,12 @@ class_name BackendClient
 extends BackendTransport
 
 const TOKEN_CONFIG_PATH := "user://daemon_auth.cfg"
+const DAEMON_CONFIG_PATH := "user://daemon.cfg"
 
 @export var websocket_url: String = "ws://127.0.0.1:8787/ws"
 @export var auth_token: String = ""
+@export var ca_certificate_path: String = ""
+@export var allow_unsafe_tls: bool = false
 @export_range(1024, 4_194_304, 1024) var max_packet_bytes: int = 1_048_576
 @export var auto_reconnect: bool = true
 @export_range(0.05, 30.0, 0.05) var reconnect_initial_delay_seconds: float = 0.25
@@ -19,10 +22,11 @@ var _stopping: bool = false
 var _reconnect_attempt: int = 0
 var _reconnect_remaining_seconds: float = -1.0
 var _protocol_version: int = BackendEvent.PROTOCOL_VERSION
+var _url_from_config: bool = false
 
 
 func _ready() -> void:
-	_load_auth_token()
+	_load_daemon_config()
 	set_process(false)
 
 
@@ -77,7 +81,7 @@ func _connect_socket() -> void:
 	_has_opened = false
 	_session_id = ""
 	_set_connection_state(STATE_CONNECTING)
-	var result := _socket.connect_to_url(websocket_url)
+	var result := _socket.connect_to_url(websocket_url, build_tls_options(websocket_url))
 	if result != OK:
 		_socket = null
 		_set_connection_state(STATE_ERROR)
@@ -126,6 +130,39 @@ func get_protocol_version() -> int:
 	return _protocol_version
 
 
+func set_default_url(url: String) -> void:
+	# Project settings supply the wiring default; a daemon.cfg URL wins so a
+	# headset can be repointed at a LAN daemon without a re-export.
+	if not _url_from_config and not url.is_empty():
+		websocket_url = url
+
+
+func build_tls_options(url: String) -> TLSOptions:
+	if not url.begins_with("wss://"):
+		return null
+	var certificate := _load_certificate()
+	if certificate != null:
+		return TLSOptions.client(certificate)
+	if (
+		allow_unsafe_tls
+		or bool(ProjectSettings.get_setting("spatial_agent/allow_unsafe_tls", false))
+	):
+		return TLSOptions.client_unsafe()
+	return null
+
+
+func _load_certificate() -> X509Certificate:
+	if ca_certificate_path.is_empty():
+		return null
+	var path := ca_certificate_path
+	if not (path.begins_with("user://") or path.begins_with("res://")):
+		path = "user://%s" % path.get_file()
+	var certificate := X509Certificate.new()
+	if certificate.load(path) != OK:
+		return null
+	return certificate
+
+
 func _hello_payload() -> Dictionary:
 	var payload := {
 		"client": "godot",
@@ -136,6 +173,29 @@ func _hello_payload() -> Dictionary:
 	return payload
 
 
+func _load_daemon_config() -> void:
+	var config := ConfigFile.new()
+	if config.load(DAEMON_CONFIG_PATH) == OK:
+		var configured_url := str(config.get_value("daemon", "websocket_url", ""))
+		if not configured_url.is_empty():
+			websocket_url = configured_url
+			_url_from_config = true
+		auth_token = str(config.get_value("daemon", "auth_token", auth_token))
+		ca_certificate_path = str(
+			config.get_value("daemon", "ca_certificate_path", ca_certificate_path)
+		)
+		return
+	_load_auth_token()
+
+
+func _save_daemon_config() -> void:
+	var config := ConfigFile.new()
+	config.set_value("daemon", "websocket_url", websocket_url)
+	config.set_value("daemon", "auth_token", auth_token)
+	config.set_value("daemon", "ca_certificate_path", ca_certificate_path)
+	config.save(DAEMON_CONFIG_PATH)
+
+
 func _load_auth_token() -> void:
 	var config := ConfigFile.new()
 	if config.load(TOKEN_CONFIG_PATH) == OK:
@@ -143,9 +203,7 @@ func _load_auth_token() -> void:
 
 
 func _save_auth_token() -> void:
-	var config := ConfigFile.new()
-	config.set_value("daemon", "token", auth_token)
-	config.save(TOKEN_CONFIG_PATH)
+	_save_daemon_config()
 
 
 func build_command_envelope(command_type: String, payload: Dictionary = {}, thread_id: String = "") -> Dictionary:

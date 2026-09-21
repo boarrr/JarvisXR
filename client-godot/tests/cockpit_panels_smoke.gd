@@ -68,6 +68,24 @@ func _run() -> void:
 	_check(daemon_text.contains("fake"), "daemon panel reports the link mode")
 	_check(daemon_text.contains("open loopback"), "daemon panel reports authorization state")
 
+	daemon_panel.handle_action("daemon:pair_mode")
+	daemon_panel.refresh()
+	_check(
+		daemon_panel.get_body_text().contains("PAIR THIS HEADSET"),
+		"pairing mode shows the code entry surface"
+	)
+	daemon_panel.handle_action("daemon:key:A")
+	daemon_panel.handle_action("daemon:key:2")
+	_check(
+		daemon_panel.get_body_text().contains("A 2"),
+		"poked keypad characters appear in the code"
+	)
+	daemon_panel.handle_action("daemon:pair_cancel")
+	_check(
+		not daemon_panel.get_body_text().contains("PAIR THIS HEADSET"),
+		"cancelling pairing returns to the daemon status page"
+	)
+
 	_check(
 		bridge.send_command("debug.approval.request", {"tool_name": "demo.safe_tool"}, "thread_demo"),
 		"approval request can be injected"
