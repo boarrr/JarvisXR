@@ -91,6 +91,9 @@ var _telemetry_elapsed := 0.0
 var _tracking_losses := 0
 var _missing_seconds := 0.0
 var _pointer_missing_seconds := 0.0
+var _telemetry_file: FileAccess = null
+const GESTURE_LOG_PATH := "user://gesture_session.jsonl"
+const GESTURE_LOG_LIMIT_BYTES := 512 * 1024
 
 
 func _ready() -> void:
@@ -100,6 +103,17 @@ func _ready() -> void:
 	_telemetry_enabled = bool(
 		ProjectSettings.get_setting("spatial_agent/gesture_telemetry", false)
 	) or ("--gesture-telemetry" in OS.get_cmdline_args())
+	if _telemetry_enabled:
+		var absolute := ProjectSettings.globalize_path(GESTURE_LOG_PATH)
+		var exists := FileAccess.file_exists(GESTURE_LOG_PATH)
+		if exists and FileAccess.get_file_as_string(GESTURE_LOG_PATH).length() > GESTURE_LOG_LIMIT_BYTES:
+			DirAccess.remove_absolute(absolute)
+			exists = false
+		_telemetry_file = FileAccess.open(
+			GESTURE_LOG_PATH, FileAccess.READ_WRITE if exists else FileAccess.WRITE
+		)
+		if _telemetry_file != null:
+			_telemetry_file.seek_end()
 	set_physics_process(false)
 
 
@@ -172,6 +186,9 @@ func _emit_gesture_telemetry() -> void:
 		"pinching": _pointer_state.is_selecting,
 	}
 	print("GEST %s" % JSON.stringify(payload))
+	if _telemetry_file != null:
+		_telemetry_file.store_line(JSON.stringify(payload))
+		_telemetry_file.flush()
 
 
 func _hand_telemetry(hand_name: String) -> Variant:

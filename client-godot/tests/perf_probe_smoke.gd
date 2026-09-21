@@ -28,6 +28,7 @@ func _run() -> void:
 	await get_tree().process_frame
 	_check(probe.sample_count() > 0, "perf probe samples frame times")
 	_check(probe.get_summary_line().begins_with("PERF"), "perf summary line is printable")
+	_check(probe.has_log_file(), "perf probe keeps an on-device session log")
 	_check(
 		float(ProjectSettings.get_setting("spatial_agent/xr_refresh_rate", 0.0)) == 72.0,
 		"72 Hz refresh target is configured"

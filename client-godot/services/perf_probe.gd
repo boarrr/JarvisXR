@@ -8,6 +8,9 @@ extends Node
 @export_range(1.0, 60.0, 1.0) var report_interval_seconds: float = 10.0
 @export_range(30, 1024, 1) var max_samples: int = 900
 
+const LOG_PATH := "user://perf_session.jsonl"
+const LOG_LIMIT_BYTES := 512 * 1024
+
 var _enabled := false
 var _elapsed := 0.0
 var _samples: PackedFloat32Array = PackedFloat32Array()
@@ -15,11 +18,29 @@ var _fps_sum := 0.0
 var _fps_count := 0
 var _reports := 0
 var _last_report: Dictionary = {}
+var _log_file: FileAccess = null
 
 
 func _ready() -> void:
 	_enabled = bool(ProjectSettings.get_setting("spatial_agent/perf_probe", true))
+	if _enabled:
+		_open_log_file()
 	set_process(_enabled)
+
+
+func _open_log_file() -> void:
+	var absolute := ProjectSettings.globalize_path(LOG_PATH)
+	var exists := FileAccess.file_exists(LOG_PATH)
+	if exists and FileAccess.get_file_as_string(LOG_PATH).length() > LOG_LIMIT_BYTES:
+		DirAccess.remove_absolute(absolute)
+		exists = false
+	_log_file = FileAccess.open(LOG_PATH, FileAccess.READ_WRITE if exists else FileAccess.WRITE)
+	if _log_file != null:
+		_log_file.seek_end()
+
+
+func has_log_file() -> bool:
+	return _log_file != null
 
 
 func _process(delta: float) -> void:
@@ -53,7 +74,11 @@ func _emit_report() -> void:
 	}
 	_last_report = payload
 	_reports += 1
-	print("PERF %s" % JSON.stringify(payload))
+	var line := JSON.stringify(payload)
+	print("PERF %s" % line)
+	if _log_file != null:
+		_log_file.store_line(line)
+		_log_file.flush()
 	_samples.clear()
 	_fps_sum = 0.0
 	_fps_count = 0
