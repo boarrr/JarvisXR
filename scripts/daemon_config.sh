@@ -39,6 +39,7 @@ auth_token="$token"
 EOF
 
 adb start-server >/dev/null 2>&1
+adb shell "run-as $package_name mkdir -p files"
 adb shell "run-as $package_name sh -c 'cat > files/dev_ca.crt'" < "$cert_dir/ca.crt"
 adb shell "run-as $package_name sh -c 'cat > files/daemon.cfg'" < "$config_file"
 rm -f "$config_file"

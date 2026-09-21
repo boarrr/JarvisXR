@@ -86,10 +86,11 @@ func _ready() -> void:
 	EventBus.interaction_source_changed.emit(interaction_source.source_name)
 	EventBus.app_ready.emit()
 
-	var ready_message := "Spatial Agent client ready — mode=%s backend=%s/%s" % [
+	var ready_message := "Spatial Agent client ready — mode=%s backend=%s/%s url=%s" % [
 		AppState.ui_mode,
 		AppState.backend_mode,
 		AppState.connection_state,
+		_websocket_backend_client.websocket_url if AppState.backend_mode == "websocket" else "n/a",
 	]
 	print("[APP] %s" % ready_message)
 	EventBus.debug_message.emit(ready_message)
@@ -97,6 +98,11 @@ func _ready() -> void:
 
 func _configure_backend_transport() -> bool:
 	var configured_mode := str(ProjectSettings.get_setting("spatial_agent/backend_mode", "fake")).to_lower()
+	# A standalone headset must talk to a daemon: the Android feature-tag
+	# override in project.godot is unreliable, so select it from the platform.
+	# Desktop keeps the offline fake transport for simulator work.
+	if OS.get_name() == "Android" and configured_mode == "fake":
+		configured_mode = "websocket"
 	var transport: BackendTransport = _fake_backend_transport
 	match configured_mode:
 		"websocket":
