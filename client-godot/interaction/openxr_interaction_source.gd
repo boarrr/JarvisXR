@@ -36,6 +36,10 @@ const LEFT_TRACKER_PATH := &"/user/hand_tracker/left"
 const RIGHT_TRACKER_PATH := &"/user/hand_tracker/right"
 const TOUCH_CONTACT_DISTANCE := 0.012
 const TOUCH_RELEASE_DISTANCE := 0.05
+# OpenXR joints drop out for single frames routinely (occlusion, edge of the
+# camera FOV). Hold the last state briefly so a blink does not cancel a touch,
+# grab, or the aim ray.
+const TRACKING_GRACE_SECONDS := 0.45
 const REQUIRED_POSITION_FLAGS := (
 	XRHandTracker.HAND_JOINT_FLAG_POSITION_VALID
 	| XRHandTracker.HAND_JOINT_FLAG_POSITION_TRACKED
@@ -85,6 +89,8 @@ var _touch_release_needed := false
 var _telemetry_enabled := false
 var _telemetry_elapsed := 0.0
 var _tracking_losses := 0
+var _missing_seconds := 0.0
+var _pointer_missing_seconds := 0.0
 
 
 func _ready() -> void:
@@ -137,11 +143,14 @@ func set_hover_target_id(target_id: String) -> void:
 func _physics_process(_delta: float) -> void:
 	if not _session_active:
 		return
-	_collect_hand_samples()
+	_collect_hand_samples(_delta)
 	var pointer_sample: Dictionary = _latest_hand_samples.get(preferred_hand, {})
 	if pointer_sample.is_empty():
-		_clear_pointer()
+		_pointer_missing_seconds += _delta
+		if _pointer_missing_seconds >= TRACKING_GRACE_SECONDS:
+			_clear_pointer()
 	else:
+		_pointer_missing_seconds = 0.0
 		_apply_pointer_sample(pointer_sample)
 	_update_bimanual_gesture()
 	if _telemetry_enabled:
@@ -184,9 +193,9 @@ func _hand_telemetry(hand_name: String) -> Variant:
 	}
 
 
-func simulate_tick() -> bool:
+func simulate_tick(delta: float = 0.016) -> bool:
 	# Deterministic single step used by tests and the desktop lab.
-	_collect_hand_samples()
+	_collect_hand_samples(delta)
 	var pointer_sample: Dictionary = _latest_hand_samples.get(preferred_hand, {})
 	if pointer_sample.is_empty():
 		_clear_pointer()
@@ -196,7 +205,7 @@ func simulate_tick() -> bool:
 	return applied
 
 
-func _collect_hand_samples() -> void:
+func _collect_hand_samples(delta: float) -> void:
 	_latest_hand_samples.clear()
 	for hand_name in ["left", "right"]:
 		var sample := _sample_for_hand(hand_name)
@@ -212,7 +221,13 @@ func _collect_hand_samples() -> void:
 			pinch_begin_distance,
 			pinch_release_distance
 		)
-	_set_tracking_available(not _latest_hand_samples.is_empty())
+	if _latest_hand_samples.is_empty():
+		_missing_seconds += delta
+		if _missing_seconds >= TRACKING_GRACE_SECONDS:
+			_set_tracking_available(false)
+		return
+	_missing_seconds = 0.0
+	_set_tracking_available(true)
 
 
 func _clear_pointer() -> void:
@@ -240,7 +255,6 @@ func _sample_for_hand(hand_name: String) -> Dictionary:
 	var required_joints := [
 		XRHandTracker.HAND_JOINT_PALM,
 		XRHandTracker.HAND_JOINT_THUMB_TIP,
-		XRHandTracker.HAND_JOINT_INDEX_FINGER_PHALANX_DISTAL,
 		XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP,
 	]
 	var all_joints_valid := true
@@ -259,12 +273,16 @@ func _sample_for_hand(hand_name: String) -> Dictionary:
 			joints[joint_name] = (
 				origin_transform * tracker.get_hand_joint_transform(joint_index)
 			).origin
+	var distal_index := XRHandTracker.HAND_JOINT_INDEX_FINGER_PHALANX_DISTAL
+	var index_distal := Vector3.ZERO
+	if _joint_has_tracked_position(tracker, distal_index):
+		index_distal = (origin_transform * tracker.get_hand_joint_transform(distal_index)).origin
 	return {
 		"hand_name": hand_name,
 		"palm_transform": origin_transform * tracker.get_hand_joint_transform(XRHandTracker.HAND_JOINT_PALM),
 		"thumb_tip": origin_transform * tracker.get_hand_joint_transform(XRHandTracker.HAND_JOINT_THUMB_TIP).origin,
-		"index_distal": origin_transform * tracker.get_hand_joint_transform(XRHandTracker.HAND_JOINT_INDEX_FINGER_PHALANX_DISTAL).origin,
 		"index_tip": origin_transform * tracker.get_hand_joint_transform(XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP).origin,
+		"index_distal": index_distal,
 		"index_proximal": joints.get("index_proximal", Vector3.ZERO),
 		"joints": joints,
 	}
@@ -301,14 +319,18 @@ func _apply_pointer_sample(sample: Dictionary) -> bool:
 	var palm_transform := sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D
 	# A longer baseline (proximal to tip) is far more stable than the ~2 cm
 	# distal-to-tip segment, which amplifies joint jitter into ray noise.
-	# Synthetic samples without tracked joints keep the distal baseline.
+	# Fall back through shorter baselines when a joint is momentarily missing.
 	var joints: Dictionary = sample.get("joints", {})
-	var direction := index_tip - index_distal
+	var direction := Vector3.ZERO
 	if joints.has("index_proximal"):
-		var candidate := index_tip - index_proximal
-		if candidate.length_squared() >= 0.0004:
-			direction = candidate
+		direction = index_tip - index_proximal
+	if direction.length_squared() < 0.0004 and not index_distal.is_zero_approx():
+		direction = index_tip - index_distal
+	if direction.length_squared() < 0.0004:
+		var palm: Vector3 = joints.get("palm", Vector3.ZERO)
+		direction = index_tip - palm if not palm.is_zero_approx() else Vector3.ZERO
 	if direction.length_squared() < 0.000016:
+		_pointer_missing_seconds = 0.0
 		_clear_pointer()
 		return false
 

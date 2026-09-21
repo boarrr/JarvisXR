@@ -74,9 +74,12 @@ func _run() -> void:
 	_check(manager._target_id_from_hit(hit) == "thread_demo", "hidden collision geometry does not occlude an agent")
 	blocker.queue_free()
 	source.tracking_enabled = false
-	source._physics_process(0.016)
+	# Tracking loss is debounced: hold for the grace window before the hover
+	# and pointer state are cleared.
+	for _frame in range(32):
+		source._physics_process(0.016)
 	manager._physics_process(0.016)
-	_check(AppState.hovered_target_id.is_empty(), "tracking loss clears the old target")
+	_check(AppState.hovered_target_id.is_empty(), "tracking loss clears the old target after the grace window")
 	source.tracking_enabled = true
 	source.send_action("palm:focus_next")
 	source.send_action("palm:focus_next")
