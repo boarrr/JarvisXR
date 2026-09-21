@@ -30,6 +30,9 @@ var _restore_thread_panel := false
 var _restore_quick_intent_panel := false
 var _restore_quick_after_privacy := false
 var _restore_composer_after_privacy := false
+var _pending_spawn_position: Variant = null
+var _pending_restore_offsets: Dictionary = {}
+var _pending_bind_thread := false
 
 
 func _ready() -> void:
@@ -70,6 +73,7 @@ func _ready() -> void:
 	AppState.approval_resolved.connect(_on_approval_resolved)
 	EventBus.cockpit_panel_requested.connect(_on_cockpit_panel_requested)
 	EventBus.debug_message.connect(_on_debug_message)
+	AppState.thread_added.connect(_on_thread_added_for_layout)
 	AppState.listening_state = _speech_service.get_state()
 
 	AppState.ui_mode = "xr_hands" if xr_active else ("hand_lab" if lab_active else "desktop")
@@ -163,8 +167,10 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_cognition_layer.toggle_live_mode()
 			elif event.target_id == "palm:focus_next":
 				_focus_next_thread()
-			elif event.target_id == "palm:code_toggle":
-				_code_viewer.toggle()
+			elif event.target_id == "palm:new_agent":
+				_create_agent_at(_spawn_position_in_front())
+			elif event.target_id == "palm:undo":
+				_undo_last_agent()
 			elif event.target_id == "palm:cognition_toggle":
 				_cognition_layer.toggle_enabled()
 			elif event.target_id == "palm:mission_toggle":
@@ -229,12 +235,16 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 		InteractionEvent.Type.CODE_GO_BOTTOM:
 			_code_viewer.go_bottom()
 		InteractionEvent.Type.GRAB_BEGIN:
-			if event.target_id == "ui:code_surface" and event.world_position is Vector3:
+			if event.target_id == "ui:summon" and event.world_position is Vector3:
+				_orb_manager.show_summon(event.world_position)
+			elif event.target_id == "ui:code_surface" and event.world_position is Vector3:
 				_code_viewer.begin_bimanual_transform(event.world_position)
 			elif AppState.get_thread(event.target_id) != null:
 				_orb_manager.begin_grab(event.target_id)
 		InteractionEvent.Type.GRAB_MOVE:
-			if event.target_id == "ui:code_surface" and event.world_position is Vector3:
+			if event.target_id == "ui:summon" and event.world_position is Vector3:
+				_orb_manager.move_summon(event.world_position)
+			elif event.target_id == "ui:code_surface" and event.world_position is Vector3:
 				_code_viewer.apply_bimanual_transform(
 					event.world_position,
 					float(event.gesture_data.get("scale_factor", 1.0)),
@@ -243,7 +253,14 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 			elif AppState.get_thread(event.target_id) != null and event.world_position is Vector3:
 				_orb_manager.update_grab(event.target_id, event.world_position)
 		InteractionEvent.Type.GRAB_END:
-			if event.target_id == "ui:code_surface":
+			if event.target_id == "ui:summon":
+				_orb_manager.hide_summon()
+				if (
+					not bool(event.gesture_data.get("cancelled", true))
+					and event.world_position is Vector3
+				):
+					_create_agent_at(event.world_position)
+			elif event.target_id == "ui:code_surface":
 				_code_viewer.end_bimanual_transform()
 			elif AppState.get_thread(event.target_id) != null:
 				var grab_result := _orb_manager.end_grab(event.target_id)
@@ -258,6 +275,15 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 					EventBus.debug_message.emit(
 						"Combining with %s" % (parent_thread.title if parent_thread != null else linked_to)
 					)
+		InteractionEvent.Type.CRUSH:
+			_crush_agent(event.target_id)
+		InteractionEvent.Type.ATTRACT_BEGIN:
+			_orb_manager.attract_begin(event.target_id)
+		InteractionEvent.Type.ATTRACT_MOVE:
+			if event.world_position is Vector3:
+				_orb_manager.attract_to(event.target_id, event.world_position)
+		InteractionEvent.Type.ATTRACT_END:
+			_orb_manager.attract_end(event.target_id)
 
 
 func _focus_next_thread() -> void:
@@ -289,6 +315,69 @@ func _toggle_cockpit_review() -> void:
 		_diff_review_panel.open_focused_thread()
 		return
 	_file_viewer.open_focused_thread()
+
+
+func _create_agent_at(position: Vector3) -> void:
+	_pending_spawn_position = position
+	_pending_bind_thread = AppState.workspaces.size() == 1
+	if not _backend_bridge.send_command("thread.create", {"title": "New agent"}):
+		_pending_spawn_position = null
+		_pending_bind_thread = false
+		EventBus.debug_message.emit("Could not create an agent")
+
+
+func _crush_agent(thread_id: String) -> void:
+	var thread := AppState.get_thread(thread_id)
+	if thread == null:
+		return
+	AppState.push_undo(thread_id, thread.title, AppState.get_orb_offset(thread_id))
+	_orb_manager.remove_orb(thread_id)
+	_backend_bridge.send_command("thread.archive", {}, thread_id)
+	EventBus.debug_message.emit("Crushed %s · undo available" % thread.title)
+
+
+func _undo_last_agent() -> void:
+	var entry := AppState.pop_undo()
+	if entry.is_empty():
+		EventBus.debug_message.emit("Nothing to undo")
+		return
+	var thread_id := str(entry.get("thread_id", ""))
+	if thread_id.is_empty():
+		return
+	var position: Variant = entry.get("position")
+	if position is Vector3:
+		_pending_restore_offsets[thread_id] = position
+	_backend_bridge.send_command("thread.restore", {}, thread_id)
+	EventBus.debug_message.emit("Restoring %s" % str(entry.get("title", "agent")))
+
+
+func _spawn_position_in_front() -> Vector3:
+	var camera := _user_rig.get_camera() if _user_rig != null else null
+	if camera == null:
+		return _orb_manager._get_layout_origin() + Vector3(0.0, 0.0, -1.2)
+	var forward := -camera.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() < 0.0001:
+		forward = Vector3.FORWARD
+	return camera.global_position + forward.normalized() * 1.2 + Vector3(0.0, -0.1, 0.0)
+
+
+func _on_thread_added_for_layout(thread: AgentThread) -> void:
+	if thread == null:
+		return
+	if _pending_spawn_position is Vector3:
+		AppState.set_orb_offset(thread.id, _pending_spawn_position)
+		_pending_spawn_position = null
+	elif _pending_restore_offsets.has(thread.id):
+		AppState.set_orb_offset(thread.id, _pending_restore_offsets[thread.id])
+		_pending_restore_offsets.erase(thread.id)
+	if _pending_bind_thread and AppState.workspaces.size() == 1:
+		_backend_bridge.send_command(
+			"workspace.bind",
+			{"workspace_id": str(AppState.workspaces[0].get("id", ""))},
+			thread.id
+		)
+	_pending_bind_thread = false
 
 
 func _on_debug_message(message: String) -> void:

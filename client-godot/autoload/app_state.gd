@@ -25,6 +25,7 @@ signal file_content_changed(thread_id: String)
 signal tool_catalog_changed()
 signal pairing_changed(device_id: String, device_name: String)
 signal orb_layout_changed(thread_id: String)
+signal undo_changed(count: int)
 
 var connection_state: String = "offline":
 	set(value):
@@ -114,6 +115,27 @@ var mcp_servers: Array[String] = []
 var paired_device: Dictionary = {}
 var orb_offsets: Dictionary = {}
 var orb_links: Dictionary = {}
+var undo_stack: Array = []
+
+
+func push_undo(thread_id: String, title: String, position: Variant) -> void:
+	# Physical undo: the last few crushed agents can be brought back.
+	undo_stack.append({"thread_id": thread_id, "title": title, "position": position})
+	while undo_stack.size() > 3:
+		undo_stack.pop_front()
+	undo_changed.emit(undo_stack.size())
+
+
+func pop_undo() -> Dictionary:
+	if undo_stack.is_empty():
+		return {}
+	var entry: Dictionary = undo_stack.pop_back()
+	undo_changed.emit(undo_stack.size())
+	return entry
+
+
+func undo_count() -> int:
+	return undo_stack.size()
 
 
 func set_orb_offset(thread_id: String, position: Vector3) -> void:

@@ -127,6 +127,14 @@ class ProtocolTests(unittest.TestCase):
             with self.assertRaises(ProtocolError):
                 parse_client_message(command("thread.combine", payload=invalid), max_bytes=4096)
 
+    def test_restore_requires_a_thread_id(self) -> None:
+        parsed = parse_client_message(
+            command("thread.restore", thread_id="thread_1"), max_bytes=4096
+        )
+        self.assertEqual(parsed.type, "thread.restore")
+        with self.assertRaises(ProtocolError):
+            parse_client_message(command("thread.restore"), max_bytes=4096)
+
 
 if __name__ == "__main__":
     unittest.main()

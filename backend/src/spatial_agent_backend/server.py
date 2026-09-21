@@ -485,6 +485,22 @@ class SpatialAgentServer:
                 sources=len(command.payload["thread_ids"]),
             )
             await emit("thread.created", combined.id, {"thread": combined.to_wire()})
+        elif command.type == "thread.restore":
+            try:
+                restored = await self.threads.restore_thread(command.thread_id)
+            except ThreadNotFoundError:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "thread_not_found", "message": "Unknown thread"},
+                )
+                return
+            log_record(
+                "thread_restored",
+                session_id=session.id,
+                thread_id=restored.id,
+            )
+            await emit("thread.created", restored.id, {"thread": restored.to_wire()})
         else:
             await emit("error", command.thread_id, {"code": "unknown_command", "message": "Unknown command"})
 

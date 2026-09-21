@@ -122,6 +122,102 @@ func _run() -> void:
 		"right hand publishes a usable aim direction"
 	)
 
+	# Throw physics: a fast release gives the orb inertia and it coasts to rest.
+	_check(manager.begin_grab(first_id), "grab for a throw begins")
+	manager.update_grab(first_id, Vector3(5.0, 1.4, 5.0))
+	manager.update_grab(first_id, Vector3(5.7, 1.5, 5.0))
+	var throw_result := manager.end_grab(first_id)
+	_check(bool(throw_result.get("thrown", false)), "a fast release throws the orb")
+	var thrown_start := (manager.get_orb(first_id) as AgentOrb).global_position
+	for _frame in range(90):
+		manager._update_kinetics(0.05)
+	_check(
+		(manager.get_orb(first_id) as AgentOrb).global_position.distance_to(thrown_start) > 0.1,
+		"a thrown orb keeps moving with inertia"
+	)
+	_check(AppState.get_orb_offset(first_id) is Vector3, "the orb settles into a saved resting position")
+
+	# Attract: a fist aimed at a distant orb pulls it toward the anchor.
+	AppState.clear_orb_offset(first_id)
+	manager.attract_begin(first_id)
+	var attract_start := (manager.get_orb(first_id) as AgentOrb).global_position
+	var attract_anchor := attract_start + Vector3(0.0, 0.0, 0.8)
+	for _frame in range(240):
+		manager.attract_to(first_id, attract_anchor)
+	manager.attract_end(first_id)
+	_check(
+		(manager.get_orb(first_id) as AgentOrb).global_position.distance_to(attract_start) > 0.1,
+		"fist attraction brings the orb toward the palm"
+	)
+
+	# Crush and undo through the product path (archive, then restore).
+	var victim_id: String = threads[2]
+	main._crush_agent(victim_id)
+	_check(AppState.get_thread(victim_id) == null, "crush removes the agent")
+	_check(AppState.undo_count() == 1, "crush leaves one undo entry")
+	main._undo_last_agent()
+	_check(AppState.get_thread(victim_id) != null, "undo restores the crushed agent")
+
+	# Summon gesture: pinch in empty space and pull to request a new agent.
+	var summon_source := OpenXRInteractionSource.new()
+	add_child(summon_source)
+	summon_source.set_hand_tracking_active(true)
+	var summon_events: Array[InteractionEvent] = []
+	summon_source.interaction_event.connect(
+		func(event: InteractionEvent) -> void: summon_events.append(event)
+	)
+	var summon_palm := Transform3D(Basis.IDENTITY, Vector3(3.0, 1.4, -0.4))
+	summon_source.submit_joint_sample(
+		"right", summon_palm,
+		Vector3(3.02, 1.42, -0.65), Vector3(3.0, 1.4, -0.6), Vector3(3.0, 1.42, -0.65)
+	)
+	summon_source.submit_joint_sample(
+		"right", summon_palm,
+		Vector3(3.02, 1.42, -0.75), Vector3(3.0, 1.4, -0.7), Vector3(3.0, 1.42, -0.75)
+	)
+	summon_source.submit_joint_sample(
+		"right", summon_palm,
+		Vector3(3.09, 1.42, -0.75), Vector3(3.0, 1.4, -0.7), Vector3(3.0, 1.42, -0.75)
+	)
+	var summon_begins := summon_events.filter(
+		func(event: InteractionEvent) -> bool:
+			return event.type == InteractionEvent.Type.GRAB_BEGIN and event.target_id == "ui:summon"
+	)
+	var summon_ends := summon_events.filter(
+		func(event: InteractionEvent) -> bool:
+			return event.type == InteractionEvent.Type.GRAB_END and event.target_id == "ui:summon"
+	)
+	_check(summon_begins.size() == 1, "pinching in empty space starts a summon")
+	_check(
+		summon_ends.size() == 1
+		and not bool(summon_ends[0].gesture_data.get("cancelled", true)),
+		"pulling past the threshold confirms the summon"
+	)
+
+	# A fist aimed at a hovered agent requests attraction.
+	var fist_joints := {
+		"palm": Vector3(3.0, 1.4, -0.6),
+		"index_tip": Vector3(3.03, 1.42, -0.62),
+		"middle_tip": Vector3(3.01, 1.43, -0.62),
+		"ring_tip": Vector3(2.99, 1.43, -0.62),
+		"pinky_tip": Vector3(2.97, 1.42, -0.62),
+	}
+	summon_events.clear()
+	summon_source.set_hover_target_id(victim_id)
+	summon_source.submit_joint_sample(
+		"right", summon_palm,
+		Vector3(3.02, 1.42, -0.65), Vector3(3.0, 1.4, -0.6), Vector3(3.0, 1.42, -0.65),
+		fist_joints
+	)
+	var attract_begins := summon_events.filter(
+		func(event: InteractionEvent) -> bool:
+			return event.type == InteractionEvent.Type.ATTRACT_BEGIN
+	)
+	_check(
+		attract_begins.size() == 1 and attract_begins[0].target_id == victim_id,
+		"a fist aimed at an agent starts attraction"
+	)
+
 	if not _failed:
 		print("[TEST] Standing orbit and two-hand role checks passed")
 	main.queue_free()

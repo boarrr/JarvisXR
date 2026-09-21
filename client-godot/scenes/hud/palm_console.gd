@@ -16,24 +16,25 @@ const PAGE_SYSTEM := 2
 const PAGE_COUNT := 3
 const PAGE_TITLES := ["CHAT", "CODE", "SYSTEM"]
 
-const SCREEN_CENTER := Vector2(0.0, -0.115)
-const SCREEN_SIZE := Vector2(0.45, 0.43)
+const SCREEN_CENTER := Vector2(0.0, 0.0)
+const SCREEN_SIZE := Vector2(0.42, 0.34)
 const VIEWPORT_SIZE := Vector2i(540, 516)
 const BUTTON_HEIGHT_PX := 62.0
 const HEADER_HEIGHT_PX := 52.0
 const FOOTER_ROWS := 2
 const FOOTER_HEIGHT_PX := BUTTON_HEIGHT_PX * FOOTER_ROWS + 22.0
 
-const SYSTEM_TARGET_LAYOUT := {
-	"FocusTarget": ["NEXT AGENT", "palm:focus_next"],
-	"CodeTarget": ["CODE TRACE", "palm:code_toggle"],
-	"VoiceTarget": ["ASK / VOICE", "palm:voice_toggle"],
-	"DismissTarget": ["DISMISS", "palm:dismiss"],
-	"CognitionTarget": ["COGNITION", "palm:cognition_toggle"],
-	"MissionTarget": ["MISSION MAP", "palm:mission_toggle"],
-	"CockpitTarget": ["COCKPIT", "palm:cockpit_toggle"],
-	"PrivacyTarget": ["PRIVACY VEIL", "palm:privacy_toggle"],
-}
+# Label, semantic target, and the existing Area3D node that carries it (empty
+# node means the panel creates its own touch target).
+const SYSTEM_BUTTONS := [
+	["NEXT AGENT", "palm:focus_next", "FocusTarget"],
+	["NEW AGENT", "palm:new_agent", ""],
+	["DISMISS", "palm:dismiss", "DismissTarget"],
+	["UNDO", "palm:undo", ""],
+	["COGNITION", "palm:cognition_toggle", "CognitionTarget"],
+	["MISSION MAP", "palm:mission_toggle", "MissionTarget"],
+	["PRIVACY VEIL", "palm:privacy_toggle", "PrivacyTarget"],
+]
 
 const CHAT_BUTTONS := [
 	["CONTINUE", "quick:continue"],
@@ -44,14 +45,15 @@ const CHAT_BUTTONS := [
 
 @export var hand_source_path: NodePath = ^"../XRRuntime/OpenXRInteractionSource"
 @export var user_rig_path: NodePath = ^"../UserRig"
-@export_range(0.01, 0.3, 0.01) var palm_offset_metres: float = 0.13
+@export_range(0.01, 0.3, 0.01) var palm_offset_metres: float = 0.07
 @export_range(0.05, 1.0, 0.05) var pose_smoothing: float = 0.38
-@export_range(0.3, 1.0, 0.01) var console_scale: float = 0.55
+@export_range(0.3, 1.0, 0.01) var console_scale: float = 0.52
 @export_range(0.15, 0.8, 0.01) var min_display_distance: float = 0.25
 @export_range(0.3, 1.2, 0.01) var max_display_distance: float = 0.7
 @export_range(0.0, 0.4, 0.01) var below_eye_minimum: float = 0.05
 @export_range(0.5, 1.0, 0.01) var gaze_threshold: float = 0.86
 @export_range(0.0, 1.5, 0.05) var show_delay_seconds: float = 0.3
+@export_range(0.0, 1.5, 0.05) var hide_grace_seconds: float = 0.5
 
 @onready var _status_label: Label3D = $StatusLabel
 @onready var _provider_label: Label3D = $ProviderLabel
@@ -69,6 +71,8 @@ var _body: RichTextLabel = null
 var _page_label: Label = null
 var _buttons: Dictionary = {}
 var _dynamic_targets: Array[Area3D] = []
+var _system_targets: Array[Area3D] = []
+var _hide_grace := 0.0
 var _page := PAGE_CHAT
 var _chat_offset := 0
 var _code_offset := 0
@@ -105,54 +109,60 @@ func _physics_process(delta: float) -> void:
 		or _user_rig == null
 		or AppState.privacy_veil_active
 	):
-		_dwell = 0.0
 		_hide_panel()
 		return
 	var sample := _hand_source.get_latest_hand_sample("left")
 	if sample.is_empty():
-		_dwell = 0.0
 		_hide_panel()
 		return
 	if _camera == null:
 		_camera = _user_rig.get_camera()
 	if _camera == null:
-		_dwell = 0.0
 		_hide_panel()
 		return
 
 	var camera_position := _camera.global_position
 	var palm_transform := sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D
-	var target_position := palm_transform.origin + Vector3.UP * palm_offset_metres
-	var to_target := target_position - camera_position
-	var distance_to_user := to_target.length()
+	var anchor := palm_transform.origin + Vector3.UP * palm_offset_metres
+	var offset := anchor - camera_position
+	var distance := offset.length()
+	if distance < 0.001:
+		offset = -_camera.global_transform.basis.z
+		distance = 1.0
+	var outward := offset / distance
 
-	if AppState.ui_mode == "hand_lab":
-		if distance_to_user < 0.12 or distance_to_user > 1.35:
-			_dwell = 0.0
-			_hide_panel()
-			return
-		_dwell = show_delay_seconds
-	else:
+	var conditions_met := true
+	if AppState.ui_mode != "hand_lab":
 		# Gaze gate: the panel appears when the user actually looks down at the
 		# open palm, not merely because the hand is low and near the body.
 		var camera_forward := -_camera.global_transform.basis.z.normalized()
-		var gaze := to_target.normalized().dot(camera_forward) if distance_to_user > 0.001 else 0.0
-		var below_eye := camera_position.y - target_position.y >= below_eye_minimum
-		var conditions_met := (
-			distance_to_user >= min_display_distance
-			and distance_to_user <= max_display_distance
+		var gaze := outward.dot(camera_forward)
+		var below_eye := camera_position.y - anchor.y >= below_eye_minimum
+		conditions_met = (
+			distance >= min_display_distance
+			and distance <= max_display_distance
 			and below_eye
 			and gaze >= gaze_threshold
 		)
-		if not conditions_met:
-			_dwell = 0.0
-			_hide_panel()
-			return
-		_dwell += delta
-		if _dwell < show_delay_seconds:
-			_hide_panel()
-			return
 
+	if not conditions_met:
+		_dwell = 0.0
+		if visible:
+			# Hysteresis: a glance away must not flicker the panel out.
+			_hide_grace -= delta
+			if _hide_grace <= 0.0:
+				_hide_panel()
+		return
+
+	_hide_grace = hide_grace_seconds
+	_dwell += delta
+	if _dwell < show_delay_seconds:
+		_hide_panel()
+		return
+
+	# Sit just beyond the palm and never closer than a comfortable reading
+	# distance, so the panel is not projected between the hand and the eyes.
+	var target_position := camera_position + outward * (maxf(distance, 0.42) + 0.12)
 	if not visible:
 		global_position = target_position
 	else:
@@ -263,17 +273,22 @@ func _build_screen() -> void:
 	_build_chat_targets()
 	_build_code_targets()
 	_build_system_buttons()
-	if _status_label != null:
-		_status_label.position.y = -0.345
+	# The screen is the panel: retire the legacy 3D glass, glyph buttons and
+	# label layers so the palm shows one clean surface.
+	for child in get_children():
+		if child == _screen:
+			continue
+		if child is MeshInstance3D or child is Label3D:
+			child.visible = false
 
 
 func _build_system_buttons() -> void:
-	var index := 0
-	for target_name in SYSTEM_TARGET_LAYOUT:
-		var entry: Array = SYSTEM_TARGET_LAYOUT[target_name]
+	for index in range(SYSTEM_BUTTONS.size()):
+		var entry: Array = SYSTEM_BUTTONS[index]
 		var rect := _grid_rect(index, 4, FOOTER_ROWS)
 		_make_button(rect, str(entry[0]))
-		index += 1
+		if str(entry[2]).is_empty():
+			_system_targets.append(_make_target(str(entry[1]), rect))
 
 
 func _grid_rect(index: int, columns: int, rows: int) -> Rect2:
@@ -346,8 +361,11 @@ func _make_button(rect: Rect2, text: String) -> void:
 
 
 func _prepare_system_targets() -> void:
-	for target_name in SYSTEM_TARGET_LAYOUT:
-		var target := get_node_or_null(target_name) as Area3D
+	for entry in SYSTEM_BUTTONS:
+		var node_name := str(entry[2])
+		if node_name.is_empty():
+			continue
+		var target := get_node_or_null(node_name) as Area3D
 		if target == null:
 			continue
 		for child in target.get_children():
@@ -465,16 +483,20 @@ func _render_system() -> void:
 
 func _refresh_target_visibility() -> void:
 	var system_page := _page == PAGE_SYSTEM
-	for target_name in SYSTEM_TARGET_LAYOUT:
-		var target := get_node_or_null(target_name) as Area3D
+	for entry in SYSTEM_BUTTONS:
+		var node_name := str(entry[2])
+		if node_name.is_empty():
+			continue
+		var target := get_node_or_null(node_name) as Area3D
 		if target == null:
 			continue
 		if system_page:
-			var entry: Array = SYSTEM_TARGET_LAYOUT[target_name]
 			target.position = _button_local_position(str(entry[0]), target.position)
 			target.visible = true
 		else:
 			target.visible = false
+	for target in _system_targets:
+		target.visible = system_page
 	for index in range(_dynamic_targets.size()):
 		var target := _dynamic_targets[index]
 		var chat_target := index < CHAT_BUTTONS.size()

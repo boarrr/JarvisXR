@@ -33,6 +33,7 @@ CLIENT_COMMAND_TYPES = frozenset(
         "diff.decision",
         "tool.catalog",
         "thread.combine",
+        "thread.restore",
     }
 )
 
@@ -46,6 +47,7 @@ V2_COMMAND_TYPES = frozenset(
         "diff.decision",
         "tool.catalog",
         "thread.combine",
+        "thread.restore",
     }
 )
 
@@ -160,6 +162,7 @@ def validate_command_payload(command: Envelope) -> None:
         "diff.decision": {"run_id", "decision"},
         "tool.catalog": set(),
         "thread.combine": {"thread_ids"},
+        "thread.restore": set(),
     }
     unexpected_fields = set(payload) - allowed_fields[command.type]
     if unexpected_fields:
@@ -178,6 +181,8 @@ def validate_command_payload(command: Envelope) -> None:
         _required_text(payload, "code", 64)
         _optional_text(payload, "device_name", 80)
     elif command.type in {"thread.archive", "run.cancel"}:
+        _require_thread_id(command)
+    elif command.type == "thread.restore":
         _require_thread_id(command)
     elif command.type == "workspace.bind":
         _require_thread_id(command)

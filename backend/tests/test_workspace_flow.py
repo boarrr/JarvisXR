@@ -308,6 +308,28 @@ class WorkspaceFlowTests(unittest.IsolatedAsyncioTestCase):
             restored = await self.application.threads.get_thread(combined["thread_id"])
             self.assertEqual(restored.metadata["combined_from"], [thread_id, second_id])
 
+    async def test_archived_thread_can_be_restored(self) -> None:
+        websocket, session_id = await self.open_session()
+        async with websocket:
+            thread_id = await self.first_thread_id(websocket, session_id)
+            await websocket.send(
+                command("thread.archive", session_id=session_id, thread_id=thread_id)
+            )
+            archived = await receive_event(websocket)
+            self.assertEqual(archived["type"], "thread.archived")
+
+            await websocket.send(
+                command("thread.restore", session_id=session_id, thread_id=thread_id)
+            )
+            _, restored = await receive_until(websocket, "thread.created")
+            self.assertEqual(restored["payload"]["thread"]["id"], thread_id)
+
+            await websocket.send(command("thread.list", session_id=session_id))
+            snapshot = await receive_event(websocket)
+            self.assertIn(
+                thread_id, [item["id"] for item in snapshot["payload"]["threads"]]
+            )
+
     async def test_tool_catalog_reports_sources(self) -> None:
         websocket, session_id = await self.open_session()
         async with websocket:

@@ -2,6 +2,7 @@ class_name ThreadPanel
 extends Node3D
 
 @export var user_rig_path: NodePath = ^"../UserRig"
+@export var auto_present: bool = true
 @export_range(0.8, 3.0, 0.05) var distance_from_user: float = 1.5
 @export_range(-1.5, 1.5, 0.05) var horizontal_offset: float = 0.88
 @export_range(-1.0, 1.0, 0.05) var vertical_offset: float = 0.04
@@ -223,7 +224,7 @@ func _role_label(role: AgentMessage.Role) -> String:
 func _on_focused_thread_changed(thread_id: String) -> void:
 	if thread_id.is_empty():
 		dismiss_panel()
-	else:
+	elif auto_present:
 		open_thread(thread_id)
 
 

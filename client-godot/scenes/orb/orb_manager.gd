@@ -6,9 +6,9 @@ const DEFAULT_ORB_SCENE := preload("res://scenes/orb/agent_orb.tscn")
 @export var user_rig_path: NodePath = ^"../UserRig"
 @export var standing_center_path: NodePath = ^"../XRRuntime/XROrigin3D"
 @export var orb_scene: PackedScene = DEFAULT_ORB_SCENE
-@export_range(0.5, 5.0, 0.05) var radius_from_user: float = 2.2
+@export_range(0.5, 5.0, 0.05) var radius_from_user: float = 1.75
 @export_range(-1.0, 1.0, 0.05) var vertical_offset: float = 0.0
-@export_range(90.0, 240.0, 1.0) var arc_degrees: float = 200.0
+@export_range(90.0, 240.0, 1.0) var arc_degrees: float = 150.0
 @export_range(1, 20, 1) var max_primary_orbs: int = 10
 @export_range(0.1, 2.0, 0.05) var secondary_ring_radius_step: float = 0.55
 @export_range(0.1, 1.5, 0.05) var secondary_ring_height_step: float = 0.45
@@ -16,12 +16,24 @@ const DEFAULT_ORB_SCENE := preload("res://scenes/orb/agent_orb.tscn")
 @export_range(0.2, 1.5, 0.05) var combine_distance: float = 0.6
 @export_range(0.15, 1.2, 0.05) var child_orbit_radius: float = 0.5
 
+const THROW_MIN_SPEED := 0.25
+const THROW_DAMPING := 1.7
+const KINETIC_STOP_SPEED := 0.08
+const STAGE_MAX_RADIUS := 3.2
+const ATTRACT_SPEED := 3.2
+
 var _user_rig: UserRig = null
 var _standing_center: Node3D = null
 var _orbs_by_thread_id: Dictionary = {}
 var _last_layout_origin := Vector3.ZERO
 var _grab_position := Vector3.ZERO
+var _grab_velocity := Vector3.ZERO
+var _velocities: Dictionary = {}
+var _kinetic_threads: Dictionary = {}
+var _attract_target := ""
+var _ghost: MeshInstance3D = null
 var _standing_height := 1.4
+var _stage_center := Vector3.ZERO
 var _height_captured := false
 
 
@@ -46,10 +58,13 @@ func _process(_delta: float) -> void:
 	# Desktop movement and XR recentering move the layout origin; refresh when it
 	# actually changes so standing users keep a stable agent ring.
 	if AppState.ui_mode == "xr_hands":
-		if not _height_captured:
-			var camera := _user_rig.get_camera() if _user_rig != null else null
+		if not _height_captured and _user_rig != null:
+			var camera := _user_rig.get_camera()
 			if camera != null:
+				# Anchor the stage where the user is actually standing, not at
+				# the play-space centre chosen during boundary setup.
 				_standing_height = camera.global_position.y
+				_stage_center = Vector3(camera.global_position.x, 0.0, camera.global_position.z)
 				_height_captured = true
 				_refresh_layout()
 	else:
@@ -57,6 +72,33 @@ func _process(_delta: float) -> void:
 	var origin := _get_layout_origin()
 	if origin.distance_squared_to(_last_layout_origin) > 0.000004:
 		_refresh_layout()
+	_update_kinetics(_delta)
+
+
+func _update_kinetics(delta: float) -> void:
+	for thread_id in _kinetic_threads.keys():
+		var orb := get_orb(thread_id)
+		if orb == null:
+			_kinetic_threads.erase(thread_id)
+			_velocities.erase(thread_id)
+			continue
+		var velocity: Vector3 = _velocities.get(thread_id, Vector3.ZERO)
+		velocity *= exp(-THROW_DAMPING * delta)
+		var position := orb.global_position + velocity * delta
+		var origin := _get_layout_origin()
+		var offset := position - origin
+		if offset.length() > STAGE_MAX_RADIUS:
+			position = origin + offset.normalized() * STAGE_MAX_RADIUS
+			velocity *= 0.4
+		_velocities[thread_id] = velocity
+		orb.set_kinetic(true)
+		orb.set_target_global_position(position)
+		orb.global_position = position
+		if velocity.length() < KINETIC_STOP_SPEED:
+			_kinetic_threads.erase(thread_id)
+			_velocities.erase(thread_id)
+			orb.set_kinetic(false)
+			AppState.set_orb_offset(thread_id, position)
 
 
 func get_orb(thread_id: String) -> AgentOrb:
@@ -158,29 +200,128 @@ func begin_grab(thread_id: String) -> bool:
 	if orb == null:
 		return false
 	AppState.unlink_orb(thread_id)
+	_kinetic_threads.erase(thread_id)
+	_velocities.erase(thread_id)
 	_grab_position = orb.global_position
+	_grab_velocity = Vector3.ZERO
+	orb.set_kinetic(true)
 	AppState.set_orb_offset(thread_id, _grab_position)
 	return true
 
 
 func update_grab(thread_id: String, world_position: Vector3) -> void:
-	if get_orb(thread_id) == null:
+	var orb := get_orb(thread_id)
+	if orb == null:
 		return
+	var delta := 1.0 / maxf(float(Engine.get_physics_ticks_per_second()), 1.0)
+	var instantaneous := (world_position - _grab_position) / delta
+	_grab_velocity = _grab_velocity.lerp(instantaneous, 0.35)
 	_grab_position = world_position
+	orb.set_kinetic(true)
+	orb.set_target_global_position(world_position)
+	orb.global_position = world_position
 	AppState.set_orb_offset(thread_id, world_position)
 
 
 func end_grab(thread_id: String) -> Dictionary:
-	var result := {"linked_to": ""}
-	if get_orb(thread_id) == null:
+	var result := {"linked_to": "", "thrown": false}
+	var orb := get_orb(thread_id)
+	if orb == null:
+		_grab_velocity = Vector3.ZERO
 		return result
-	# Combine against the drop point (the hand position), not the orb's eased
-	# position, so the intent is honoured even while the orb is still catching up.
 	var nearest := _nearest_orb_within(thread_id, _grab_position, combine_distance)
 	if not nearest.is_empty() and AppState.link_orbs(thread_id, nearest):
 		result["linked_to"] = nearest
+		orb.set_kinetic(false)
+	elif _grab_velocity.length() >= THROW_MIN_SPEED:
+		# Release with momentum: the orb floats outward and slows to rest.
+		_kinetic_threads[thread_id] = true
+		_velocities[thread_id] = _grab_velocity
+		result["thrown"] = true
+	else:
+		orb.set_kinetic(false)
+		AppState.set_orb_offset(thread_id, orb.global_position)
+	_grab_velocity = Vector3.ZERO
 	_refresh_layout()
 	return result
+
+
+func remove_orb(thread_id: String) -> void:
+	var orb := get_orb(thread_id)
+	if orb != null:
+		orb.collapse_and_free()
+	_orbs_by_thread_id.erase(thread_id)
+	_kinetic_threads.erase(thread_id)
+	_velocities.erase(thread_id)
+	_refresh_layout()
+
+
+func attract_begin(thread_id: String) -> bool:
+	if get_orb(thread_id) == null:
+		return false
+	_attract_target = thread_id
+	_kinetic_threads.erase(thread_id)
+	_velocities.erase(thread_id)
+	return true
+
+
+func attract_to(thread_id: String, anchor: Vector3) -> void:
+	if _attract_target != thread_id:
+		return
+	var orb := get_orb(thread_id)
+	if orb == null:
+		return
+	var to_anchor := anchor - orb.global_position
+	var distance := to_anchor.length()
+	if distance < 0.05:
+		return
+	var speed := clampf(distance * ATTRACT_SPEED, 0.35, 4.5)
+	var step_delta := 1.0 / maxf(float(Engine.get_physics_ticks_per_second()), 1.0)
+	var step := minf(speed * step_delta, distance)
+	var position := orb.global_position + to_anchor.normalized() * step
+	orb.set_kinetic(true)
+	orb.set_target_global_position(position)
+	orb.global_position = position
+
+
+func attract_end(thread_id: String) -> void:
+	if _attract_target == thread_id:
+		_attract_target = ""
+	var orb := get_orb(thread_id)
+	if orb != null:
+		orb.set_kinetic(false)
+		AppState.set_orb_offset(thread_id, orb.global_position)
+
+
+func show_summon(position: Vector3) -> void:
+	if _ghost == null:
+		var sphere := SphereMesh.new()
+		sphere.radius = 0.09
+		sphere.height = 0.18
+		var material := StandardMaterial3D.new()
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.albedo_color = Color(0.2, 0.85, 1.0, 0.45)
+		material.emission_enabled = true
+		material.emission = Color(0.2, 0.85, 1.0)
+		material.no_depth_test = true
+		sphere.material = material
+		_ghost = MeshInstance3D.new()
+		_ghost.mesh = sphere
+		_ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_ghost)
+	_ghost.global_position = position
+	_ghost.visible = true
+
+
+func move_summon(position: Vector3) -> void:
+	if _ghost != null:
+		_ghost.global_position = position
+
+
+func hide_summon() -> void:
+	if _ghost != null:
+		_ghost.visible = false
 
 
 func _nearest_orb_within(thread_id: String, position: Vector3, radius: float) -> String:
@@ -209,6 +350,8 @@ func _angle_for_local_slot(local_slot: int) -> float:
 
 
 func _get_layout_origin() -> Vector3:
+	if AppState.ui_mode == "xr_hands" and _height_captured:
+		return Vector3(_stage_center.x, _standing_height, _stage_center.z)
 	if (
 		AppState.ui_mode == "xr_hands"
 		and _standing_center != null

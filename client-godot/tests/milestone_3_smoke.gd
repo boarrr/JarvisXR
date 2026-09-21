@@ -31,10 +31,14 @@ func _run() -> void:
 	source._process(0.0)
 	manager._physics_process(0.0)
 
-	_check(panel.is_open(), "selecting an orb opens the panel")
-	_check(panel.get_displayed_thread_id() == "thread_demo", "panel displays the selected thread")
-	_check(panel.get_rendered_body_text().contains("Research Agent"), "panel renders the correct transcript")
+	_check(not panel.is_open(), "selecting an orb does not open a floating transcript window")
+	_check(AppState.focused_thread_id == "thread_demo", "selection focuses the agent for the palm panel")
 	_check(transport.get_active_stream_count() == 1, "focus starts one fake transport stream")
+	# The transcript surface remains available on demand (the palm panel is the
+	# primary presentation), so its rendering stays covered here.
+	panel.open_thread("thread_demo")
+	_check(panel.get_displayed_thread_id() == "thread_demo", "panel displays the selected thread when opened")
+	_check(panel.get_rendered_body_text().contains("Research Agent"), "panel renders the correct transcript")
 	_check(panel.global_position.distance_to(rig.get_camera().global_position) < 2.0, "panel is positioned in a spatial reading zone")
 
 	transport.advance_streams(0.5)
@@ -45,7 +49,12 @@ func _run() -> void:
 	_check(panel.get_rendered_body_text().contains("▌"), "panel marks a partial response")
 
 	AppState.focus_thread("thread_debug_02")
-	_check(panel.get_displayed_thread_id() == "thread_debug_02", "changing focus swaps panel transcript")
+	_check(
+		panel.get_displayed_thread_id() == "thread_demo",
+		"an open transcript panel does not follow focus automatically"
+	)
+	panel.open_thread("thread_debug_02")
+	_check(panel.get_displayed_thread_id() == "thread_debug_02", "opening the panel swaps its transcript")
 	_check(panel.get_rendered_body_text().contains("Planning"), "second thread shows its own history")
 	_check(transport.get_active_stream_count() == 2, "independent thread streams can coexist")
 

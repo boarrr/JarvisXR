@@ -40,6 +40,11 @@ const TOUCH_RELEASE_DISTANCE := 0.05
 # camera FOV). Hold the last state briefly so a blink does not cancel a touch,
 # grab, or the aim ray.
 const TRACKING_GRACE_SECONDS := 0.45
+const SUMMON_MIN_PULL := 0.08
+const FIST_CLOSE_DISTANCE := 0.055
+const FIST_OPEN_DISTANCE := 0.072
+const CRUSH_HOLD_SECONDS := 0.4
+const FIST_JOINTS := ["index_tip", "middle_tip", "ring_tip", "pinky_tip"]
 const REQUIRED_POSITION_FLAGS := (
 	XRHandTracker.HAND_JOINT_FLAG_POSITION_VALID
 	| XRHandTracker.HAND_JOINT_FLAG_POSITION_TRACKED
@@ -92,6 +97,12 @@ var _tracking_losses := 0
 var _missing_seconds := 0.0
 var _pointer_missing_seconds := 0.0
 var _telemetry_file: FileAccess = null
+var _summoning := false
+var _summon_origin := Vector3.ZERO
+var _fist_states := {"left": false, "right": false}
+var _crush_seconds := 0.0
+var _crush_latched := false
+var _attract_target := ""
 const GESTURE_LOG_PATH := "user://gesture_session.jsonl"
 const GESTURE_LOG_LIMIT_BYTES := 512 * 1024
 
@@ -165,7 +176,7 @@ func _physics_process(_delta: float) -> void:
 			_clear_pointer()
 	else:
 		_pointer_missing_seconds = 0.0
-		_apply_pointer_sample(pointer_sample)
+		_apply_pointer_sample(pointer_sample, _delta)
 	_update_bimanual_gesture()
 	if _telemetry_enabled:
 		_telemetry_elapsed += _delta
@@ -217,7 +228,7 @@ func simulate_tick(delta: float = 0.016) -> bool:
 	if pointer_sample.is_empty():
 		_clear_pointer()
 		return false
-	var applied := _apply_pointer_sample(pointer_sample)
+	var applied := _apply_pointer_sample(pointer_sample, delta)
 	_update_bimanual_gesture()
 	return applied
 
@@ -260,6 +271,16 @@ func _clear_pointer() -> void:
 	_touch_target_id = ""
 	_touch_area = null
 	_touch_release_needed = false
+	_summoning = false
+	_crush_seconds = 0.0
+	_crush_latched = false
+	if not _attract_target.is_empty():
+		interaction_event.emit(InteractionEvent.new(
+			InteractionEvent.Type.ATTRACT_END, _attract_target, InteractionEvent.Source.HAND
+		))
+		_attract_target = ""
+	_fist_states["left"] = false
+	_fist_states["right"] = false
 	if had_state:
 		pointer_state_changed.emit(_pointer_state.copy())
 
@@ -328,7 +349,7 @@ func _joint_has_tracked_position(tracker: XRHandTracker, joint: int) -> bool:
 	return (flags & REQUIRED_POSITION_FLAGS) == REQUIRED_POSITION_FLAGS
 
 
-func _apply_pointer_sample(sample: Dictionary) -> bool:
+func _apply_pointer_sample(sample: Dictionary, delta: float = 0.016) -> bool:
 	var index_tip := sample.get("index_tip", Vector3.ZERO) as Vector3
 	var index_distal := sample.get("index_distal", Vector3.ZERO) as Vector3
 	var index_proximal := sample.get("index_proximal", Vector3.ZERO) as Vector3
@@ -378,7 +399,16 @@ func _apply_pointer_sample(sample: Dictionary) -> bool:
 
 	_update_touch_interaction(index_tip)
 	if is_pinching and not was_pinching:
-		_begin_grab_if_touching(index_tip)
+		if not _begin_grab_if_touching(index_tip) and _hover_target_id.is_empty():
+			_begin_summon(index_tip)
+	elif is_pinching and _summoning:
+		interaction_event.emit(InteractionEvent.new(
+			InteractionEvent.Type.GRAB_MOVE,
+			"ui:summon",
+			InteractionEvent.Source.HAND,
+			index_tip,
+			{"gesture": "summon", "phase": "move"}
+		))
 	elif is_pinching and not _grab_target_id.is_empty():
 		if index_tip.distance_to(_grab_origin_position) > 0.012:
 			interaction_event.emit(InteractionEvent.new(
@@ -388,13 +418,131 @@ func _apply_pointer_sample(sample: Dictionary) -> bool:
 				index_tip,
 				{"gesture": "orb_grab", "phase": "move"}
 			))
-	elif not is_pinching and was_pinching and not _grab_target_id.is_empty():
-		_finish_grab(index_tip)
+	elif not is_pinching and was_pinching:
+		if _summoning:
+			_finish_summon(index_tip)
+		elif not _grab_target_id.is_empty():
+			_finish_grab(index_tip)
 
+	_update_fist_interaction(sample, index_tip, delta)
 	_update_pinch_scroll(index_tip, was_pinching, is_pinching)
 	pointer_state_changed.emit(_pointer_state.copy())
 	hand_pose_changed.emit(preferred_hand, palm_transform, index_tip, is_pinching)
 	return true
+
+
+func _hand_is_fist(hand_name: String) -> bool:
+	var sample: Dictionary = _latest_hand_samples.get(hand_name, {})
+	if sample.is_empty():
+		_fist_states[hand_name] = false
+		return false
+	var joints: Dictionary = sample.get("joints", {})
+	if not joints.has("palm"):
+		_fist_states[hand_name] = false
+		return false
+	var palm: Vector3 = joints["palm"]
+	var curled := true
+	var extended := false
+	for joint_name in FIST_JOINTS:
+		if not joints.has(joint_name):
+			curled = false
+			break
+		var distance: float = palm.distance_to(joints[joint_name])
+		if distance > FIST_OPEN_DISTANCE:
+			extended = true
+		if distance > FIST_CLOSE_DISTANCE:
+			curled = false
+	var was_fist: bool = _fist_states.get(hand_name, false)
+	var is_fist: bool = false
+	if was_fist:
+		is_fist = not extended
+	else:
+		is_fist = curled
+	_fist_states[hand_name] = is_fist
+	return is_fist
+
+
+func _update_fist_interaction(sample: Dictionary, index_tip: Vector3, delta: float) -> void:
+	var is_fist := _hand_is_fist(preferred_hand)
+	var touching_orb := not _touch_target_id.is_empty() and not ":" in _touch_target_id
+	if is_fist and touching_orb and not _summoning:
+		# Hold the fist on an orb to crush (archive) it.
+		_crush_seconds += delta
+		if _crush_seconds >= CRUSH_HOLD_SECONDS and not _crush_latched:
+			_crush_latched = true
+			interaction_event.emit(InteractionEvent.new(
+				InteractionEvent.Type.CRUSH,
+				_touch_target_id,
+				InteractionEvent.Source.HAND,
+				index_tip,
+				{"gesture": "crush"}
+			))
+		return
+	_crush_seconds = 0.0
+	if not is_fist:
+		_crush_latched = false
+
+	# Fist while pointing at a distant orb pulls it toward the palm.
+	var hovered := _hover_target_id
+	var can_attract := (
+		is_fist
+		and not touching_orb
+		and not _summoning
+		and not hovered.is_empty()
+		and not ":" in hovered
+	)
+	var palm_position := (sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D).origin
+	if can_attract:
+		if _attract_target != hovered:
+			if not _attract_target.is_empty():
+				interaction_event.emit(InteractionEvent.new(
+					InteractionEvent.Type.ATTRACT_END, _attract_target, InteractionEvent.Source.HAND
+				))
+			_attract_target = hovered
+			interaction_event.emit(InteractionEvent.new(
+				InteractionEvent.Type.ATTRACT_BEGIN,
+				_attract_target,
+				InteractionEvent.Source.HAND,
+				palm_position,
+				{"gesture": "attract"}
+			))
+		else:
+			interaction_event.emit(InteractionEvent.new(
+				InteractionEvent.Type.ATTRACT_MOVE,
+				_attract_target,
+				InteractionEvent.Source.HAND,
+				palm_position,
+				{"gesture": "attract"}
+			))
+	elif not _attract_target.is_empty():
+		interaction_event.emit(InteractionEvent.new(
+			InteractionEvent.Type.ATTRACT_END, _attract_target, InteractionEvent.Source.HAND
+		))
+		_attract_target = ""
+
+
+func _begin_summon(position: Vector3) -> void:
+	_summoning = true
+	_summon_origin = position
+	interaction_event.emit(InteractionEvent.new(
+		InteractionEvent.Type.GRAB_BEGIN,
+		"ui:summon",
+		InteractionEvent.Source.HAND,
+		position,
+		{"gesture": "summon", "phase": "begin"}
+	))
+
+
+func _finish_summon(position: Vector3) -> void:
+	var travelled := position.distance_to(_summon_origin)
+	_summoning = false
+	interaction_event.emit(InteractionEvent.new(
+		InteractionEvent.Type.GRAB_END,
+		"ui:summon",
+		InteractionEvent.Source.HAND,
+		position,
+		{"gesture": "summon", "phase": "end", "cancelled": travelled < SUMMON_MIN_PULL}
+	))
 
 
 func submit_joint_sample(
@@ -402,7 +550,8 @@ func submit_joint_sample(
 	palm_transform: Transform3D,
 	thumb_tip: Vector3,
 	index_distal: Vector3,
-	index_tip: Vector3
+	index_tip: Vector3,
+	joints: Dictionary = {}
 ) -> bool:
 	if not _session_active:
 		return false
@@ -412,6 +561,7 @@ func submit_joint_sample(
 		"thumb_tip": thumb_tip,
 		"index_distal": index_distal,
 		"index_tip": index_tip,
+		"joints": joints,
 	}
 	_latest_hand_samples[hand_name] = sample
 	_hand_pinch_states[hand_name] = evaluate_pinch(
@@ -536,9 +686,9 @@ func _update_touch_interaction(position: Vector3) -> void:
 	submit_direct_touch(_touch_target_id, position)
 
 
-func _begin_grab_if_touching(position: Vector3) -> void:
+func _begin_grab_if_touching(position: Vector3) -> bool:
 	if _touch_target_id.is_empty() or ":" in _touch_target_id:
-		return
+		return false
 	_grab_target_id = _touch_target_id
 	_grab_origin_position = position
 	interaction_event.emit(InteractionEvent.new(
@@ -548,6 +698,7 @@ func _begin_grab_if_touching(position: Vector3) -> void:
 		position,
 		{"gesture": "orb_grab", "phase": "begin"}
 	))
+	return true
 
 
 func _finish_grab(position: Vector3) -> void:

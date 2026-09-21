@@ -40,6 +40,7 @@ var _target_scale := Vector3.ONE
 var _target_global_position := Vector3.ZERO
 var _has_position_target := false
 var _activity_time := 0.0
+var _kinetic := false
 
 
 func _ready() -> void:
@@ -76,8 +77,11 @@ func _process(delta: float) -> void:
 	var activity_scale := _get_activity_scale()
 	scale = scale.lerp(_target_scale * activity_scale, blend)
 	if _has_position_target:
-		var movement_blend := 1.0 - exp(-movement_speed * delta)
-		global_position = global_position.lerp(_target_global_position, movement_blend)
+		if _kinetic:
+			global_position = _target_global_position
+		else:
+			var movement_blend := 1.0 - exp(-movement_speed * delta)
+			global_position = global_position.lerp(_target_global_position, movement_blend)
 
 	var rotation_speed := _get_rotation_speed()
 	_orbit_gimbal.rotate_z(delta * rotation_speed)
@@ -111,6 +115,19 @@ func get_interaction_target_id() -> String:
 func set_target_global_position(value: Vector3) -> void:
 	_target_global_position = value
 	_has_position_target = true
+
+
+func set_kinetic(value: bool) -> void:
+	# Kinetic orbs are positioned directly each frame (throw physics, attract)
+	# instead of easing toward a layout target.
+	_kinetic = value
+
+
+func collapse_and_free() -> void:
+	var tween := create_tween()
+	tween.tween_property(self, "scale", Vector3.ZERO, 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	tween.parallel().tween_property(self, "rotation", rotation + Vector3(0.0, 1.4, 0.0), 0.28)
+	tween.tween_callback(queue_free)
 
 
 func get_target_global_position() -> Vector3:

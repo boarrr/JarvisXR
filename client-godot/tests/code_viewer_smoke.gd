@@ -28,6 +28,9 @@ func _run() -> void:
 	_check(not viewer.get_diff_sculptor().visible, "ordinary code does not create a misleading diff sculpture")
 	_check(viewer.get_node("SurfaceTarget").get_interaction_target_id() == "ui:code_surface", "code surface is a hand-ray pinch-drag target")
 	var thread_panel := main.get_node("ThreadPanel") as ThreadPanel
+	# The transcript panel no longer auto-presents on focus; open it explicitly
+	# so its collapsed-code rendering and targets are covered.
+	thread_panel.open_thread("thread_debug_03")
 	var expected_lines := viewer.get_rendered_code().count("\n") + 1
 	_check(expected_lines > 60, "offline demo is long enough to exercise scrolling")
 	_check(thread_panel.get_rendered_body_text().contains("[CODE TRACE // GDSCRIPT // %02d LINES]" % expected_lines), "transcript collapses code duplicated by the spatial viewer")

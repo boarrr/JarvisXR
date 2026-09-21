@@ -83,8 +83,10 @@ func _run() -> void:
 	source.tracking_enabled = true
 	source.send_action("palm:focus_next")
 	source.send_action("palm:focus_next")
-	source.send_action("palm:code_toggle")
-	_check(viewer.is_open(), "toolbar opens code through normal semantic routing")
+	# The palm toolbar no longer exposes a code-trace button; the viewer opens
+	# on demand so scroll and two-hand manipulation stay covered.
+	viewer.open_focused_thread()
+	_check(viewer.is_open(), "code trace opens on demand")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	source.submit_pinch_scroll(-1.0)

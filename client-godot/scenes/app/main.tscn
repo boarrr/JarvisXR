@@ -144,6 +144,7 @@ script = ExtResource("4_interaction")
 script = ExtResource("24_anchors")
 
 [node name="ThreadPanel" parent="." instance=ExtResource("7_thread_panel")]
+auto_present = false
 
 [node name="CodeViewer" parent="." instance=ExtResource("15_code_viewer")]
 

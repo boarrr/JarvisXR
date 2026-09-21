@@ -39,6 +39,7 @@ var _streams: Dictionary = {}
 var _pending_approvals: Dictionary = {}
 var _worktrees_by_thread: Dictionary = {}
 var _diffs_by_run: Dictionary = {}
+var _archived_threads: Dictionary = {}
 var _event_counter: int = 0
 var _message_counter: int = 0
 var _run_counter: int = 0
@@ -138,6 +139,8 @@ func send_command(command_type: String, payload: Dictionary = {}, thread_id: Str
 			return true
 		"thread.combine":
 			return _combine_threads(payload)
+		"thread.restore":
+			return _restore_thread(thread_id)
 		"debug.workspace.diff":
 			return _inject_workspace_diff(thread_id, payload)
 		_:
@@ -205,6 +208,7 @@ func _reset_fake_state() -> void:
 	_pending_approvals.clear()
 	_worktrees_by_thread.clear()
 	_diffs_by_run.clear()
+	_archived_threads.clear()
 	_focused_thread_id = ""
 	_event_counter = 0
 	_message_counter = 0
@@ -366,11 +370,25 @@ func _archive_thread(thread_id: String) -> bool:
 		return false
 	if _streams.has(thread_id):
 		_streams.erase(thread_id)
+	_archived_threads[thread_id] = _threads_by_id[thread_id]
 	_threads_by_id.erase(thread_id)
 	_ordered_thread_ids.erase(thread_id)
 	if _focused_thread_id == thread_id:
 		_focused_thread_id = ""
 	_emit_event("thread.archived", thread_id, {})
+	return true
+
+
+func _restore_thread(thread_id: String) -> bool:
+	if _threads_by_id.has(thread_id):
+		return true
+	if not _archived_threads.has(thread_id):
+		_emit_error("thread_not_found", "Unknown thread: %s" % thread_id, thread_id)
+		return false
+	var thread: Dictionary = _archived_threads[thread_id]
+	_archived_threads.erase(thread_id)
+	_insert_thread(thread)
+	_emit_event("thread.created", thread_id, {"thread": thread.duplicate(true)})
 	return true
 
 

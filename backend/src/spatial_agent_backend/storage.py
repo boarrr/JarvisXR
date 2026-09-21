@@ -168,6 +168,13 @@ class SQLiteStore:
             )
             return cursor.rowcount > 0
 
+    def restore_thread(self, thread_id: str) -> bool:
+        with closing(self._connect()) as connection, connection:
+            cursor = connection.execute(
+                "UPDATE threads SET archived = 0 WHERE id = ? AND archived = 1", (thread_id,)
+            )
+            return cursor.rowcount > 0
+
     def insert_pairing_code(self, code_hash: str, ttl_seconds: float) -> bool:
         now = time.time()
         with closing(self._connect()) as connection, connection:

@@ -214,7 +214,8 @@
               "run.cancel",
               "workspace.list",
               "tool.catalog",
-              "diff.get"
+              "diff.get",
+              "thread.restore"
             ]
           }
         }

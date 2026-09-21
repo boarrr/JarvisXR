@@ -59,6 +59,21 @@ class ThreadService:
                 self._threads.pop(thread_id, None)
             return archived
 
+    async def restore_thread(self, thread_id: str) -> Thread:
+        """Un-archive a thread so an undo can bring its agent back."""
+        async with self._lock:
+            existing = self._threads.get(thread_id)
+            if existing is not None:
+                return existing
+            restored = await asyncio.to_thread(self.store.restore_thread, thread_id)
+            if not restored:
+                raise ThreadNotFoundError(thread_id)
+            thread = await asyncio.to_thread(self.store.get_thread, thread_id)
+            if thread is None:
+                raise ThreadNotFoundError(thread_id)
+            self._threads[thread_id] = thread
+            return thread
+
     async def combine_threads(self, thread_ids: list[str]) -> Thread:
         """Create one new thread seeded with bounded context from several threads."""
         async with self._lock:
