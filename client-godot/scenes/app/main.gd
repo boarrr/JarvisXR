@@ -266,6 +266,8 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 					)
 		InteractionEvent.Type.CRUSH:
 			_crush_agent(event.target_id)
+		InteractionEvent.Type.SUMMON:
+			_palm_console.summon_now()
 		InteractionEvent.Type.ATTRACT_BEGIN:
 			_orb_manager.attract_begin(event.target_id)
 		InteractionEvent.Type.ATTRACT_MOVE:

@@ -206,6 +206,28 @@ func get_screen_viewport() -> SubViewport:
 	return _viewport
 
 
+func summon_now() -> void:
+	# Deliberate summon (double-pinch) or a repeat press closes the console.
+	if visible:
+		_hide_panel()
+		return
+	if _camera == null and _user_rig != null:
+		_camera = _user_rig.get_camera()
+	if _camera == null:
+		return
+	var camera_position := _camera.global_position
+	var camera_forward := -_camera.global_transform.basis.z
+	camera_forward.y = 0.0
+	if camera_forward.length_squared() < 0.0001:
+		camera_forward = Vector3.FORWARD
+	_park_panel(camera_position, camera_forward.normalized())
+	visible = true
+	_panel_ignored = 0.0
+	if _viewport != null:
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	_refresh_screen()
+
+
 func handle_screen_action(target_id: String) -> void:
 	match target_id:
 		"palm_screen:code_up":

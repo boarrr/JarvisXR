@@ -222,6 +222,33 @@ func _run() -> void:
 		"chat touch targets deactivate on the code page"
 	)
 
+	# Double-pinch in empty space is the deliberate console summon.
+	var pinch_source := OpenXRInteractionSource.new()
+	add_child(pinch_source)
+	pinch_source.set_hand_tracking_active(true)
+	var pinch_events: Array[InteractionEvent] = []
+	pinch_source.interaction_event.connect(
+		func(event: InteractionEvent) -> void: pinch_events.append(event)
+	)
+	var pinch_palm := Transform3D(Basis.IDENTITY, Vector3(3.0, 1.4, -0.4))
+	for _pinch in range(2):
+		pinch_source.submit_joint_sample(
+			"right", pinch_palm,
+			Vector3(3.02, 1.42, -0.65), Vector3(3.0, 1.4, -0.6), Vector3(3.0, 1.42, -0.65)
+		)
+		pinch_source.submit_joint_sample(
+			"right", pinch_palm,
+			Vector3(3.06, 1.42, -0.7), Vector3(3.0, 1.4, -0.6), Vector3(3.0, 1.42, -0.65)
+		)
+	var summons := pinch_events.filter(
+		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.SUMMON
+	)
+	_check(summons.size() == 1, "double pinch in empty space summons the console")
+
+	var palm_console := main.get_node("PalmConsole") as PalmConsole
+	palm_console.summon_now()
+	_check(palm_console.visible, "summon_now parks and shows the console")
+
 	if not _failed:
 		print("[TEST] Standing orbit and two-hand role checks passed")
 	main.queue_free()

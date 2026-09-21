@@ -37,6 +37,8 @@ var _aim_material: StandardMaterial3D = null
 var _markers: Dictionary = {"left": {}, "right": {}}
 var _marker_materials: Dictionary = {}
 var _hint: Label3D = null
+var _gesture_hud: Label3D = null
+var _gesture_hud_enabled := false
 
 
 func _ready() -> void:
@@ -46,6 +48,9 @@ func _ready() -> void:
 	_aim_material = _make_unique_material(_aim_light)
 	_build_markers()
 	_build_hint()
+	_gesture_hud_enabled = bool(ProjectSettings.get_setting("spatial_agent/gesture_hud", false))
+	if _gesture_hud_enabled:
+		_build_gesture_hud()
 	visible = false
 
 
@@ -103,6 +108,11 @@ func _process(_delta: float) -> void:
 	if show_hint:
 		_place_hint()
 		any_visible = true
+	if _gesture_hud != null:
+		_update_gesture_hud()
+		_gesture_hud.visible = AppState.ui_mode == "xr_hands" or AppState.ui_mode == "hand_lab"
+		if _gesture_hud.visible:
+			any_visible = true
 	visible = any_visible
 
 
@@ -204,6 +214,47 @@ func _raycast(origin: Vector3, direction: Vector3) -> Dictionary:
 		excluded.append(collider.get_rid())
 		query.exclude = excluded
 	return {}
+
+
+func _build_gesture_hud() -> void:
+	_gesture_hud = Label3D.new()
+	_gesture_hud.font_size = 26
+	_gesture_hud.outline_size = 6
+	_gesture_hud.pixel_size = 0.0016
+	_gesture_hud.modulate = Color(0.75, 0.95, 1.0, 1.0)
+	_gesture_hud.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_gesture_hud.no_depth_test = true
+	_gesture_hud.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_gesture_hud.visible = false
+	add_child(_gesture_hud)
+
+
+func _update_gesture_hud() -> void:
+	if _source == null or _gesture_hud == null:
+		return
+	var flags := _source.get_tracking_flags()
+	var lines: PackedStringArray = []
+	lines.append("GESTURES  hover=%s" % (AppState.hovered_target_id if not AppState.hovered_target_id.is_empty() else "-"))
+	for hand_name in ["right", "left"]:
+		var tracked := bool(flags.get(hand_name, false))
+		var sample := _source.get_latest_hand_sample(hand_name)
+		var pinch_mm := 0.0
+		if not sample.is_empty():
+			var thumb: Vector3 = sample.get("thumb_tip", Vector3.ZERO)
+			var index: Vector3 = sample.get("index_tip", Vector3.ZERO)
+			pinch_mm = thumb.distance_to(index) * 1000.0
+		lines.append("%s %s pinch=%.0fmm fist=%s select=%s" % [
+			hand_name.to_upper(),
+			"tracked" if tracked else "MISSING",
+			pinch_mm,
+			_source.get_fist_state(hand_name),
+			_source.is_hand_pinching(hand_name),
+		])
+	_gesture_hud.text = "\n".join(lines)
+	var camera := get_viewport().get_camera_3d()
+	if camera != null:
+		var basis := camera.global_transform.basis.orthonormalized()
+		_gesture_hud.global_position = camera.global_position + basis * Vector3(-0.42, 0.30, -1.1)
 
 
 func _place_hint() -> void:

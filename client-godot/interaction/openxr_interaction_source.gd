@@ -40,8 +40,10 @@ const TOUCH_RELEASE_DISTANCE := 0.07
 # camera FOV). Hold the last state briefly so a blink does not cancel a touch,
 # grab, or the aim ray.
 const TRACKING_GRACE_SECONDS := 0.45
-const FIST_CLOSE_DISTANCE := 0.055
-const FIST_OPEN_DISTANCE := 0.072
+const FIST_CLOSE_DISTANCE := 0.065
+const FIST_OPEN_DISTANCE := 0.09
+const FIST_MIN_CURLED := 3
+const DOUBLE_PINCH_WINDOW_MSEC := 800
 const CRUSH_HOLD_SECONDS := 0.4
 const FIST_JOINTS := ["index_tip", "middle_tip", "ring_tip", "pinky_tip"]
 const REQUIRED_POSITION_FLAGS := (
@@ -100,6 +102,7 @@ var _fist_states := {"left": false, "right": false}
 var _crush_seconds := 0.0
 var _crush_latched := false
 var _attract_target := ""
+var _last_empty_pinch_msec := 0
 const GESTURE_LOG_PATH := "user://gesture_session.jsonl"
 const GESTURE_LOG_LIMIT_BYTES := 512 * 1024
 
@@ -405,8 +408,11 @@ func _apply_pointer_sample(sample: Dictionary, delta: float = 0.016) -> bool:
 				index_tip,
 				{"gesture": "orb_grab", "phase": "move"}
 			))
-	elif not is_pinching and was_pinching and not _grab_target_id.is_empty():
-		_finish_grab(index_tip)
+	elif not is_pinching and was_pinching:
+		if not _grab_target_id.is_empty():
+			_finish_grab(index_tip)
+		else:
+			_handle_empty_pinch_end(index_tip)
 
 	_update_fist_interaction(sample, index_tip, delta)
 	_update_pinch_scroll(index_tip, was_pinching, is_pinching)
@@ -425,23 +431,18 @@ func _hand_is_fist(hand_name: String) -> bool:
 		_fist_states[hand_name] = false
 		return false
 	var palm: Vector3 = joints["palm"]
-	var curled := true
-	var extended := false
+	var curled_count := 0
+	var extended_count := 0
 	for joint_name in FIST_JOINTS:
 		if not joints.has(joint_name):
-			curled = false
-			break
+			continue
 		var distance: float = palm.distance_to(joints[joint_name])
-		if distance > FIST_OPEN_DISTANCE:
-			extended = true
-		if distance > FIST_CLOSE_DISTANCE:
-			curled = false
+		if distance <= FIST_CLOSE_DISTANCE:
+			curled_count += 1
+		if distance >= FIST_OPEN_DISTANCE:
+			extended_count += 1
 	var was_fist: bool = _fist_states.get(hand_name, false)
-	var is_fist: bool = false
-	if was_fist:
-		is_fist = not extended
-	else:
-		is_fist = curled
+	var is_fist: bool = extended_count == 0 if was_fist else curled_count >= FIST_MIN_CURLED
 	_fist_states[hand_name] = is_fist
 	return is_fist
 
@@ -643,6 +644,38 @@ func _update_touch_interaction(position: Vector3) -> void:
 	_touch_area = contact["area"] as Area3D
 	_touch_release_needed = true
 	submit_direct_touch(_touch_target_id, position)
+
+
+func _handle_empty_pinch_end(position: Vector3) -> void:
+	# Double-pinch in empty space summons the console. It is deliberately
+	# distinct from the headset system gesture (palm-to-face pinch), which the
+	# OS consumes before the app sees it.
+	if not _hover_target_id.is_empty() or not _touch_target_id.is_empty():
+		_last_empty_pinch_msec = 0
+		return
+	var now := Time.get_ticks_msec()
+	if _last_empty_pinch_msec > 0 and now - _last_empty_pinch_msec <= DOUBLE_PINCH_WINDOW_MSEC:
+		_last_empty_pinch_msec = 0
+		interaction_event.emit(InteractionEvent.new(
+			InteractionEvent.Type.SUMMON,
+			"ui:summon",
+			InteractionEvent.Source.HAND,
+			position,
+			{"gesture": "double_pinch"}
+		))
+		return
+	_last_empty_pinch_msec = now
+
+
+func get_tracking_flags() -> Dictionary:
+	return {
+		"left": _latest_hand_samples.has("left"),
+		"right": _latest_hand_samples.has("right"),
+	}
+
+
+func get_fist_state(hand_name: String) -> bool:
+	return bool(_fist_states.get(hand_name, false))
 
 
 func _begin_grab_if_touching(position: Vector3) -> bool:

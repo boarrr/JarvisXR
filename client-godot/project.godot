@@ -165,6 +165,7 @@ backend_websocket_url="ws://127.0.0.1:8787/ws"
 allow_unsafe_tls=false
 perf_probe=true
 gesture_telemetry=false
+gesture_hud=true
 xr_refresh_rate=72.0
 speech_enabled=false
 whisper_cli_path="whisper-cli"
