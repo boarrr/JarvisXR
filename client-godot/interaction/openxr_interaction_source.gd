@@ -93,7 +93,7 @@ func _ready() -> void:
 		_xr_origin = get_node_or_null(xr_origin_path) as Node3D
 	_telemetry_enabled = bool(
 		ProjectSettings.get_setting("spatial_agent/gesture_telemetry", false)
-	)
+	) or ("--gesture-telemetry" in OS.get_cmdline_args())
 	set_physics_process(false)
 
 
@@ -146,7 +146,7 @@ func _physics_process(_delta: float) -> void:
 	_update_bimanual_gesture()
 	if _telemetry_enabled:
 		_telemetry_elapsed += _delta
-		if _telemetry_elapsed >= 0.25:
+		if _telemetry_elapsed >= 1.0:
 			_telemetry_elapsed = 0.0
 			_emit_gesture_telemetry()
 

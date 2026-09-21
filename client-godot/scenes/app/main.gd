@@ -69,6 +69,7 @@ func _ready() -> void:
 	AppState.approval_requested.connect(_on_approval_requested)
 	AppState.approval_resolved.connect(_on_approval_resolved)
 	EventBus.cockpit_panel_requested.connect(_on_cockpit_panel_requested)
+	EventBus.debug_message.connect(_on_debug_message)
 	AppState.listening_state = _speech_service.get_state()
 
 	AppState.ui_mode = "xr_hands" if xr_active else ("hand_lab" if lab_active else "desktop")
@@ -284,8 +285,14 @@ func _toggle_cockpit_review() -> void:
 	_file_viewer.open_focused_thread()
 
 
-func _on_cockpit_panel_requested(panel: String) -> void:
-	match panel:
+func _on_debug_message(message: String) -> void:
+	# A daemon that requires pairing answers its first hello with an auth error;
+	# surface the keypad immediately so the headset can recover hands-only.
+	if message.contains("Pair this device") or message.contains("auth_required"):
+		_daemon_settings_panel.open_pairing()
+
+
+func _on_cockpit_panel_requested(panel: String) -> void:	match panel:
 		"workspace":
 			_workspace_panel.toggle()
 		"diff":

@@ -32,4 +32,8 @@ if [ "${1:-}" = "--pair" ]; then
 	exec .venv/bin/python -c "from spatial_agent_backend.pairing_cli import main; main()"
 fi
 
+if [ "${1:-}" = "--pair-token" ]; then
+	exec .venv/bin/python -c "import sys; sys.argv=['pair', '--token']; from spatial_agent_backend.pairing_cli import main; main()"
+fi
+
 exec .venv/bin/python -m spatial_agent_backend

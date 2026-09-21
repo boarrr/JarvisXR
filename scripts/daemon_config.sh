@@ -29,11 +29,13 @@ if [ "${1:-}" = "--show" ]; then
 fi
 
 config_file=$(mktemp "${TMPDIR:-/tmp}/spatial-agent-daemon.XXXXXX")
+token=$("$project_root/scripts/run_backend.sh" --pair-token 2>/dev/null | tail -1 || true)
 cat > "$config_file" <<EOF
 [daemon]
 
 websocket_url="wss://$lan_ip:8787/ws"
 ca_certificate_path="dev_ca.crt"
+auth_token="$token"
 EOF
 
 adb start-server >/dev/null 2>&1
@@ -42,5 +44,5 @@ adb shell "run-as $package_name sh -c 'cat > files/daemon.cfg'" < "$config_file"
 rm -f "$config_file"
 
 printf '%s\n' "Seeded device daemon config: wss://$lan_ip:8787/ws with the dev CA."
-printf '%s\n' "The device token is preserved if one was already paired."
+printf '%s\n' "A fresh bootstrap device token was written for this headset."
 printf '%s\n' "Next: ./scripts/run_backend.sh --lan  then relaunch Spatial Agent XR."

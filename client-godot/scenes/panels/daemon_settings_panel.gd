@@ -45,6 +45,15 @@ func _build_ui(root: Control) -> void:
 	make_button(root, Rect2(Vector2(410, 430), Vector2(240, 46)), "PAIR WITH CODE", "daemon:pair_mode", COLOR_TITLE)
 
 
+func open_pairing() -> void:
+	# Used when the daemon rejects the session for missing auth: the keypad is
+	# the only hand-only way to recover without a keyboard.
+	if not visible:
+		open()
+	if not _pairing:
+		_enter_pairing()
+
+
 func handle_action(target_id: String) -> void:
 	match target_id:
 		"daemon:refresh":
