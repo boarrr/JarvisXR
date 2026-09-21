@@ -112,6 +112,21 @@ class ProtocolTests(unittest.TestCase):
                 max_bytes=4096,
             )
 
+    def test_combine_command_validates_thread_ids(self) -> None:
+        parsed = parse_client_message(
+            command("thread.combine", payload={"thread_ids": ["thread_1", "thread_2"]}),
+            max_bytes=4096,
+        )
+        self.assertEqual(len(parsed.payload["thread_ids"]), 2)
+        for invalid in (
+            {"thread_ids": ["thread_1"]},
+            {"thread_ids": ["thread_1", "thread_1"]},
+            {"thread_ids": ["thread_1", ""]},
+            {"thread_ids": "thread_1"},
+        ):
+            with self.assertRaises(ProtocolError):
+                parse_client_message(command("thread.combine", payload=invalid), max_bytes=4096)
+
 
 if __name__ == "__main__":
     unittest.main()

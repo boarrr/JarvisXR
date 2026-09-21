@@ -34,7 +34,8 @@ const PALM_ACTIONS := [
 
 const LEFT_TRACKER_PATH := &"/user/hand_tracker/left"
 const RIGHT_TRACKER_PATH := &"/user/hand_tracker/right"
-const TOUCH_MARGIN := 0.12
+const TOUCH_CONTACT_DISTANCE := 0.012
+const TOUCH_RELEASE_DISTANCE := 0.05
 const REQUIRED_POSITION_FLAGS := (
 	XRHandTracker.HAND_JOINT_FLAG_POSITION_VALID
 	| XRHandTracker.HAND_JOINT_FLAG_POSITION_TRACKED
@@ -78,6 +79,9 @@ var _bimanual_initial_vector := Vector3.RIGHT
 var _bimanual_initial_distance := 1.0
 var _grab_target_id := ""
 var _grab_origin_position := Vector3.ZERO
+var _touch_target_id := ""
+var _touch_area: Area3D = null
+var _touch_release_needed := false
 
 
 func _ready() -> void:
@@ -177,6 +181,9 @@ func _clear_pointer() -> void:
 	_active_hand_name = ""
 	_has_smoothed_ray = false
 	_hand_pinch_states[preferred_hand] = false
+	_touch_target_id = ""
+	_touch_area = null
+	_touch_release_needed = false
 	if had_state:
 		pointer_state_changed.emit(_pointer_state.copy())
 
@@ -286,8 +293,9 @@ func _apply_pointer_sample(sample: Dictionary) -> bool:
 	_pointer_state.is_selecting = is_pinching
 	_pointer_state.is_grabbing = not _grab_target_id.is_empty()
 
+	_update_touch_interaction(index_tip)
 	if is_pinching and not was_pinching:
-		_start_touch_interaction(index_tip)
+		_begin_grab_if_touching(index_tip)
 	elif is_pinching and not _grab_target_id.is_empty():
 		if index_tip.distance_to(_grab_origin_position) > 0.012:
 			interaction_event.emit(InteractionEvent.new(
@@ -424,23 +432,37 @@ func _set_tracking_available(value: bool) -> void:
 	tracking_changed.emit(value)
 
 
-func _start_touch_interaction(position: Vector3) -> void:
-	var target_id := _nearest_touch_target(position)
-	if target_id.is_empty():
+func _update_touch_interaction(position: Vector3) -> void:
+	# Physical touch behaves like the headset's system keyboard: the fingertip
+	# presses a control on contact and latches until it pulls away.
+	if _touch_release_needed:
+		if _touch_area == null or _distance_to_area(_touch_area, position) > TOUCH_RELEASE_DISTANCE:
+			_touch_release_needed = false
+			_touch_target_id = ""
+			_touch_area = null
+		else:
+			return
+	var contact := _nearest_touch_target(position)
+	if contact.is_empty():
 		return
-	submit_direct_touch(target_id, position)
-	# Bare thread IDs are orbs: pinching one starts a grab so it can be moved
-	# or dropped onto another orb to combine them.
-	if not ":" in target_id:
-		_grab_target_id = target_id
-		_grab_origin_position = position
-		interaction_event.emit(InteractionEvent.new(
-			InteractionEvent.Type.GRAB_BEGIN,
-			target_id,
-			InteractionEvent.Source.HAND,
-			position,
-			{"gesture": "orb_grab", "phase": "begin"}
-		))
+	_touch_target_id = str((contact as Dictionary)["target_id"])
+	_touch_area = contact["area"] as Area3D
+	_touch_release_needed = true
+	submit_direct_touch(_touch_target_id, position)
+
+
+func _begin_grab_if_touching(position: Vector3) -> void:
+	if _touch_target_id.is_empty() or ":" in _touch_target_id:
+		return
+	_grab_target_id = _touch_target_id
+	_grab_origin_position = position
+	interaction_event.emit(InteractionEvent.new(
+		InteractionEvent.Type.GRAB_BEGIN,
+		_grab_target_id,
+		InteractionEvent.Source.HAND,
+		position,
+		{"gesture": "orb_grab", "phase": "begin"}
+	))
 
 
 func _finish_grab(position: Vector3) -> void:
@@ -454,9 +476,10 @@ func _finish_grab(position: Vector3) -> void:
 	_grab_target_id = ""
 
 
-func _nearest_touch_target(position: Vector3) -> String:
+func _nearest_touch_target(position: Vector3) -> Dictionary:
 	var best_target := ""
-	var best_slack := 0.0
+	var best_area: Area3D = null
+	var best_distance := TOUCH_CONTACT_DISTANCE
 	for node in get_tree().get_nodes_in_group("interactable"):
 		var area := node as Area3D
 		if area == null or not area.is_visible_in_tree():
@@ -466,20 +489,49 @@ func _nearest_touch_target(position: Vector3) -> String:
 		var target_id := str(area.call("get_interaction_target_id"))
 		if target_id.is_empty():
 			continue
-		var slack := position.distance_to(area.global_position) - _shape_radius(area) - TOUCH_MARGIN
-		if slack < 0.0 and (best_target.is_empty() or slack < best_slack):
-			best_slack = slack
+		var distance := _distance_to_area(area, position)
+		if distance <= best_distance:
+			best_distance = distance
 			best_target = target_id
-	return best_target
+			best_area = area
+	if best_target.is_empty():
+		return {}
+	return {"target_id": best_target, "area": best_area}
 
 
-func _shape_radius(area: Area3D) -> float:
+func _distance_to_area(area: Area3D, point: Vector3) -> float:
+	var best := INF
 	for child in area.get_children():
-		if child is CollisionShape3D:
-			var shape := (child as CollisionShape3D).shape
-			if shape is SphereShape3D:
-				return (shape as SphereShape3D).radius
-	return 0.0
+		if not (child is CollisionShape3D):
+			continue
+		var collision := child as CollisionShape3D
+		var shape := collision.shape
+		var local := collision.global_transform.affine_inverse() * point
+		var distance := INF
+		if shape is SphereShape3D:
+			distance = local.length() - (shape as SphereShape3D).radius
+		elif shape is BoxShape3D:
+			var half := (shape as BoxShape3D).size * 0.5
+			var outside := Vector3(
+				maxf(absf(local.x) - half.x, 0.0),
+				maxf(absf(local.y) - half.y, 0.0),
+				maxf(absf(local.z) - half.z, 0.0)
+			)
+			var inside := minf(
+				maxf(absf(local.x) - half.x, maxf(absf(local.y) - half.y, absf(local.z) - half.z)),
+				0.0
+			)
+			distance = outside.length() + inside
+		elif shape is CylinderShape3D:
+			var cylinder := shape as CylinderShape3D
+			var horizontal := Vector2(local.x, local.z).length() - cylinder.radius
+			var vertical := absf(local.y) - cylinder.height * 0.5
+			distance = (
+				Vector2(maxf(horizontal, 0.0), maxf(vertical, 0.0)).length()
+				+ minf(maxf(horizontal, vertical), 0.0)
+			)
+		best = minf(best, distance)
+	return best
 
 
 func _reset_tracking() -> void:

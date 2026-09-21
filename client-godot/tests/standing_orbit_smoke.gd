@@ -48,13 +48,33 @@ func _run() -> void:
 	_check(not AppState.link_orbs(second_id, first_id), "orb links reject cycles")
 	_check(AppState.unlink_orb(first_id), "combined orb can be detached again")
 
+	# Combining through the transport creates a new agent seeded with both contexts.
+	var bridge := main.get_node("BackendBridge") as BackendBridge
+	var thread_count_before := AppState.ordered_thread_ids.size()
+	_check(
+		bridge.send_command("thread.combine", {"thread_ids": [first_id, second_id]}),
+		"combine command is accepted by the transport"
+	)
+	_check(
+		AppState.ordered_thread_ids.size() == thread_count_before + 1,
+		"combining creates a new agent thread"
+	)
+	var combined_thread: AgentThread = AppState.get_thread(AppState.ordered_thread_ids.back())
+	_check(
+		combined_thread != null and combined_thread.title.contains("combined"),
+		"combined thread carries a combined title"
+	)
+
 	# Standing centre: in XR the layout anchors to the play-space origin, so the
 	# agent ring does not follow the user as they walk.
 	AppState.ui_mode = "xr_hands"
+	var ground := (main.get_node("XRRuntime/XROrigin3D") as Node3D).global_position
 	var origin := manager._get_layout_origin()
 	_check(
-		origin.distance_to(main.get_node("XRRuntime/XROrigin3D").global_position) < 0.001,
-		"XR layout anchors to the standing centre"
+		absf(origin.x - ground.x) < 0.001
+		and absf(origin.z - ground.z) < 0.001
+		and origin.y > ground.y + 0.5,
+		"XR layout anchors to the standing centre at head height"
 	)
 	AppState.ui_mode = "desktop"
 

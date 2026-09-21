@@ -21,6 +21,8 @@ var _standing_center: Node3D = null
 var _orbs_by_thread_id: Dictionary = {}
 var _last_layout_origin := Vector3.ZERO
 var _grab_position := Vector3.ZERO
+var _standing_height := 1.4
+var _height_captured := false
 
 
 func _ready() -> void:
@@ -43,6 +45,15 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	# Desktop movement and XR recentering move the layout origin; refresh when it
 	# actually changes so standing users keep a stable agent ring.
+	if AppState.ui_mode == "xr_hands":
+		if not _height_captured:
+			var camera := _user_rig.get_camera() if _user_rig != null else null
+			if camera != null:
+				_standing_height = camera.global_position.y
+				_height_captured = true
+				_refresh_layout()
+	else:
+		_height_captured = false
 	var origin := _get_layout_origin()
 	if origin.distance_squared_to(_last_layout_origin) > 0.000004:
 		_refresh_layout()
@@ -203,7 +214,8 @@ func _get_layout_origin() -> Vector3:
 		and _standing_center != null
 		and _standing_center.is_inside_tree()
 	):
-		return _standing_center.global_position
+		var ground := _standing_center.global_position
+		return Vector3(ground.x, ground.y + _standing_height, ground.z)
 	if _user_rig == null:
 		return global_position
 	return _user_rig.global_position

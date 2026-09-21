@@ -136,6 +136,8 @@ func send_command(command_type: String, payload: Dictionary = {}, thread_id: Str
 		"tool.catalog":
 			_emit_tool_catalog()
 			return true
+		"thread.combine":
+			return _combine_threads(payload)
 		"debug.workspace.diff":
 			return _inject_workspace_diff(thread_id, payload)
 		_:
@@ -281,6 +283,59 @@ func _create_thread(payload: Dictionary) -> bool:
 	var thread := _make_thread(thread_id, title, status, number)
 	_insert_thread(thread)
 	_emit_event("thread.created", thread_id, {"thread": thread.duplicate(true)})
+	return true
+
+
+func _combine_threads(payload: Dictionary) -> bool:
+	var source_ids: Array = payload.get("thread_ids", [])
+	if source_ids.size() < 2:
+		return false
+	var titles: PackedStringArray = []
+	var excerpts: PackedStringArray = []
+	for source_variant in source_ids:
+		var source_id := str(source_variant)
+		if not _threads_by_id.has(source_id):
+			_emit_error("thread_not_found", "Unknown thread: %s" % source_id, source_id)
+			return false
+		var source: Dictionary = _threads_by_id[source_id]
+		titles.append(str(source.get("title", source_id)))
+		var messages: Array = source.get("messages", [])
+		var text := "No messages yet."
+		for index in range(messages.size() - 1, -1, -1):
+			var message: Dictionary = messages[index]
+			if (
+				str(message.get("role", "")) in ["user", "assistant", "tool"]
+				and not str(message.get("content", "")).strip_edges().is_empty()
+			):
+				text = str(message.get("content", "")).strip_edges().substr(0, 900)
+				break
+		excerpts.append("[%s]\n%s" % [source.get("title", source_id), text])
+	var number := _claim_thread_number()
+	var new_id := "thread_demo" if number == 1 else "thread_debug_%02d" % number
+	var combined := _make_thread(
+		new_id,
+		("%s (combined)" % " + ".join(titles)).left(120),
+		"idle",
+		number
+	)
+	combined["parent_thread_id"] = str(source_ids[0])
+	var metadata: Dictionary = combined.get("metadata", {})
+	metadata["combined_from"] = source_ids.duplicate()
+	combined["metadata"] = metadata
+	_message_counter += 1
+	var messages: Array = combined.get("messages", [])
+	messages.append({
+		"id": "msg_fake_combined_%03d" % _message_counter,
+		"thread_id": new_id,
+		"role": "user",
+		"content": "Combined context from two agents:\n\n" + "\n\n---\n\n".join(excerpts),
+		"created_at": _timestamp(),
+		"is_streaming": false,
+		"metadata": {},
+	})
+	combined["messages"] = messages
+	_insert_thread(combined)
+	_emit_event("thread.created", new_id, {"thread": combined.duplicate(true)})
 	return true
 
 

@@ -466,6 +466,25 @@ class SpatialAgentServer:
             await emit("thread.updated", command.thread_id, {"thread": thread.to_wire()})
         elif command.type == "tool.catalog":
             await emit("tool.catalog", "", self._tool_catalog_payload())
+        elif command.type == "thread.combine":
+            try:
+                combined = await self.threads.combine_threads(
+                    [str(item) for item in command.payload["thread_ids"]]
+                )
+            except ThreadNotFoundError:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "thread_not_found", "message": "Unknown source thread"},
+                )
+                return
+            log_record(
+                "threads_combined",
+                session_id=session.id,
+                thread_id=combined.id,
+                sources=len(command.payload["thread_ids"]),
+            )
+            await emit("thread.created", combined.id, {"thread": combined.to_wire()})
         else:
             await emit("error", command.thread_id, {"code": "unknown_command", "message": "Unknown command"})
 

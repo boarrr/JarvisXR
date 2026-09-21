@@ -257,6 +257,57 @@ class WorkspaceFlowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(event["type"], "error")
             self.assertEqual(event["payload"]["code"], "unsupported_version")
 
+    async def test_combine_creates_thread_with_both_contexts(self) -> None:
+        websocket, session_id = await self.open_session()
+        async with websocket:
+            thread_id = await self.first_thread_id(websocket, session_id)
+            await websocket.send(
+                command(
+                    "message.send",
+                    session_id=session_id,
+                    thread_id=thread_id,
+                    payload={"content": "Alpha context marker"},
+                )
+            )
+            await receive_until(websocket, "run.completed")
+
+            await websocket.send(
+                command("thread.create", session_id=session_id, payload={"title": "Second agent"})
+            )
+            created = await receive_event(websocket)
+            self.assertEqual(created["type"], "thread.created")
+            second_id = created["thread_id"]
+            await websocket.send(
+                command(
+                    "message.send",
+                    session_id=session_id,
+                    thread_id=second_id,
+                    payload={"content": "Beta context marker"},
+                )
+            )
+            await receive_until(websocket, "run.completed")
+
+            await websocket.send(
+                command(
+                    "thread.combine",
+                    session_id=session_id,
+                    payload={"thread_ids": [thread_id, second_id]},
+                )
+            )
+            _, combined = await receive_until(websocket, "thread.created")
+            payload = combined["payload"]["thread"]
+            self.assertIn("combined", payload["title"])
+            self.assertEqual(payload["parent_thread_id"], thread_id)
+            self.assertEqual(payload["metadata"]["combined_from"], [thread_id, second_id])
+            combined_message = payload["messages"][0]["content"]
+            self.assertIn("Combined context", combined_message)
+            self.assertIn("Alpha context marker", combined_message)
+            self.assertIn("Beta context marker", combined_message)
+
+            # The new thread is durable, not just an event.
+            restored = await self.application.threads.get_thread(combined["thread_id"])
+            self.assertEqual(restored.metadata["combined_from"], [thread_id, second_id])
+
     async def test_tool_catalog_reports_sources(self) -> None:
         websocket, session_id = await self.open_session()
         async with websocket:

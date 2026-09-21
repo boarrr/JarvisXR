@@ -18,6 +18,7 @@ var _speech_service: SpeechService = null
 @onready var _pointer_hud: CanvasLayer = $PointerHUD
 @onready var _privacy_veil: PrivacyVeil = $PrivacyVeil
 @onready var _orb_manager: OrbManager = $OrbManager
+@onready var _palm_console: PalmConsole = $PalmConsole
 @onready var _workspace_panel: WorkspacePanel = $WorkspacePanel
 @onready var _diff_review_panel: DiffReviewPanel = $DiffReviewPanel
 @onready var _file_viewer: FileViewer = $FileViewer
@@ -180,6 +181,8 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 			elif event.target_id == "daemon:refresh":
 				_backend_bridge.send_command("workspace.list", {})
 				_backend_bridge.send_command("tool.catalog", {})
+			elif event.target_id.begins_with("palm_screen:"):
+				_palm_console.handle_screen_action(event.target_id)
 			elif event.target_id == "palm:privacy_toggle":
 				_toggle_privacy_veil()
 			elif event.target_id == "palm:voice_toggle":
@@ -240,9 +243,14 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				var grab_result := _orb_manager.end_grab(event.target_id)
 				var linked_to := str(grab_result.get("linked_to", ""))
 				if not linked_to.is_empty():
+					# Combining two agents starts a new agent with both contexts.
+					_backend_bridge.send_command(
+						"thread.combine",
+						{"thread_ids": [event.target_id, linked_to]}
+					)
 					var parent_thread := AppState.get_thread(linked_to)
 					EventBus.debug_message.emit(
-						"Combined with %s" % (parent_thread.title if parent_thread != null else linked_to)
+						"Combining with %s" % (parent_thread.title if parent_thread != null else linked_to)
 					)
 
 

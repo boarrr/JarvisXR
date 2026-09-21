@@ -59,6 +59,33 @@ class ThreadService:
                 self._threads.pop(thread_id, None)
             return archived
 
+    async def combine_threads(self, thread_ids: list[str]) -> Thread:
+        """Create one new thread seeded with bounded context from several threads."""
+        async with self._lock:
+            sources = [self._require_thread(thread_id) for thread_id in thread_ids]
+            titles = " + ".join(source.title for source in sources)
+            combined = Thread.create(f"{titles} (combined)"[:120])
+            combined.parent_thread_id = sources[0].id
+            combined.metadata["combined_from"] = [source.id for source in sources]
+            excerpts: list[str] = []
+            for source in sources:
+                text = "No messages yet."
+                for message in reversed(source.messages):
+                    if message.role in {"user", "assistant", "tool"} and message.content.strip():
+                        text = message.content.strip()[:900]
+                        break
+                excerpts.append(f"[{source.title}]\n{text}")
+            combined.add_message(
+                Message.create(
+                    combined.id,
+                    "user",
+                    "Combined context from two agents:\n\n" + "\n\n---\n\n".join(excerpts),
+                )
+            )
+            self._threads[combined.id] = combined
+            await asyncio.to_thread(self.store.save_thread, combined)
+            return combined
+
     async def add_message(
         self,
         thread_id: str,

@@ -32,6 +32,7 @@ CLIENT_COMMAND_TYPES = frozenset(
         "diff.get",
         "diff.decision",
         "tool.catalog",
+        "thread.combine",
     }
 )
 
@@ -44,6 +45,7 @@ V2_COMMAND_TYPES = frozenset(
         "diff.get",
         "diff.decision",
         "tool.catalog",
+        "thread.combine",
     }
 )
 
@@ -157,6 +159,7 @@ def validate_command_payload(command: Envelope) -> None:
         "diff.get": set(),
         "diff.decision": {"run_id", "decision"},
         "tool.catalog": set(),
+        "thread.combine": {"thread_ids"},
     }
     unexpected_fields = set(payload) - allowed_fields[command.type]
     if unexpected_fields:
@@ -189,6 +192,17 @@ def validate_command_payload(command: Envelope) -> None:
         _required_text(payload, "run_id", 160)
         if payload.get("decision") not in {"apply", "reject"}:
             raise ProtocolError("invalid_payload", "decision must be 'apply' or 'reject'")
+    elif command.type == "thread.combine":
+        thread_ids = payload.get("thread_ids")
+        if not isinstance(thread_ids, list) or not 2 <= len(thread_ids) <= 4:
+            raise ProtocolError("invalid_payload", "thread_ids must list 2 to 4 thread IDs")
+        if not all(
+            isinstance(item, str) and item.strip() and len(item) <= 160
+            for item in thread_ids
+        ):
+            raise ProtocolError("invalid_payload", "thread_ids must be non-empty strings")
+        if len(set(thread_ids)) != len(thread_ids):
+            raise ProtocolError("invalid_payload", "thread_ids must be unique")
     elif command.type == "thread.create":
         _optional_text(payload, "title", 120)
     elif command.type == "thread.rename":

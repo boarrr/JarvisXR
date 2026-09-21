@@ -139,6 +139,22 @@
       "if": {
         "properties": {
           "type": {
+            "const": "thread.combine"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/threadCombinePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
             "enum": [
               "thread.list",
               "thread.focus"
@@ -674,6 +690,25 @@
         }
       }
     },
+    "threadCombinePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread_ids"
+      ],
+      "properties": {
+        "thread_ids": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        }
+      }
+    },
     "workspace": {
       "type": "object",
       "additionalProperties": false,
@@ -682,8 +717,7 @@
         "name",
         "path",
         "base_branch"
-      ],
-      "properties": {
+      ],      "properties": {
         "id": {
           "type": "string",
           "minLength": 1
