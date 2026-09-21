@@ -158,7 +158,22 @@ func _run() -> void:
 	main._undo_last_agent()
 	_check(AppState.get_thread(victim_id) != null, "undo restores the crushed agent")
 
-	# Summon gesture: pinch in empty space and pull to request a new agent.
+	# Creation: the palm NEW AGENT action spawns an agent through the transport
+	# and places its orb where the action was requested.
+	var before_count := AppState.ordered_thread_ids.size()
+	main._create_agent_at(Vector3(4.0, 1.4, 4.0))
+	_check(AppState.ordered_thread_ids.size() == before_count + 1, "creating an agent adds a thread")
+	var created_id: String = AppState.ordered_thread_ids.back()
+	_check(
+		AppState.get_orb_offset(created_id) is Vector3,
+		"a created agent spawns at the requested position"
+	)
+	_check(
+		AppState.get_thread(created_id).title.contains("New agent"),
+		"a created agent carries a default title"
+	)
+
+	# Fist attraction needs a tracked hand with joint data.
 	var summon_source := OpenXRInteractionSource.new()
 	add_child(summon_source)
 	summon_source.set_hand_tracking_active(true)
@@ -167,32 +182,6 @@ func _run() -> void:
 		func(event: InteractionEvent) -> void: summon_events.append(event)
 	)
 	var summon_palm := Transform3D(Basis.IDENTITY, Vector3(3.0, 1.4, -0.4))
-	summon_source.submit_joint_sample(
-		"right", summon_palm,
-		Vector3(3.02, 1.42, -0.65), Vector3(3.0, 1.4, -0.6), Vector3(3.0, 1.42, -0.65)
-	)
-	summon_source.submit_joint_sample(
-		"right", summon_palm,
-		Vector3(3.02, 1.42, -0.75), Vector3(3.0, 1.4, -0.7), Vector3(3.0, 1.42, -0.75)
-	)
-	summon_source.submit_joint_sample(
-		"right", summon_palm,
-		Vector3(3.09, 1.42, -0.75), Vector3(3.0, 1.4, -0.7), Vector3(3.0, 1.42, -0.75)
-	)
-	var summon_begins := summon_events.filter(
-		func(event: InteractionEvent) -> bool:
-			return event.type == InteractionEvent.Type.GRAB_BEGIN and event.target_id == "ui:summon"
-	)
-	var summon_ends := summon_events.filter(
-		func(event: InteractionEvent) -> bool:
-			return event.type == InteractionEvent.Type.GRAB_END and event.target_id == "ui:summon"
-	)
-	_check(summon_begins.size() == 1, "pinching in empty space starts a summon")
-	_check(
-		summon_ends.size() == 1
-		and not bool(summon_ends[0].gesture_data.get("cancelled", true)),
-		"pulling past the threshold confirms the summon"
-	)
 
 	# A fist aimed at a hovered agent requests attraction.
 	var fist_joints := {

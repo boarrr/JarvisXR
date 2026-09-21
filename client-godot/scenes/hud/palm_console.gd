@@ -17,8 +17,8 @@ const PAGE_COUNT := 3
 const PAGE_TITLES := ["CHAT", "CODE", "SYSTEM"]
 
 const SCREEN_CENTER := Vector2(0.0, 0.0)
-const SCREEN_SIZE := Vector2(0.42, 0.34)
-const VIEWPORT_SIZE := Vector2i(540, 516)
+const SCREEN_SIZE := Vector2(0.48, 0.38)
+const VIEWPORT_SIZE := Vector2i(600, 480)
 const BUTTON_HEIGHT_PX := 62.0
 const HEADER_HEIGHT_PX := 52.0
 const FOOTER_ROWS := 2
@@ -45,9 +45,9 @@ const CHAT_BUTTONS := [
 
 @export var hand_source_path: NodePath = ^"../XRRuntime/OpenXRInteractionSource"
 @export var user_rig_path: NodePath = ^"../UserRig"
-@export_range(0.01, 0.3, 0.01) var palm_offset_metres: float = 0.07
+@export_range(0.01, 0.35, 0.01) var palm_offset_metres: float = 0.20
 @export_range(0.05, 1.0, 0.05) var pose_smoothing: float = 0.38
-@export_range(0.3, 1.0, 0.01) var console_scale: float = 0.52
+@export_range(0.3, 1.0, 0.01) var console_scale: float = 0.66
 @export_range(0.15, 0.8, 0.01) var min_display_distance: float = 0.25
 @export_range(0.3, 1.2, 0.01) var max_display_distance: float = 0.7
 @export_range(0.0, 0.4, 0.01) var below_eye_minimum: float = 0.05
@@ -162,7 +162,7 @@ func _physics_process(delta: float) -> void:
 
 	# Sit just beyond the palm and never closer than a comfortable reading
 	# distance, so the panel is not projected between the hand and the eyes.
-	var target_position := camera_position + outward * (maxf(distance, 0.42) + 0.12)
+	var target_position := camera_position + outward * (maxf(distance, 0.46) + 0.18)
 	if not visible:
 		global_position = target_position
 	else:
@@ -256,6 +256,22 @@ func _build_screen() -> void:
 	_body.add_theme_color_override("default_color", Color(0.82, 0.94, 0.98))
 	root.add_child(_body)
 
+	# A slim dark backing gives the panel depth and keeps text legible against
+	# a bright passthrough room without restoring the old glass instrument look.
+	var backing_material := StandardMaterial3D.new()
+	backing_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	backing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	backing_material.albedo_color = Color(0.01, 0.03, 0.05, 0.92)
+	backing_material.no_depth_test = true
+	var backing := MeshInstance3D.new()
+	var backing_quad := QuadMesh.new()
+	backing_quad.size = SCREEN_SIZE * Vector2(1.06, 1.08)
+	backing_quad.material = backing_material
+	backing.mesh = backing_quad
+	backing.position = Vector3(SCREEN_CENTER.x, SCREEN_CENTER.y, 0.015)
+	backing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(backing)
+
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -276,7 +292,7 @@ func _build_screen() -> void:
 	# The screen is the panel: retire the legacy 3D glass, glyph buttons and
 	# label layers so the palm shows one clean surface.
 	for child in get_children():
-		if child == _screen:
+		if child == _screen or child == backing:
 			continue
 		if child is MeshInstance3D or child is Label3D:
 			child.visible = false

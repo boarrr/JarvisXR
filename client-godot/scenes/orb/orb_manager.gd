@@ -31,7 +31,6 @@ var _grab_velocity := Vector3.ZERO
 var _velocities: Dictionary = {}
 var _kinetic_threads: Dictionary = {}
 var _attract_target := ""
-var _ghost: MeshInstance3D = null
 var _standing_height := 1.4
 var _stage_center := Vector3.ZERO
 var _height_captured := false
@@ -291,37 +290,6 @@ func attract_end(thread_id: String) -> void:
 	if orb != null:
 		orb.set_kinetic(false)
 		AppState.set_orb_offset(thread_id, orb.global_position)
-
-
-func show_summon(position: Vector3) -> void:
-	if _ghost == null:
-		var sphere := SphereMesh.new()
-		sphere.radius = 0.09
-		sphere.height = 0.18
-		var material := StandardMaterial3D.new()
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		material.albedo_color = Color(0.2, 0.85, 1.0, 0.45)
-		material.emission_enabled = true
-		material.emission = Color(0.2, 0.85, 1.0)
-		material.no_depth_test = true
-		sphere.material = material
-		_ghost = MeshInstance3D.new()
-		_ghost.mesh = sphere
-		_ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(_ghost)
-	_ghost.global_position = position
-	_ghost.visible = true
-
-
-func move_summon(position: Vector3) -> void:
-	if _ghost != null:
-		_ghost.global_position = position
-
-
-func hide_summon() -> void:
-	if _ghost != null:
-		_ghost.visible = false
 
 
 func _nearest_orb_within(thread_id: String, position: Vector3, radius: float) -> String:

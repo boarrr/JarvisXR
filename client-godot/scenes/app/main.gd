@@ -235,16 +235,12 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 		InteractionEvent.Type.CODE_GO_BOTTOM:
 			_code_viewer.go_bottom()
 		InteractionEvent.Type.GRAB_BEGIN:
-			if event.target_id == "ui:summon" and event.world_position is Vector3:
-				_orb_manager.show_summon(event.world_position)
-			elif event.target_id == "ui:code_surface" and event.world_position is Vector3:
+			if event.target_id == "ui:code_surface" and event.world_position is Vector3:
 				_code_viewer.begin_bimanual_transform(event.world_position)
 			elif AppState.get_thread(event.target_id) != null:
 				_orb_manager.begin_grab(event.target_id)
 		InteractionEvent.Type.GRAB_MOVE:
-			if event.target_id == "ui:summon" and event.world_position is Vector3:
-				_orb_manager.move_summon(event.world_position)
-			elif event.target_id == "ui:code_surface" and event.world_position is Vector3:
+			if event.target_id == "ui:code_surface" and event.world_position is Vector3:
 				_code_viewer.apply_bimanual_transform(
 					event.world_position,
 					float(event.gesture_data.get("scale_factor", 1.0)),
@@ -253,14 +249,7 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 			elif AppState.get_thread(event.target_id) != null and event.world_position is Vector3:
 				_orb_manager.update_grab(event.target_id, event.world_position)
 		InteractionEvent.Type.GRAB_END:
-			if event.target_id == "ui:summon":
-				_orb_manager.hide_summon()
-				if (
-					not bool(event.gesture_data.get("cancelled", true))
-					and event.world_position is Vector3
-				):
-					_create_agent_at(event.world_position)
-			elif event.target_id == "ui:code_surface":
+			if event.target_id == "ui:code_surface":
 				_code_viewer.end_bimanual_transform()
 			elif AppState.get_thread(event.target_id) != null:
 				var grab_result := _orb_manager.end_grab(event.target_id)
