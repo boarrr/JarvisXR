@@ -40,6 +40,10 @@ func activate_if_available() -> bool:
 	get_viewport().vrs_mode = Viewport.VRS_XR
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	_configure_passthrough_background(true)
+	var target_rate := float(ProjectSettings.get_setting("spatial_agent/xr_refresh_rate", 72.0))
+	if target_rate > 0.0:
+		openxr_interface.set_display_refresh_rate(target_rate)
+		print("[XR] requested display refresh rate: %.0f Hz" % target_rate)
 	if _user_rig != null:
 		_user_rig.set_xr_tracking_active(true)
 	_hand_source.set_hand_tracking_active(true)

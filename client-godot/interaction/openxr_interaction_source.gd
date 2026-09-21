@@ -82,12 +82,18 @@ var _grab_origin_position := Vector3.ZERO
 var _touch_target_id := ""
 var _touch_area: Area3D = null
 var _touch_release_needed := false
+var _telemetry_enabled := false
+var _telemetry_elapsed := 0.0
+var _tracking_losses := 0
 
 
 func _ready() -> void:
 	source_name = "openxr_hands"
 	if not xr_origin_path.is_empty():
 		_xr_origin = get_node_or_null(xr_origin_path) as Node3D
+	_telemetry_enabled = bool(
+		ProjectSettings.get_setting("spatial_agent/gesture_telemetry", false)
+	)
 	set_physics_process(false)
 
 
@@ -138,6 +144,44 @@ func _physics_process(_delta: float) -> void:
 	else:
 		_apply_pointer_sample(pointer_sample)
 	_update_bimanual_gesture()
+	if _telemetry_enabled:
+		_telemetry_elapsed += _delta
+		if _telemetry_elapsed >= 0.25:
+			_telemetry_elapsed = 0.0
+			_emit_gesture_telemetry()
+
+
+func _emit_gesture_telemetry() -> void:
+	# Distances only: no positions, prompts, or transcript content.
+	var payload := {
+		"event": "sample",
+		"right": _hand_telemetry("right"),
+		"left": _hand_telemetry("left"),
+		"tracking_losses": _tracking_losses,
+		"touch": _touch_target_id,
+		"grab": _grab_target_id,
+		"pinching": _pointer_state.is_selecting,
+	}
+	print("GEST %s" % JSON.stringify(payload))
+
+
+func _hand_telemetry(hand_name: String) -> Variant:
+	var sample: Dictionary = _latest_hand_samples.get(hand_name, {})
+	if sample.is_empty():
+		return null
+	var joints: Dictionary = sample.get("joints", {})
+	var palm: Vector3 = joints.get("palm", Vector3.ZERO)
+	var index_tip := sample.get("index_tip", Vector3.ZERO) as Vector3
+	var thumb_tip := sample.get("thumb_tip", Vector3.ZERO) as Vector3
+	var fist: Array[float] = []
+	if not palm.is_zero_approx():
+		for joint_name in ["index_tip", "middle_tip", "ring_tip", "pinky_tip"]:
+			if joints.has(joint_name):
+				fist.append(snappedf(palm.distance_to(joints[joint_name]), 0.001))
+	return {
+		"pinch_mm": snappedf(thumb_tip.distance_to(index_tip) * 1000.0, 0.5),
+		"fist_mm": fist,
+	}
 
 
 func simulate_tick() -> bool:
@@ -429,6 +473,8 @@ func _set_tracking_available(value: bool) -> void:
 	if _has_tracking_data == value:
 		return
 	_has_tracking_data = value
+	if not value:
+		_tracking_losses += 1
 	tracking_changed.emit(value)
 
 

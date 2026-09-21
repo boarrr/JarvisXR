@@ -87,6 +87,17 @@ func _refresh_metrics() -> void:
 		AppState.approval_requests.size(),
 		protocol_event,
 	]
+	var probe := get_node_or_null("../PerfProbe") as PerfProbe
+	if probe != null:
+		_metrics_label.text += "\n%s" % probe.get_summary_line()
+	var source := get_node_or_null("../XRRuntime/OpenXRInteractionSource") as OpenXRInteractionSource
+	if source != null and source.is_available():
+		_metrics_label.text += "\nHands: %s | tracked=%s | pinch=%s | touch=%s" % [
+			source.get_active_hand_name() if not source.get_active_hand_name().is_empty() else "none",
+			source.has_tracking_data(),
+			source.get_pointer_state().is_selecting if source.get_pointer_state() != null else false,
+			AppState.hovered_target_id if not AppState.hovered_target_id.is_empty() else "none",
+		]
 
 
 func _on_debug_message(message: String) -> void:

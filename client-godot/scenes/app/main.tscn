@@ -1,4 +1,4 @@
-[gd_scene load_steps=46 format=3]
+[gd_scene load_steps=47 format=3]
 
 [ext_resource type="Script" path="res://scenes/app/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/user/user_rig.tscn" id="2_rig"]
@@ -31,6 +31,7 @@
 [ext_resource type="Script" path="res://scenes/panels/diff_review_panel.gd" id="29_diff_review"]
 [ext_resource type="Script" path="res://scenes/panels/file_viewer.gd" id="30_file_viewer"]
 [ext_resource type="Script" path="res://scenes/panels/daemon_settings_panel.gd" id="31_daemon_settings"]
+[ext_resource type="Script" path="res://services/perf_probe.gd" id="32_perf_probe"]
 
 [sub_resource type="Environment" id="Environment_development"]
 background_mode = 1
@@ -157,6 +158,9 @@ script = ExtResource("30_file_viewer")
 
 [node name="DaemonSettingsPanel" type="Node3D" parent="."]
 script = ExtResource("31_daemon_settings")
+
+[node name="PerfProbe" type="Node" parent="."]
+script = ExtResource("32_perf_probe")
 
 [node name="QuickIntentPanel" parent="." instance=ExtResource("20_quick_intent")]
 

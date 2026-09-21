@@ -106,18 +106,18 @@ func _physics_process(delta: float) -> void:
 		or AppState.privacy_veil_active
 	):
 		_dwell = 0.0
-		visible = false
+		_hide_panel()
 		return
 	var sample := _hand_source.get_latest_hand_sample("left")
 	if sample.is_empty():
 		_dwell = 0.0
-		visible = false
+		_hide_panel()
 		return
 	if _camera == null:
 		_camera = _user_rig.get_camera()
 	if _camera == null:
 		_dwell = 0.0
-		visible = false
+		_hide_panel()
 		return
 
 	var camera_position := _camera.global_position
@@ -129,7 +129,7 @@ func _physics_process(delta: float) -> void:
 	if AppState.ui_mode == "hand_lab":
 		if distance_to_user < 0.12 or distance_to_user > 1.35:
 			_dwell = 0.0
-			visible = false
+			_hide_panel()
 			return
 		_dwell = show_delay_seconds
 	else:
@@ -146,11 +146,11 @@ func _physics_process(delta: float) -> void:
 		)
 		if not conditions_met:
 			_dwell = 0.0
-			visible = false
+			_hide_panel()
 			return
 		_dwell += delta
 		if _dwell < show_delay_seconds:
-			visible = false
+			_hide_panel()
 			return
 
 	if not visible:
@@ -158,8 +158,21 @@ func _physics_process(delta: float) -> void:
 	else:
 		global_position = global_position.lerp(target_position, pose_smoothing)
 	look_at(camera_position, Vector3.UP, true)
-	visible = true
+	if not visible:
+		visible = true
+		if _viewport != null:
+			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_update_swipe()
+
+
+func _hide_panel() -> void:
+	visible = false
+	if _viewport != null:
+		_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+
+
+func get_screen_viewport() -> SubViewport:
+	return _viewport
 
 
 func handle_screen_action(target_id: String) -> void:
@@ -185,7 +198,9 @@ func _build_screen() -> void:
 	_viewport = SubViewport.new()
 	_viewport.size = VIEWPORT_SIZE
 	_viewport.transparent_bg = true
-	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# The palm page only changes on focus/thread/page events, so render on
+	# demand instead of every frame to protect the headset frame budget.
+	_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	add_child(_viewport)
 
 	var root := Control.new()
@@ -353,6 +368,8 @@ func _refresh_screen() -> void:
 		_:
 			_render_system()
 	_refresh_target_visibility()
+	if _viewport != null and visible:
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 func _render_chat() -> void:

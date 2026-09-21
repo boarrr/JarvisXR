@@ -42,6 +42,26 @@ export PYTHONPATH="$project_root/backend/src${PYTHONPATH:+:$PYTHONPATH}"
 # visible to the headless smoke scenes on a fresh checkout.
 "$godot_bin" --headless --path "$project_root/client-godot" --import >/dev/null 2>&1 || true
 
+# Run one headless Godot scene with a watchdog. A scene that fails to quit
+# (for example after a script error) is killed and reported instead of hanging
+# the whole suite.
+run_scene() {
+	scene=$1
+	"$godot_bin" --headless --path "$project_root/client-godot" "res://tests/$scene.tscn" &
+	scene_pid=$!
+	( sleep "${SCENE_TIMEOUT_SECONDS:-60}"; kill "$scene_pid" 2>/dev/null ) &
+	watchdog_pid=$!
+	if wait "$scene_pid"; then
+		kill "$watchdog_pid" 2>/dev/null || true
+		wait "$watchdog_pid" 2>/dev/null || true
+		return 0
+	fi
+	kill "$watchdog_pid" 2>/dev/null || true
+	wait "$watchdog_pid" 2>/dev/null || true
+	printf '%s\n' "Scene failed or timed out: $scene" >&2
+	return 1
+}
+
 for scene in \
 	milestone_0_smoke \
 	openxr_hand_source_smoke \
@@ -60,12 +80,13 @@ for scene in \
 	cockpit_panels_smoke \
 	standing_orbit_smoke \
 	daemon_config_smoke \
+	perf_probe_smoke \
 	backend_client_smoke \
 	command_and_approval_smoke \
 	speech_service_smoke \
 	android_speech_service_smoke
 do
-	"$godot_bin" --headless --path "$project_root/client-godot" "res://tests/$scene.tscn"
+	run_scene "$scene" || exit 1
 done
 
 fixture_pid=""
@@ -104,11 +125,12 @@ wait_for_fixture() {
 	done
 }
 
+
 fixture_ready=$(mktemp "${TMPDIR:-/tmp}/spatial-agent-fixture.XXXXXX")
 python3 "$project_root/client-godot/tests/support/websocket_fixture_server.py" --port 18787 --ready-file "$fixture_ready" &
 fixture_pid=$!
 wait_for_fixture
-"$godot_bin" --headless --path "$project_root/client-godot" res://tests/websocket_loopback_smoke.tscn
+run_scene websocket_loopback_smoke
 wait "$fixture_pid"
 fixture_pid=""
 rm -f "$fixture_ready"
@@ -118,7 +140,7 @@ fixture_ready=$(mktemp "${TMPDIR:-/tmp}/spatial-agent-fixture.XXXXXX")
 python3 "$project_root/client-godot/tests/support/websocket_fixture_server.py" --port 18789 --connections 2 --ready-file "$fixture_ready" &
 fixture_pid=$!
 wait_for_fixture
-"$godot_bin" --headless --path "$project_root/client-godot" res://tests/websocket_reconnect_smoke.tscn
+run_scene websocket_reconnect_smoke
 wait "$fixture_pid"
 fixture_pid=""
 rm -f "$fixture_ready"
@@ -141,7 +163,7 @@ until nc -z 127.0.0.1 18788 2>/dev/null; do
 	sleep 0.1
 done
 
-"$godot_bin" --headless --path "$project_root/client-godot" res://tests/full_stack_smoke.tscn
+run_scene full_stack_smoke
 kill "$backend_pid" 2>/dev/null || true
 wait "$backend_pid" 2>/dev/null || true
 backend_pid=""
