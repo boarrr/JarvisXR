@@ -78,6 +78,7 @@ var _page_label: Label = null
 var _buttons: Dictionary = {}
 var _dynamic_targets: Array[Area3D] = []
 var _system_targets: Array[Area3D] = []
+var _page_buttons: Dictionary = {PAGE_CHAT: [], PAGE_CODE: [], PAGE_SYSTEM: []}
 var _panel_ignored := 0.0
 var _page := PAGE_CHAT
 var _chat_offset := 0
@@ -144,22 +145,16 @@ func _physics_process(delta: float) -> void:
 		if distance < 0.001:
 			return
 		var outward := to_anchor / distance
-		var gaze := outward.dot(camera_forward)
-		var below_eye := camera_position.y - anchor.y >= below_eye_minimum
-		var looking_at_palm := gaze >= gaze_threshold
-		# Pinching the left fingers is a deliberate summon that works even when
-		# hand tracking makes the gaze gate fussy.
-		var palm_pinch := _hand_source.is_hand_pinching("left")
-		var conditions_met := (
-			distance >= min_display_distance
-			and distance <= max_display_distance
-			and below_eye
-			and (looking_at_palm or palm_pinch)
-		)
-		if not conditions_met:
+		var in_range := distance >= 0.15 and distance <= 0.9
+		var below_eye := camera_position.y - anchor.y >= 0.0
+		if _hand_source.is_hand_pinching("left") and in_range:
+			# A deliberate left pinch summons instantly; no dwell, no gaze gate.
+			_dwell = show_delay_seconds
+		elif in_range and below_eye:
+			# Holding the open palm below eye level also works, after a beat.
+			_dwell += delta
+		else:
 			_dwell = 0.0
-			return
-		_dwell += delta
 		if _dwell < show_delay_seconds:
 			return
 		_park_panel(camera_position, camera_forward)
@@ -328,7 +323,8 @@ func _build_system_buttons() -> void:
 	for index in range(SYSTEM_BUTTONS.size()):
 		var entry: Array = SYSTEM_BUTTONS[index]
 		var rect := _grid_rect(index, 4, FOOTER_ROWS)
-		_make_button(rect, str(entry[0]))
+		var button := _make_button(rect, str(entry[0]))
+		(_page_buttons[PAGE_SYSTEM] as Array).append(button)
 		if str(entry[2]).is_empty():
 			_system_targets.append(_make_target(str(entry[1]), rect))
 
@@ -352,7 +348,8 @@ func _build_chat_targets() -> void:
 			CHAT_BUTTONS.size(),
 			FOOTER_ROWS
 		)
-		_make_button(rect, str(entry[0]))
+		var button := _make_button(rect, str(entry[0]))
+		(_page_buttons[PAGE_CHAT] as Array).append(button)
 		_dynamic_targets.append(_make_target(str(entry[1]), rect))
 
 
@@ -370,16 +367,17 @@ func _build_code_targets() -> void:
 			labels.size(),
 			FOOTER_ROWS
 		)
-		_make_button(rect, labels[index])
+		var button := _make_button(rect, labels[index])
+		(_page_buttons[PAGE_CODE] as Array).append(button)
 		_dynamic_targets.append(_make_target(ids[index], rect))
 
 
-func _make_button(rect: Rect2, text: String) -> void:
+func _make_button(rect: Rect2, text: String) -> PanelContainer:
 	if _viewport == null:
-		return
+		return null
 	var root := _viewport.get_child(0) as Control
 	if root == null:
-		return
+		return null
 	var panel := PanelContainer.new()
 	panel.position = rect.position
 	panel.size = rect.size
@@ -400,6 +398,7 @@ func _make_button(rect: Rect2, text: String) -> void:
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(label)
 	_buttons[text] = panel
+	return panel
 
 
 func _prepare_system_targets() -> void:
@@ -539,6 +538,11 @@ func _refresh_target_visibility() -> void:
 			target.visible = false
 	for target in _system_targets:
 		target.visible = system_page
+	for page in _page_buttons:
+		var page_visible: bool = page == _page
+		for button in _page_buttons[page]:
+			if is_instance_valid(button):
+				button.visible = page_visible
 	for index in range(_dynamic_targets.size()):
 		var target := _dynamic_targets[index]
 		var chat_target := index < CHAT_BUTTONS.size()

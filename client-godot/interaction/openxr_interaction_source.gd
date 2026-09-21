@@ -34,8 +34,8 @@ const PALM_ACTIONS := [
 
 const LEFT_TRACKER_PATH := &"/user/hand_tracker/left"
 const RIGHT_TRACKER_PATH := &"/user/hand_tracker/right"
-const TOUCH_CONTACT_DISTANCE := 0.012
-const TOUCH_RELEASE_DISTANCE := 0.05
+const TOUCH_CONTACT_DISTANCE := 0.025
+const TOUCH_RELEASE_DISTANCE := 0.07
 # OpenXR joints drop out for single frames routinely (occlusion, edge of the
 # camera FOV). Hold the last state briefly so a blink does not cancel a touch,
 # grab, or the aim ray.

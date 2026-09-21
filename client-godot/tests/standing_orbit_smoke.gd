@@ -207,6 +207,21 @@ func _run() -> void:
 		"a fist aimed at an agent starts attraction"
 	)
 
+	# Panel pages gate both visuals and touch targets so what is drawn is what
+	# can actually be poked.
+	var palm_panel := main.get_node("PalmConsole") as PalmConsole
+	palm_panel.handle_screen_action("palm_screen:next_page")
+	_check(palm_panel._page == PalmConsole.PAGE_CODE, "panel advances to the code page")
+	var chat_buttons: Array = palm_panel._page_buttons[PalmConsole.PAGE_CHAT]
+	_check(chat_buttons.size() > 0, "chat page registers its buttons")
+	_check(not (chat_buttons[0] as Node).visible, "chat buttons hide while the code page shows")
+	var code_buttons: Array = palm_panel._page_buttons[PalmConsole.PAGE_CODE]
+	_check((code_buttons[0] as Node).visible, "code buttons show on the code page")
+	_check(
+		not palm_panel._dynamic_targets[0].visible,
+		"chat touch targets deactivate on the code page"
+	)
+
 	if not _failed:
 		print("[TEST] Standing orbit and two-hand role checks passed")
 	main.queue_free()
