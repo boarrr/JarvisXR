@@ -87,6 +87,18 @@ horizontal_alignment = 0
 modulate = Color(0.15, 0.75, 0.79, 1)
 no_depth_test = true
 
+[node name="SummaryLabel" type="Label3D" parent="."]
+position = Vector3(-0.215, 0.148, 0.025)
+pixel_size = 0.0017
+text = "NO AGENT FOCUSED"
+font_size = 10
+outline_size = 3
+width = 255.0
+autowrap_mode = 2
+horizontal_alignment = 0
+modulate = Color(0.72, 0.88, 0.94, 1)
+no_depth_test = true
+
 [node name="StatusLabel" type="Label3D" parent="."]
 position = Vector3(-0.215, -0.282, 0.025)
 pixel_size = 0.0017

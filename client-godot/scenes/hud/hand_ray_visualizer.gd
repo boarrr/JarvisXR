@@ -16,7 +16,9 @@ const MARKER_JOINT_ORDER := [
 	"ring_tip",
 	"pinky_tip",
 ]
+const RAY_LENGTH := 6.0
 const COLOR_IDLE := Color(0.02, 0.92, 1, 0.9)
+const COLOR_HOVER := Color(0.45, 1.0, 0.55, 0.95)
 const COLOR_PINCH := Color(1.0, 0.48, 0.12, 0.95)
 const HINT_TEXT := (
 	"HAND TRACKING: NO DATA\n"
@@ -141,6 +143,13 @@ func _update_pointer(any_visible: bool) -> bool:
 		return any_visible
 
 	var direction := pointer.direction.normalized()
+	var cursor_position := pointer.origin + direction * beam_length
+	var visual_length := beam_length
+	var hit := _raycast(pointer.origin, direction)
+	if not hit.is_empty():
+		cursor_position = hit.get("position", cursor_position) as Vector3
+		visual_length = maxf(0.05, pointer.origin.distance_to(cursor_position))
+
 	var side := direction.cross(Vector3.UP)
 	if side.length_squared() < 0.0001:
 		side = direction.cross(Vector3.RIGHT)
@@ -149,22 +158,52 @@ func _update_pointer(any_visible: bool) -> bool:
 	var beam_basis := Basis(side, direction, forward).orthonormalized()
 	_beam.global_transform = Transform3D(
 		beam_basis,
-		pointer.origin + direction * beam_length * 0.5
+		pointer.origin + direction * visual_length * 0.5
 	)
-	_beam.scale = Vector3(1.0, beam_length, 1.0)
+	_beam.scale = Vector3(1.0, visual_length, 1.0)
 	_finger_light.global_position = pointer.origin
-	_aim_light.global_position = pointer.origin + direction * beam_length
+	_aim_light.global_position = cursor_position
 	_beam.visible = true
 	_finger_light.visible = true
 	_aim_light.visible = true
 
-	var color := COLOR_PINCH if pointer.is_selecting else Color(COLOR_IDLE.r, COLOR_IDLE.g, COLOR_IDLE.b, 0.72)
+	var color := COLOR_IDLE
+	if pointer.is_selecting:
+		color = COLOR_PINCH
+	elif not AppState.hovered_target_id.is_empty():
+		color = COLOR_HOVER
 	_set_material_color(_beam_material, color)
 	_set_material_color(_finger_material, color)
 	_set_material_color(_aim_material, color)
 	var pulse := 1.0 + sin(float(Time.get_ticks_msec()) * 0.012) * 0.14
 	_aim_light.scale = Vector3.ONE * pulse
 	return true
+
+
+func _raycast(origin: Vector3, direction: Vector3) -> Dictionary:
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * RAY_LENGTH, 2)
+	query.collide_with_areas = true
+	query.collide_with_bodies = false
+	query.hit_from_inside = true
+	var excluded: Array[RID] = []
+	# Mirror InteractionManager: skip hidden surfaces without semantic targets so
+	# the cursor snaps to what a pinch would actually select.
+	for _attempt in range(32):
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if hit.is_empty():
+			return {}
+		var collider := hit.get("collider") as Node
+		if collider == null:
+			return {}
+		if (
+			collider.is_in_group("interactable")
+			and collider.has_method("get_interaction_target_id")
+			and not str(collider.call("get_interaction_target_id")).is_empty()
+		):
+			return hit
+		excluded.append(collider.get_rid())
+		query.exclude = excluded
+	return {}
 
 
 func _place_hint() -> void:

@@ -4,6 +4,7 @@ extends Node3D
 const DEFAULT_ORB_SCENE := preload("res://scenes/orb/agent_orb.tscn")
 
 @export var user_rig_path: NodePath = ^"../UserRig"
+@export var standing_center_path: NodePath = ^"../XRRuntime/XROrigin3D"
 @export var orb_scene: PackedScene = DEFAULT_ORB_SCENE
 @export_range(0.5, 5.0, 0.05) var radius_from_user: float = 2.2
 @export_range(-1.0, 1.0, 0.05) var vertical_offset: float = 0.0
@@ -12,17 +13,24 @@ const DEFAULT_ORB_SCENE := preload("res://scenes/orb/agent_orb.tscn")
 @export_range(0.1, 2.0, 0.05) var secondary_ring_radius_step: float = 0.55
 @export_range(0.1, 1.5, 0.05) var secondary_ring_height_step: float = 0.45
 @export_range(0.1, 1.5, 0.05) var spawn_distance: float = 0.65
+@export_range(0.2, 1.5, 0.05) var combine_distance: float = 0.6
+@export_range(0.15, 1.2, 0.05) var child_orbit_radius: float = 0.5
 
 var _user_rig: UserRig = null
+var _standing_center: Node3D = null
 var _orbs_by_thread_id: Dictionary = {}
+var _last_layout_origin := Vector3.ZERO
+var _grab_position := Vector3.ZERO
 
 
 func _ready() -> void:
 	_user_rig = get_node_or_null(user_rig_path) as UserRig
+	_standing_center = get_node_or_null(standing_center_path) as Node3D
 	AppState.thread_added.connect(_on_thread_added)
 	AppState.thread_updated.connect(_on_thread_updated)
 	AppState.thread_removed.connect(_on_thread_removed)
 	AppState.privacy_veil_changed.connect(_on_privacy_veil_changed)
+	AppState.orb_layout_changed.connect(_on_orb_layout_changed)
 	visible = not AppState.privacy_veil_active
 
 	for thread_id in AppState.ordered_thread_ids:
@@ -30,6 +38,14 @@ func _ready() -> void:
 		if thread != null:
 			_spawn_or_update_orb(thread)
 	_refresh_layout()
+
+
+func _process(_delta: float) -> void:
+	# Desktop movement and XR recentering move the layout origin; refresh when it
+	# actually changes so standing users keep a stable agent ring.
+	var origin := _get_layout_origin()
+	if origin.distance_squared_to(_last_layout_origin) > 0.000004:
+		_refresh_layout()
 
 
 func get_orb(thread_id: String) -> AgentOrb:
@@ -94,15 +110,82 @@ func _slot_is_owned_by_another_thread(slot: int, thread_id: String) -> bool:
 
 func _refresh_layout() -> void:
 	var origin := _get_layout_origin()
+	_last_layout_origin = origin
 	for thread_id in _orbs_by_thread_id:
-		var thread := AppState.get_thread(thread_id)
 		var orb := get_orb(thread_id)
-		if thread == null or orb == null:
+		if orb == null:
 			continue
-		var target := calculate_slot_global_position(thread.spatial_slot)
+		var target := _target_for_thread(thread_id)
 		orb.set_target_global_position(target)
 		if not orb.global_position.is_equal_approx(origin):
 			orb.look_at(origin, Vector3.UP)
+
+
+func _target_for_thread(thread_id: String) -> Vector3:
+	var offset: Variant = AppState.get_orb_offset(thread_id)
+	if offset is Vector3:
+		return offset
+	var parent_id := AppState.get_orb_parent(thread_id)
+	if not parent_id.is_empty():
+		var parent_orb := get_orb(parent_id)
+		if parent_orb != null:
+			var angle := _child_angle(thread_id)
+			return (
+				parent_orb.global_position
+				+ Vector3(cos(angle), -0.14, sin(angle)) * child_orbit_radius
+			)
+	var thread := AppState.get_thread(thread_id)
+	return calculate_slot_global_position(thread.spatial_slot if thread != null else 0)
+
+
+func _child_angle(thread_id: String) -> float:
+	return float(abs(thread_id.hash() % 360)) * PI / 180.0
+
+
+func begin_grab(thread_id: String) -> bool:
+	var orb := get_orb(thread_id)
+	if orb == null:
+		return false
+	AppState.unlink_orb(thread_id)
+	_grab_position = orb.global_position
+	AppState.set_orb_offset(thread_id, _grab_position)
+	return true
+
+
+func update_grab(thread_id: String, world_position: Vector3) -> void:
+	if get_orb(thread_id) == null:
+		return
+	_grab_position = world_position
+	AppState.set_orb_offset(thread_id, world_position)
+
+
+func end_grab(thread_id: String) -> Dictionary:
+	var result := {"linked_to": ""}
+	if get_orb(thread_id) == null:
+		return result
+	# Combine against the drop point (the hand position), not the orb's eased
+	# position, so the intent is honoured even while the orb is still catching up.
+	var nearest := _nearest_orb_within(thread_id, _grab_position, combine_distance)
+	if not nearest.is_empty() and AppState.link_orbs(thread_id, nearest):
+		result["linked_to"] = nearest
+	_refresh_layout()
+	return result
+
+
+func _nearest_orb_within(thread_id: String, position: Vector3, radius: float) -> String:
+	var nearest := ""
+	var best := radius
+	for candidate_id in _orbs_by_thread_id:
+		if candidate_id == thread_id:
+			continue
+		var orb := get_orb(candidate_id)
+		if orb == null:
+			continue
+		var distance := position.distance_to(orb.global_position)
+		if distance < best:
+			best = distance
+			nearest = candidate_id
+	return nearest
 
 
 func _angle_for_local_slot(local_slot: int) -> float:
@@ -115,9 +198,19 @@ func _angle_for_local_slot(local_slot: int) -> float:
 
 
 func _get_layout_origin() -> Vector3:
+	if (
+		AppState.ui_mode == "xr_hands"
+		and _standing_center != null
+		and _standing_center.is_inside_tree()
+	):
+		return _standing_center.global_position
 	if _user_rig == null:
 		return global_position
 	return _user_rig.global_position
+
+
+func _on_orb_layout_changed(_thread_id: String) -> void:
+	_refresh_layout()
 
 
 func _on_thread_added(thread: AgentThread) -> void:

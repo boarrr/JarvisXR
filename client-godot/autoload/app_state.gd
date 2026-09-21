@@ -24,6 +24,7 @@ signal file_tree_changed(thread_id: String)
 signal file_content_changed(thread_id: String)
 signal tool_catalog_changed()
 signal pairing_changed(device_id: String, device_name: String)
+signal orb_layout_changed(thread_id: String)
 
 var connection_state: String = "offline":
 	set(value):
@@ -111,6 +112,51 @@ var file_content: Dictionary = {}
 var tool_catalog: Array = []
 var mcp_servers: Array[String] = []
 var paired_device: Dictionary = {}
+var orb_offsets: Dictionary = {}
+var orb_links: Dictionary = {}
+
+
+func set_orb_offset(thread_id: String, position: Vector3) -> void:
+	if thread_id.is_empty():
+		return
+	orb_offsets[thread_id] = position
+	orb_layout_changed.emit(thread_id)
+
+
+func clear_orb_offset(thread_id: String) -> void:
+	if orb_offsets.erase(thread_id):
+		orb_layout_changed.emit(thread_id)
+
+
+func get_orb_offset(thread_id: String) -> Variant:
+	return orb_offsets.get(thread_id)
+
+
+func link_orbs(child_id: String, parent_id: String) -> bool:
+	if child_id.is_empty() or parent_id.is_empty() or child_id == parent_id:
+		return false
+	var cursor := parent_id
+	var guard := 0
+	while not cursor.is_empty() and guard < 64:
+		if cursor == child_id:
+			return false
+		cursor = str(orb_links.get(cursor, ""))
+		guard += 1
+	orb_links[child_id] = parent_id
+	orb_offsets.erase(child_id)
+	orb_layout_changed.emit(child_id)
+	return true
+
+
+func unlink_orb(child_id: String) -> bool:
+	if orb_links.erase(child_id):
+		orb_layout_changed.emit(child_id)
+		return true
+	return false
+
+
+func get_orb_parent(thread_id: String) -> String:
+	return str(orb_links.get(thread_id, ""))
 
 
 func set_workspaces(values: Array) -> void:
@@ -251,6 +297,11 @@ func remove_thread(thread_id: String) -> bool:
 		return false
 	threads_by_id.erase(thread_id)
 	ordered_thread_ids.erase(thread_id)
+	orb_offsets.erase(thread_id)
+	orb_links.erase(thread_id)
+	for child_id in orb_links.keys():
+		if str(orb_links[child_id]) == thread_id:
+			orb_links.erase(child_id)
 	if focused_thread_id == thread_id:
 		focused_thread_id = ""
 	if hovered_target_id == thread_id:

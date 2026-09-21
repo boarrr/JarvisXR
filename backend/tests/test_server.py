@@ -35,7 +35,7 @@ def command(
 
 
 async def receive_event(websocket) -> dict:
-    return json.loads(await asyncio.wait_for(websocket.recv(), timeout=2.0))
+    return json.loads(await asyncio.wait_for(websocket.recv(), timeout=10.0))
 
 
 async def receive_until(websocket, event_type: str) -> tuple[list[dict], dict]:

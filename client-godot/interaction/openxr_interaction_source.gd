@@ -34,6 +34,7 @@ const PALM_ACTIONS := [
 
 const LEFT_TRACKER_PATH := &"/user/hand_tracker/left"
 const RIGHT_TRACKER_PATH := &"/user/hand_tracker/right"
+const TOUCH_MARGIN := 0.12
 const REQUIRED_POSITION_FLAGS := (
 	XRHandTracker.HAND_JOINT_FLAG_POSITION_VALID
 	| XRHandTracker.HAND_JOINT_FLAG_POSITION_TRACKED
@@ -75,6 +76,8 @@ var _bimanual_target_id := ""
 var _bimanual_initial_center := Vector3.ZERO
 var _bimanual_initial_vector := Vector3.RIGHT
 var _bimanual_initial_distance := 1.0
+var _grab_target_id := ""
+var _grab_origin_position := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -124,19 +127,30 @@ func set_hover_target_id(target_id: String) -> void:
 func _physics_process(_delta: float) -> void:
 	if not _session_active:
 		return
-	var hand_sample := _find_best_hand_sample()
-	if hand_sample.is_empty():
-		_reset_tracking()
-		return
-	_apply_joint_sample(hand_sample)
+	_collect_hand_samples()
+	var pointer_sample: Dictionary = _latest_hand_samples.get(preferred_hand, {})
+	if pointer_sample.is_empty():
+		_clear_pointer()
+	else:
+		_apply_pointer_sample(pointer_sample)
 	_update_bimanual_gesture()
 
 
-func _find_best_hand_sample() -> Dictionary:
-	var hand_order: Array[String] = [preferred_hand, "left" if preferred_hand == "right" else "right"]
+func simulate_tick() -> bool:
+	# Deterministic single step used by tests and the desktop lab.
+	_collect_hand_samples()
+	var pointer_sample: Dictionary = _latest_hand_samples.get(preferred_hand, {})
+	if pointer_sample.is_empty():
+		_clear_pointer()
+		return false
+	var applied := _apply_pointer_sample(pointer_sample)
+	_update_bimanual_gesture()
+	return applied
+
+
+func _collect_hand_samples() -> void:
 	_latest_hand_samples.clear()
-	var selected_sample: Dictionary = {}
-	for hand_name in hand_order:
+	for hand_name in ["left", "right"]:
 		var sample := _sample_for_hand(hand_name)
 		if sample.is_empty():
 			_hand_pinch_states[hand_name] = false
@@ -150,9 +164,21 @@ func _find_best_hand_sample() -> Dictionary:
 			pinch_begin_distance,
 			pinch_release_distance
 		)
-		if selected_sample.is_empty():
-			selected_sample = sample
-	return selected_sample
+	_set_tracking_available(not _latest_hand_samples.is_empty())
+
+
+func _clear_pointer() -> void:
+	var had_state := _pointer_state.is_selecting or _pointer_state.is_grabbing
+	if not _grab_target_id.is_empty():
+		_finish_grab(_pointer_state.origin)
+	_pointer_state.is_selecting = false
+	_pointer_state.is_grabbing = false
+	_pointer_state.direction = Vector3.ZERO
+	_active_hand_name = ""
+	_has_smoothed_ray = false
+	_hand_pinch_states[preferred_hand] = false
+	if had_state:
+		pointer_state_changed.emit(_pointer_state.copy())
 
 
 func _sample_for_hand(hand_name: String) -> Dictionary:
@@ -216,8 +242,7 @@ func _joint_has_tracked_position(tracker: XRHandTracker, joint: int) -> bool:
 	return (flags & REQUIRED_POSITION_FLAGS) == REQUIRED_POSITION_FLAGS
 
 
-func _apply_joint_sample(sample: Dictionary) -> bool:
-	var hand_name := str(sample.get("hand_name", ""))
+func _apply_pointer_sample(sample: Dictionary) -> bool:
 	var index_tip := sample.get("index_tip", Vector3.ZERO) as Vector3
 	var index_distal := sample.get("index_distal", Vector3.ZERO) as Vector3
 	var index_proximal := sample.get("index_proximal", Vector3.ZERO) as Vector3
@@ -232,15 +257,15 @@ func _apply_joint_sample(sample: Dictionary) -> bool:
 		var candidate := index_tip - index_proximal
 		if candidate.length_squared() >= 0.0004:
 			direction = candidate
-	if hand_name.is_empty() or direction.length_squared() < 0.000016:
-		_reset_tracking()
+	if direction.length_squared() < 0.000016:
+		_clear_pointer()
 		return false
 
 	_set_tracking_available(true)
-	if hand_name != _active_hand_name:
-		_active_hand_name = hand_name
+	if preferred_hand != _active_hand_name:
+		_active_hand_name = preferred_hand
 		_has_smoothed_ray = false
-		active_hand_changed.emit(hand_name)
+		active_hand_changed.emit(preferred_hand)
 
 	var was_pinching := _pointer_state.is_selecting
 	var pinch_distance := thumb_tip.distance_to(index_tip)
@@ -259,11 +284,25 @@ func _apply_joint_sample(sample: Dictionary) -> bool:
 		_pointer_state.direction = ray_direction
 		_has_smoothed_ray = true
 	_pointer_state.is_selecting = is_pinching
-	_pointer_state.is_grabbing = false
+	_pointer_state.is_grabbing = not _grab_target_id.is_empty()
+
+	if is_pinching and not was_pinching:
+		_start_touch_interaction(index_tip)
+	elif is_pinching and not _grab_target_id.is_empty():
+		if index_tip.distance_to(_grab_origin_position) > 0.012:
+			interaction_event.emit(InteractionEvent.new(
+				InteractionEvent.Type.GRAB_MOVE,
+				_grab_target_id,
+				InteractionEvent.Source.HAND,
+				index_tip,
+				{"gesture": "orb_grab", "phase": "move"}
+			))
+	elif not is_pinching and was_pinching and not _grab_target_id.is_empty():
+		_finish_grab(index_tip)
 
 	_update_pinch_scroll(index_tip, was_pinching, is_pinching)
 	pointer_state_changed.emit(_pointer_state.copy())
-	hand_pose_changed.emit(hand_name, palm_transform, index_tip, is_pinching)
+	hand_pose_changed.emit(preferred_hand, palm_transform, index_tip, is_pinching)
 	return true
 
 
@@ -276,13 +315,24 @@ func submit_joint_sample(
 ) -> bool:
 	if not _session_active:
 		return false
-	return _apply_joint_sample({
+	var sample := {
 		"hand_name": hand_name,
 		"palm_transform": palm_transform,
 		"thumb_tip": thumb_tip,
 		"index_distal": index_distal,
 		"index_tip": index_tip,
-	})
+	}
+	_latest_hand_samples[hand_name] = sample
+	_hand_pinch_states[hand_name] = evaluate_pinch(
+		thumb_tip.distance_to(index_tip),
+		bool(_hand_pinch_states.get(hand_name, false)),
+		pinch_begin_distance,
+		pinch_release_distance
+	)
+	_set_tracking_available(true)
+	if hand_name != preferred_hand:
+		return true
+	return _apply_pointer_sample(sample)
 
 
 static func evaluate_pinch(
@@ -374,6 +424,64 @@ func _set_tracking_available(value: bool) -> void:
 	tracking_changed.emit(value)
 
 
+func _start_touch_interaction(position: Vector3) -> void:
+	var target_id := _nearest_touch_target(position)
+	if target_id.is_empty():
+		return
+	submit_direct_touch(target_id, position)
+	# Bare thread IDs are orbs: pinching one starts a grab so it can be moved
+	# or dropped onto another orb to combine them.
+	if not ":" in target_id:
+		_grab_target_id = target_id
+		_grab_origin_position = position
+		interaction_event.emit(InteractionEvent.new(
+			InteractionEvent.Type.GRAB_BEGIN,
+			target_id,
+			InteractionEvent.Source.HAND,
+			position,
+			{"gesture": "orb_grab", "phase": "begin"}
+		))
+
+
+func _finish_grab(position: Vector3) -> void:
+	interaction_event.emit(InteractionEvent.new(
+		InteractionEvent.Type.GRAB_END,
+		_grab_target_id,
+		InteractionEvent.Source.HAND,
+		position,
+		{"gesture": "orb_grab", "phase": "end"}
+	))
+	_grab_target_id = ""
+
+
+func _nearest_touch_target(position: Vector3) -> String:
+	var best_target := ""
+	var best_slack := 0.0
+	for node in get_tree().get_nodes_in_group("interactable"):
+		var area := node as Area3D
+		if area == null or not area.is_visible_in_tree():
+			continue
+		if not area.has_method("get_interaction_target_id"):
+			continue
+		var target_id := str(area.call("get_interaction_target_id"))
+		if target_id.is_empty():
+			continue
+		var slack := position.distance_to(area.global_position) - _shape_radius(area) - TOUCH_MARGIN
+		if slack < 0.0 and (best_target.is_empty() or slack < best_slack):
+			best_slack = slack
+			best_target = target_id
+	return best_target
+
+
+func _shape_radius(area: Area3D) -> float:
+	for child in area.get_children():
+		if child is CollisionShape3D:
+			var shape := (child as CollisionShape3D).shape
+			if shape is SphereShape3D:
+				return (shape as SphereShape3D).radius
+	return 0.0
+
+
 func _reset_tracking() -> void:
 	var had_pointer_state := _pointer_state.is_selecting or _pointer_state.is_grabbing
 	if _bimanual_active and not _bimanual_target_id.is_empty():
@@ -392,6 +500,7 @@ func _reset_tracking() -> void:
 	_hand_pinch_states["right"] = false
 	_bimanual_active = false
 	_bimanual_target_id = ""
+	_grab_target_id = ""
 	_hover_target_id = ""
 	_scroll_accumulator = 0.0
 	_has_smoothed_ray = false

@@ -17,6 +17,7 @@ var _speech_service: SpeechService = null
 @onready var _desktop_composer: DesktopComposer = $DesktopComposer
 @onready var _pointer_hud: CanvasLayer = $PointerHUD
 @onready var _privacy_veil: PrivacyVeil = $PrivacyVeil
+@onready var _orb_manager: OrbManager = $OrbManager
 @onready var _workspace_panel: WorkspacePanel = $WorkspacePanel
 @onready var _diff_review_panel: DiffReviewPanel = $DiffReviewPanel
 @onready var _file_viewer: FileViewer = $FileViewer
@@ -221,6 +222,8 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 		InteractionEvent.Type.GRAB_BEGIN:
 			if event.target_id == "ui:code_surface" and event.world_position is Vector3:
 				_code_viewer.begin_bimanual_transform(event.world_position)
+			elif AppState.get_thread(event.target_id) != null:
+				_orb_manager.begin_grab(event.target_id)
 		InteractionEvent.Type.GRAB_MOVE:
 			if event.target_id == "ui:code_surface" and event.world_position is Vector3:
 				_code_viewer.apply_bimanual_transform(
@@ -228,9 +231,19 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 					float(event.gesture_data.get("scale_factor", 1.0)),
 					float(event.gesture_data.get("rotation_radians", 0.0))
 				)
+			elif AppState.get_thread(event.target_id) != null and event.world_position is Vector3:
+				_orb_manager.update_grab(event.target_id, event.world_position)
 		InteractionEvent.Type.GRAB_END:
 			if event.target_id == "ui:code_surface":
 				_code_viewer.end_bimanual_transform()
+			elif AppState.get_thread(event.target_id) != null:
+				var grab_result := _orb_manager.end_grab(event.target_id)
+				var linked_to := str(grab_result.get("linked_to", ""))
+				if not linked_to.is_empty():
+					var parent_thread := AppState.get_thread(linked_to)
+					EventBus.debug_message.emit(
+						"Combined with %s" % (parent_thread.title if parent_thread != null else linked_to)
+					)
 
 
 func _focus_next_thread() -> void:

@@ -24,12 +24,11 @@ func _run() -> void:
 	var camera := source.camera
 	_check(get_viewport().get_camera_3d() == camera, "visible desktop camera is the same camera used for hand rays")
 	source.cursor = get_viewport().get_visible_rect().size * 0.5
-	var sample := source._find_best_hand_sample()
-	source._apply_joint_sample(sample)
+	source.simulate_tick()
 	_check(source.has_tracking_data() and not source.get_pointer_state().is_selecting, "open synthetic joints establish tracking")
 	_check(source.get_latest_hand_sample("left").has("palm_transform"), "left palm pose reaches the real console")
 	source.pinching = true
-	source._apply_joint_sample(source._find_best_hand_sample())
+	source.simulate_tick()
 	_check(source.get_pointer_state().is_selecting, "synthetic thumb-index distance triggers production pinch logic")
 	source.release_gestures()
 	var down := InputEventMouseButton.new()
@@ -50,10 +49,10 @@ func _run() -> void:
 	for frame in range(50):
 		await get_tree().physics_frame
 	source.cursor = camera.unproject_position(orb.global_position)
-	source._apply_joint_sample(source._find_best_hand_sample())
+	source.simulate_tick()
 	manager._physics_process(0.016)
 	source.pinching = true
-	source._apply_joint_sample(source._find_best_hand_sample())
+	source.simulate_tick()
 	manager._physics_process(0.016)
 	_check(AppState.focused_thread_id == "thread_demo", "raycast plus pinch focuses an actual orb")
 	source.release_gestures()
@@ -93,12 +92,12 @@ func _run() -> void:
 	source.cursor = camera.unproject_position(viewer.global_position)
 	source.pinching = true
 	source.two_hands = true
-	source._apply_joint_sample(source._find_best_hand_sample())
+	source.simulate_tick()
 	source._update_bimanual_gesture()
 	source.cursor += Vector2(70, -25)
 	source.spread = 0.42
 	source.twist = 0.2
-	source._apply_joint_sample(source._find_best_hand_sample())
+	source.simulate_tick()
 	source._update_bimanual_gesture()
 	_check(viewer.global_position.distance_to(code_transform.origin) > 0.01, "paired joints move the code surface")
 	_check(viewer.scale.x > 1.1, "increased hand separation scales the code surface")
