@@ -17,8 +17,8 @@ const PAGE_COUNT := 3
 const PAGE_TITLES := ["CHAT", "CODE", "SYSTEM"]
 
 const SCREEN_CENTER := Vector2(0.0, 0.0)
-const SCREEN_SIZE := Vector2(0.48, 0.38)
-const VIEWPORT_SIZE := Vector2i(600, 480)
+const SCREEN_SIZE := Vector2(0.56, 0.42)
+const VIEWPORT_SIZE := Vector2i(640, 480)
 const BUTTON_HEIGHT_PX := 62.0
 const HEADER_HEIGHT_PX := 52.0
 const FOOTER_ROWS := 2
@@ -47,13 +47,19 @@ const CHAT_BUTTONS := [
 @export var user_rig_path: NodePath = ^"../UserRig"
 @export_range(0.01, 0.35, 0.01) var palm_offset_metres: float = 0.20
 @export_range(0.05, 1.0, 0.05) var pose_smoothing: float = 0.38
-@export_range(0.3, 1.0, 0.01) var console_scale: float = 0.66
+@export_range(0.3, 1.0, 0.01) var console_scale: float = 0.8
 @export_range(0.15, 0.8, 0.01) var min_display_distance: float = 0.25
 @export_range(0.3, 1.2, 0.01) var max_display_distance: float = 0.7
 @export_range(0.0, 0.4, 0.01) var below_eye_minimum: float = 0.05
 @export_range(0.5, 1.0, 0.01) var gaze_threshold: float = 0.86
 @export_range(0.0, 1.5, 0.05) var show_delay_seconds: float = 0.3
-@export_range(0.0, 1.5, 0.05) var hide_grace_seconds: float = 0.5
+# Once summoned the panel parks in front of the user instead of following the
+# hand, so a single (right) hand can operate it without close-range tracking.
+@export_range(0.3, 1.2, 0.01) var parked_distance: float = 0.62
+@export_range(-0.6, 0.6, 0.01) var parked_side_offset: float = -0.14
+@export_range(0.0, 0.8, 0.01) var parked_drop: float = 0.30
+@export_range(0.0, 1.0, 0.05) var parked_keep_gaze: float = 0.35
+@export_range(0.5, 10.0, 0.5) var parked_ignore_seconds: float = 2.5
 
 @onready var _status_label: Label3D = $StatusLabel
 @onready var _provider_label: Label3D = $ProviderLabel
@@ -72,7 +78,7 @@ var _page_label: Label = null
 var _buttons: Dictionary = {}
 var _dynamic_targets: Array[Area3D] = []
 var _system_targets: Array[Area3D] = []
-var _hide_grace := 0.0
+var _panel_ignored := 0.0
 var _page := PAGE_CHAT
 var _chat_offset := 0
 var _code_offset := 0
@@ -109,10 +115,7 @@ func _physics_process(delta: float) -> void:
 		or _user_rig == null
 		or AppState.privacy_veil_active
 	):
-		_hide_panel()
-		return
-	var sample := _hand_source.get_latest_hand_sample("left")
-	if sample.is_empty():
+		_dwell = 0.0
 		_hide_panel()
 		return
 	if _camera == null:
@@ -122,60 +125,83 @@ func _physics_process(delta: float) -> void:
 		return
 
 	var camera_position := _camera.global_position
-	var palm_transform := sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D
-	var anchor := palm_transform.origin + Vector3.UP * palm_offset_metres
-	var offset := anchor - camera_position
-	var distance := offset.length()
-	if distance < 0.001:
-		offset = -_camera.global_transform.basis.z
-		distance = 1.0
-	var outward := offset / distance
+	var camera_forward := -_camera.global_transform.basis.z
+	camera_forward.y = 0.0
+	if camera_forward.length_squared() < 0.0001:
+		camera_forward = Vector3.FORWARD
+	camera_forward = camera_forward.normalized()
 
-	var conditions_met := true
-	if AppState.ui_mode != "hand_lab":
-		# Gaze gate: the panel appears when the user actually looks down at the
-		# open palm, not merely because the hand is low and near the body.
-		var camera_forward := -_camera.global_transform.basis.z.normalized()
+	if not visible:
+		# Summon only: glance at the open left palm to bring the console up.
+		var sample := _hand_source.get_latest_hand_sample("left")
+		if sample.is_empty():
+			_dwell = 0.0
+			return
+		var palm_transform := sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D
+		var anchor := palm_transform.origin + Vector3.UP * palm_offset_metres
+		var to_anchor := anchor - camera_position
+		var distance := to_anchor.length()
+		if distance < 0.001:
+			return
+		var outward := to_anchor / distance
 		var gaze := outward.dot(camera_forward)
 		var below_eye := camera_position.y - anchor.y >= below_eye_minimum
-		conditions_met = (
+		var looking_at_palm := gaze >= gaze_threshold
+		# Pinching the left fingers is a deliberate summon that works even when
+		# hand tracking makes the gaze gate fussy.
+		var palm_pinch := _hand_source.is_hand_pinching("left")
+		var conditions_met := (
 			distance >= min_display_distance
 			and distance <= max_display_distance
 			and below_eye
-			and gaze >= gaze_threshold
+			and (looking_at_palm or palm_pinch)
 		)
-
-	if not conditions_met:
-		_dwell = 0.0
-		if visible:
-			# Hysteresis: a glance away must not flicker the panel out.
-			_hide_grace -= delta
-			if _hide_grace <= 0.0:
-				_hide_panel()
-		return
-
-	_hide_grace = hide_grace_seconds
-	_dwell += delta
-	if _dwell < show_delay_seconds:
-		_hide_panel()
-		return
-
-	# Sit just beyond the palm and never closer than a comfortable reading
-	# distance, so the panel is not projected between the hand and the eyes.
-	var target_position := camera_position + outward * (maxf(distance, 0.46) + 0.18)
-	if not visible:
-		global_position = target_position
-	else:
-		global_position = global_position.lerp(target_position, pose_smoothing)
-	look_at(camera_position, Vector3.UP, true)
-	if not visible:
+		if not conditions_met:
+			_dwell = 0.0
+			return
+		_dwell += delta
+		if _dwell < show_delay_seconds:
+			return
+		_park_panel(camera_position, camera_forward)
 		visible = true
 		if _viewport != null:
 			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+		_panel_ignored = 0.0
+		return
+
+	# Parked: hold position until closed or ignored for a while.
+	var to_panel := global_position - camera_position
+	var distance_to_panel := to_panel.length()
+	var panel_gaze := (
+		to_panel.normalized().dot(camera_forward) if distance_to_panel > 0.001 else 0.0
+	)
+	if panel_gaze >= parked_keep_gaze:
+		_panel_ignored = 0.0
+	else:
+		_panel_ignored += delta
+		if _panel_ignored >= parked_ignore_seconds:
+			_hide_panel()
+			return
 	_update_swipe()
 
 
+func _park_panel(camera_position: Vector3, camera_forward: Vector3) -> void:
+	var camera_right := _camera.global_transform.basis.x
+	camera_right.y = 0.0
+	if camera_right.length_squared() < 0.0001:
+		camera_right = Vector3.RIGHT
+	camera_right = camera_right.normalized()
+	global_position = (
+		camera_position
+		+ camera_forward * parked_distance
+		+ camera_right * parked_side_offset
+		+ Vector3.DOWN * parked_drop
+	)
+	look_at(camera_position, Vector3.UP, true)
+
+
 func _hide_panel() -> void:
+	_panel_ignored = 0.0
 	visible = false
 	if _viewport != null:
 		_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
