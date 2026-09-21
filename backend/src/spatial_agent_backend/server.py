@@ -518,15 +518,19 @@ class SpatialAgentServer:
         except ConnectionClosed:
             return
 
+    def _build_ssl_context(self) -> ssl.SSLContext | None:
+        if not (self.settings.tls_certificate_path and self.settings.tls_private_key_path):
+            return None
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(
+            str(self.settings.tls_certificate_path),
+            str(self.settings.tls_private_key_path),
+        )
+        return context
+
     async def serve_forever(self) -> None:
         await self.initialize()
-        ssl_context: ssl.SSLContext | None = None
-        if self.settings.tls_certificate_path and self.settings.tls_private_key_path:
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            ssl_context.load_cert_chain(
-                str(self.settings.tls_certificate_path),
-                str(self.settings.tls_private_key_path),
-            )
+        ssl_context = self._build_ssl_context()
         log_record(
             "server_started",
             host=self.settings.host,
