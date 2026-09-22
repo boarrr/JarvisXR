@@ -34,6 +34,7 @@ CLIENT_COMMAND_TYPES = frozenset(
         "tool.catalog",
         "thread.combine",
         "thread.restore",
+        "thread.separate",
     }
 )
 
@@ -48,6 +49,7 @@ V2_COMMAND_TYPES = frozenset(
         "tool.catalog",
         "thread.combine",
         "thread.restore",
+        "thread.separate",
     }
 )
 
@@ -163,6 +165,7 @@ def validate_command_payload(command: Envelope) -> None:
         "tool.catalog": set(),
         "thread.combine": {"thread_ids"},
         "thread.restore": set(),
+        "thread.separate": set(),
     }
     unexpected_fields = set(payload) - allowed_fields[command.type]
     if unexpected_fields:
@@ -183,6 +186,8 @@ def validate_command_payload(command: Envelope) -> None:
     elif command.type in {"thread.archive", "run.cancel"}:
         _require_thread_id(command)
     elif command.type == "thread.restore":
+        _require_thread_id(command)
+    elif command.type == "thread.separate":
         _require_thread_id(command)
     elif command.type == "workspace.bind":
         _require_thread_id(command)

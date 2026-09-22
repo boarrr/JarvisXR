@@ -99,7 +99,30 @@ class ThreadService:
             )
             self._threads[combined.id] = combined
             await asyncio.to_thread(self.store.save_thread, combined)
+            for source in sources:
+                if await asyncio.to_thread(self.store.archive_thread, source.id):
+                    self._threads.pop(source.id, None)
             return combined
+
+    async def separate_thread(self, combined_id: str) -> list[Thread]:
+        """Undo a combine: remove the combined thread and bring its sources back."""
+        async with self._lock:
+            combined = self._require_thread(combined_id)
+            source_ids = [str(item) for item in combined.metadata.get("combined_from", [])]
+            if not source_ids:
+                raise ThreadNotFoundError(combined_id)
+            restored: list[Thread] = []
+            for source_id in source_ids:
+                if not await asyncio.to_thread(self.store.restore_thread, source_id):
+                    continue
+                source = await asyncio.to_thread(self.store.get_thread, source_id)
+                if source is None:
+                    continue
+                self._threads[source.id] = source
+                restored.append(source)
+            if await asyncio.to_thread(self.store.archive_thread, combined_id):
+                self._threads.pop(combined_id, None)
+            return restored
 
     async def add_message(
         self,

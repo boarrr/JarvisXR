@@ -13,6 +13,7 @@ from websockets.asyncio.server import serve
 
 from spatial_agent_backend.config import Settings
 from spatial_agent_backend.server import SpatialAgentServer
+from spatial_agent_backend.thread_service import ThreadNotFoundError
 
 
 def command(
@@ -307,6 +308,49 @@ class WorkspaceFlowTests(unittest.IsolatedAsyncioTestCase):
             # The new thread is durable, not just an event.
             restored = await self.application.threads.get_thread(combined["thread_id"])
             self.assertEqual(restored.metadata["combined_from"], [thread_id, second_id])
+
+            # The two originals are absorbed into the combined agent.
+            with self.assertRaises(ThreadNotFoundError):
+                await self.application.threads.get_thread(thread_id)
+            with self.assertRaises(ThreadNotFoundError):
+                await self.application.threads.get_thread(second_id)
+
+    async def test_separate_restores_the_original_agents(self) -> None:
+        websocket, session_id = await self.open_session()
+        async with websocket:
+            thread_id = await self.first_thread_id(websocket, session_id)
+            await websocket.send(
+                command("thread.create", session_id=session_id, payload={"title": "Second agent"})
+            )
+            created = await receive_event(websocket)
+            second_id = created["thread_id"]
+
+            await websocket.send(
+                command(
+                    "thread.combine",
+                    session_id=session_id,
+                    payload={"thread_ids": [thread_id, second_id]},
+                )
+            )
+            _, combined = await receive_until(websocket, "thread.created")
+            combined_id = combined["thread_id"]
+
+            await websocket.send(
+                command("thread.separate", session_id=session_id, thread_id=combined_id)
+            )
+            _, archived = await receive_until(websocket, "thread.archived")
+            self.assertEqual(archived["thread_id"], combined_id)
+            restored_ids = set()
+            for _ in range(2):
+                _, event = await receive_until(websocket, "thread.created")
+                restored_ids.add(event["thread_id"])
+            self.assertEqual(restored_ids, {thread_id, second_id})
+
+            self.assertEqual(
+                (await self.application.threads.get_thread(thread_id)).id, thread_id
+            )
+            with self.assertRaises(ThreadNotFoundError):
+                await self.application.threads.get_thread(combined_id)
 
     async def test_archived_thread_can_be_restored(self) -> None:
         websocket, session_id = await self.open_session()

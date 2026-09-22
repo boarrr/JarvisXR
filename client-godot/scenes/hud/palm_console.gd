@@ -34,6 +34,7 @@ const SYSTEM_BUTTONS := [
 	["COGNITION", "palm:cognition_toggle", "CognitionTarget"],
 	["MISSION MAP", "palm:mission_toggle", "MissionTarget"],
 	["PRIVACY VEIL", "palm:privacy_toggle", "PrivacyTarget"],
+	["UNCOMBINE", "palm:uncombine", ""],
 ]
 
 const CHAT_BUTTONS := [

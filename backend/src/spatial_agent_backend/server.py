@@ -484,7 +484,31 @@ class SpatialAgentServer:
                 thread_id=combined.id,
                 sources=len(command.payload["thread_ids"]),
             )
+            # Sources are absorbed into the combined agent.
+            for source_id in command.payload["thread_ids"]:
+                await emit("thread.archived", str(source_id), {})
             await emit("thread.created", combined.id, {"thread": combined.to_wire()})
+        elif command.type == "thread.separate":
+            try:
+                restored = await self.threads.separate_thread(command.thread_id)
+            except ThreadNotFoundError:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "thread_not_found", "message": "Unknown combined thread"},
+                )
+                return
+            log_record(
+                "threads_separated",
+                session_id=session.id,
+                thread_id=command.thread_id,
+                restored=len(restored),
+            )
+            if session.focused_thread_id == command.thread_id:
+                session.focused_thread_id = ""
+            await emit("thread.archived", command.thread_id, {})
+            for source in restored:
+                await emit("thread.created", source.id, {"thread": source.to_wire()})
         elif command.type == "thread.restore":
             try:
                 restored = await self.threads.restore_thread(command.thread_id)

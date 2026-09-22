@@ -56,13 +56,25 @@ func _run() -> void:
 		"combine command is accepted by the transport"
 	)
 	_check(
-		AppState.ordered_thread_ids.size() == thread_count_before + 1,
-		"combining creates a new agent thread"
+		AppState.ordered_thread_ids.size() == thread_count_before - 1,
+		"combining replaces two agents with one"
 	)
 	var combined_thread: AgentThread = AppState.get_thread(AppState.ordered_thread_ids.back())
 	_check(
 		combined_thread != null and combined_thread.title.contains("combined"),
 		"combined thread carries a combined title"
+	)
+	_check(
+		AppState.get_thread(first_id) == null and AppState.get_thread(second_id) == null,
+		"combining absorbs the originals into one agent"
+	)
+	# Separate to bring both originals back for the checks that follow.
+	bridge.send_command("thread.separate", {}, combined_thread.id)
+	_check(
+		AppState.get_thread(combined_thread.id) == null
+		and AppState.get_thread(first_id) != null
+		and AppState.get_thread(second_id) != null,
+		"separating restores the original agents"
 	)
 
 	# Standing centre: in XR the layout anchors to the play-space origin, so the
@@ -413,6 +425,31 @@ func _run() -> void:
 
 	if not _failed:
 		print("[TEST] Standing orbit and two-hand role checks passed")
+	# Combining absorbs both originals into one agent; separating restores them.
+	main._create_agent_at(Vector3(2.5, 1.4, 2.0))
+	main._create_agent_at(Vector3(3.0, 1.4, 2.0))
+	var combine_bridge := main.get_node("BackendBridge")
+	var combine_ordered := AppState.ordered_thread_ids
+	var combine_ids: Array[String] = [combine_ordered[combine_ordered.size() - 2], combine_ordered[combine_ordered.size() - 1]]
+	combine_bridge.send_command("thread.combine", {"thread_ids": combine_ids})
+	var combined_id := ""
+	for thread_id in AppState.ordered_thread_ids:
+		var candidate := AppState.get_thread(thread_id)
+		if candidate != null and not (candidate.metadata.get("combined_from", []) as Array).is_empty():
+			combined_id = thread_id
+			break
+	_check(not combined_id.is_empty(), "combining creates one combined agent")
+	_check(
+		AppState.get_thread(combine_ids[0]) == null and AppState.get_thread(combine_ids[1]) == null,
+		"combining absorbs the two originals"
+	)
+	main._uncombine_agent(combined_id)
+	_check(AppState.get_thread(combined_id) == null, "separating removes the combined agent")
+	_check(
+		AppState.get_thread(combine_ids[0]) != null and AppState.get_thread(combine_ids[1]) != null,
+		"separating restores both original agents"
+	)
+
 	main.queue_free()
 	source.queue_free()
 	get_tree().quit(1 if _failed else 0)

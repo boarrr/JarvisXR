@@ -32,6 +32,9 @@ var _restore_quick_after_privacy := false
 var _restore_composer_after_privacy := false
 var _pending_spawn_position: Variant = null
 var _pending_restore_offsets: Dictionary = {}
+var _combine_restore_points: Dictionary = {}
+var _pending_combine_sources: Array[String] = []
+var _pending_combine_positions: Dictionary = {}
 var _pending_bind_thread := false
 
 
@@ -171,6 +174,8 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_create_agent_at(_spawn_position_in_front())
 			elif event.target_id == "palm:undo":
 				_undo_last_agent()
+			elif event.target_id == "palm:uncombine":
+				_uncombine_agent(AppState.focused_thread_id)
 			elif event.target_id == "palm:cognition_toggle":
 				_cognition_layer.toggle_enabled()
 			elif event.target_id == "palm:mission_toggle":
@@ -258,6 +263,12 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				var linked_to := str(grab_result.get("linked_to", ""))
 				if not linked_to.is_empty():
 					# Combining two agents starts a new agent with both contexts.
+					_pending_combine_sources = [event.target_id, linked_to]
+					_pending_combine_positions = {}
+					for source_id in _pending_combine_sources:
+						var source_orb := _orb_manager.get_orb(source_id)
+						if source_orb != null:
+							_pending_combine_positions[source_id] = source_orb.global_position
 					_backend_bridge.send_command(
 						"thread.combine",
 						{"thread_ids": [event.target_id, linked_to]}
@@ -337,11 +348,33 @@ func _undo_last_agent() -> void:
 	var thread_id := str(entry.get("thread_id", ""))
 	if thread_id.is_empty():
 		return
+	if str(entry.get("kind", "crush")) == "combine":
+		_uncombine_agent(thread_id)
+		return
 	var position: Variant = entry.get("position")
 	if position is Vector3:
 		_pending_restore_offsets[thread_id] = position
 	_backend_bridge.send_command("thread.restore", {}, thread_id)
 	EventBus.debug_message.emit("Restoring %s" % str(entry.get("title", "agent")))
+
+
+func _uncombine_agent(combined_id: String) -> void:
+	if combined_id.is_empty():
+		EventBus.debug_message.emit("Focus a combined agent to separate it")
+		return
+	var thread := AppState.get_thread(combined_id)
+	if thread == null:
+		return
+	var combined_from: Array = thread.metadata.get("combined_from", [])
+	if combined_from.size() < 2:
+		EventBus.debug_message.emit("%s is not a combined agent" % thread.title)
+		return
+	var restore_points: Dictionary = _combine_restore_points.get(combined_id, {})
+	for source_id_variant in restore_points.keys():
+		_pending_restore_offsets[str(source_id_variant)] = restore_points[source_id_variant]
+	_backend_bridge.send_command("thread.separate", {}, combined_id)
+	_combine_restore_points.erase(combined_id)
+	EventBus.debug_message.emit("Separating %s" % thread.title)
 
 
 func _spawn_position_in_front() -> Vector3:
@@ -364,6 +397,20 @@ func _on_thread_added_for_layout(thread: AgentThread) -> void:
 	elif _pending_restore_offsets.has(thread.id):
 		AppState.set_orb_offset(thread.id, _pending_restore_offsets[thread.id])
 		_pending_restore_offsets.erase(thread.id)
+	if not _pending_combine_sources.is_empty():
+		var combined_from: Array = thread.metadata.get("combined_from", [])
+		var matches := combined_from.size() == _pending_combine_sources.size()
+		if matches:
+			for source_id in _pending_combine_sources:
+				if not combined_from.has(source_id):
+					matches = false
+					break
+		if matches:
+			# Keep the sources' resting places so UNDO can put them back.
+			_combine_restore_points[thread.id] = _pending_combine_positions.duplicate()
+			AppState.push_undo(thread.id, thread.title, null, "combine")
+			_pending_combine_sources = []
+			_pending_combine_positions = {}
 	if _pending_bind_thread and AppState.workspaces.size() == 1:
 		_backend_bridge.send_command(
 			"workspace.bind",

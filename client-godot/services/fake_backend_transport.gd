@@ -141,6 +141,8 @@ func send_command(command_type: String, payload: Dictionary = {}, thread_id: Str
 			return _combine_threads(payload)
 		"thread.restore":
 			return _restore_thread(thread_id)
+		"thread.separate":
+			return _separate_thread(thread_id)
 		"debug.workspace.diff":
 			return _inject_workspace_diff(thread_id, payload)
 		_:
@@ -340,6 +342,24 @@ func _combine_threads(payload: Dictionary) -> bool:
 	combined["messages"] = messages
 	_insert_thread(combined)
 	_emit_event("thread.created", new_id, {"thread": combined.duplicate(true)})
+	# The originals are absorbed into the combined agent; separate restores them.
+	for source_variant in source_ids:
+		_archive_thread(str(source_variant))
+	return true
+
+
+func _separate_thread(combined_id: String) -> bool:
+	if not _threads_by_id.has(combined_id):
+		_emit_error("thread_not_found", "Unknown thread: %s" % combined_id, combined_id)
+		return false
+	var combined: Dictionary = _threads_by_id[combined_id]
+	var source_ids: Array = combined.get("metadata", {}).get("combined_from", [])
+	if source_ids.is_empty():
+		_emit_error("thread_not_found", "Not a combined thread: %s" % combined_id, combined_id)
+		return false
+	_archive_thread(combined_id)
+	for source_variant in source_ids:
+		_restore_thread(str(source_variant))
 	return true
 
 

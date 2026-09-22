@@ -119,9 +119,19 @@ var orb_links: Dictionary = {}
 var undo_stack: Array = []
 
 
-func push_undo(thread_id: String, title: String, position: Variant) -> void:
+func push_undo(
+	thread_id: String,
+	title: String,
+	position: Variant,
+	kind: String = "crush"
+) -> void:
 	# Physical undo: the last few crushed agents can be brought back.
-	undo_stack.append({"thread_id": thread_id, "title": title, "position": position})
+	undo_stack.append({
+		"thread_id": thread_id,
+		"title": title,
+		"position": position,
+		"kind": kind,
+	})
 	while undo_stack.size() > 3:
 		undo_stack.pop_front()
 	undo_changed.emit(undo_stack.size())
