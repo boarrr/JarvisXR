@@ -20,7 +20,7 @@ const THROW_MIN_SPEED := 0.25
 const THROW_DAMPING := 1.7
 const KINETIC_STOP_SPEED := 0.08
 const STAGE_MAX_RADIUS := 3.2
-const ATTRACT_SPEED := 3.2
+const ATTRACT_SPEED := 0.9
 
 var _user_rig: UserRig = null
 var _standing_center: Node3D = null
@@ -274,7 +274,7 @@ func attract_to(thread_id: String, anchor: Vector3) -> void:
 	var distance := to_anchor.length()
 	if distance < 0.05:
 		return
-	var speed := clampf(distance * ATTRACT_SPEED, 0.35, 4.5)
+	var speed := clampf(distance * ATTRACT_SPEED, 0.15, 1.2)
 	var step_delta := 1.0 / maxf(float(Engine.get_physics_ticks_per_second()), 1.0)
 	var step := minf(speed * step_delta, distance)
 	var position := orb.global_position + to_anchor.normalized() * step

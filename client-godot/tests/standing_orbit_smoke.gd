@@ -142,6 +142,11 @@ func _run() -> void:
 	manager.attract_begin(first_id)
 	var attract_start := (manager.get_orb(first_id) as AgentOrb).global_position
 	var attract_anchor := attract_start + Vector3(0.0, 0.0, 0.8)
+	manager.attract_to(first_id, attract_anchor)
+	var attract_step := (
+		(manager.get_orb(first_id) as AgentOrb).global_position.distance_to(attract_start)
+	)
+	_check(attract_step < 0.05, "fist attraction creeps toward the palm instead of snapping")
 	for _frame in range(240):
 		manager.attract_to(first_id, attract_anchor)
 	manager.attract_end(first_id)
@@ -303,26 +308,27 @@ func _run() -> void:
 	loss_source.submit_joint_sample("left", tap_palm, open_thumb, tap_distal, tap_index)
 	_check(_summon_count(loss_events) == 0, "tracking loss cannot fabricate a summon")
 
-	# Pinching at a hovered agent grabs it rather than opening its thread.
-	var grab_source := OpenXRInteractionSource.new()
-	add_child(grab_source)
-	grab_source.set_hand_tracking_active(true)
-	grab_source.set_physics_process(false)
-	grab_source.set_hover_target_id("thread_probe")
-	var grab_events: Array[InteractionEvent] = []
-	grab_source.interaction_event.connect(
-		func(event: InteractionEvent) -> void: grab_events.append(event)
+	# Pinching at a hovered agent selects it; selecting must not carry it away.
+	var select_source := OpenXRInteractionSource.new()
+	add_child(select_source)
+	select_source.set_hand_tracking_active(true)
+	select_source.set_physics_process(false)
+	select_source.set_hover_target_id("thread_probe")
+	var select_events: Array[InteractionEvent] = []
+	select_source.interaction_event.connect(
+		func(event: InteractionEvent) -> void: select_events.append(event)
 	)
 	var far_palm := Transform3D(Basis.IDENTITY, Vector3(7.0, 1.4, -0.4))
-	grab_source.submit_joint_sample(
+	select_source.submit_joint_sample(
 		"right", far_palm, Vector3(7.02, 1.42, -0.6), Vector3(7.0, 1.42, -0.55), Vector3(7.0, 1.42, -0.6)
 	)
-	var grabs := grab_events.filter(
+	var grabs := select_events.filter(
 		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.GRAB_BEGIN
 	)
+	_check(grabs.is_empty(), "pinching a hovered agent selects instead of grabbing")
 	_check(
-		grabs.size() == 1 and grabs[0].target_id == "thread_probe",
-		"pinching a hovered agent starts a grab"
+		not select_source.get_pointer_state().is_grabbing,
+		"a pointed pinch leaves the agent in place"
 	)
 
 	var palm_console := main.get_node("PalmConsole") as PalmConsole

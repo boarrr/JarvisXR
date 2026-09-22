@@ -105,6 +105,8 @@ var _fist_states := {"left": false, "right": false}
 var _crush_seconds := 0.0
 var _crush_latched := false
 var _attract_target := ""
+var _fist_prev := false
+var _crush_candidate := ""
 var _tap_prev_pinch := {"left": false, "right": false}
 var _tap_begin_msec := {"left": 0, "right": 0}
 var _tap_prev_release_msec := {"left": 0, "right": 0}
@@ -285,6 +287,8 @@ func _clear_pointer() -> void:
 	_touch_release_needed = false
 	_crush_seconds = 0.0
 	_crush_latched = false
+	_crush_candidate = ""
+	_fist_prev = false
 	if not _attract_target.is_empty():
 		interaction_event.emit(InteractionEvent.new(
 			InteractionEvent.Type.ATTRACT_END, _attract_target, InteractionEvent.Source.HAND
@@ -409,8 +413,7 @@ func _apply_pointer_sample(sample: Dictionary, delta: float = 0.016) -> bool:
 
 	_update_touch_interaction(index_tip)
 	if is_pinching and not was_pinching:
-		if not _begin_grab_if_touching(index_tip):
-			_begin_ray_grab_if_hovering_orb(index_tip)
+		_begin_grab_if_touching(index_tip)
 	elif is_pinching and not _grab_target_id.is_empty():
 		if index_tip.distance_to(_grab_origin_position) > 0.012:
 			interaction_event.emit(InteractionEvent.new(
@@ -460,59 +463,68 @@ func _hand_is_fist(hand_name: String) -> bool:
 func _update_fist_interaction(sample: Dictionary, index_tip: Vector3, delta: float) -> void:
 	var is_fist := _hand_is_fist(preferred_hand)
 	var touching_orb := not _touch_target_id.is_empty() and not ":" in _touch_target_id
-	if is_fist and touching_orb:
-		# Hold the fist on an orb to crush (archive) it.
+	var palm_position := (sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D).origin
+	var hovered := _hover_target_id
+	var valid_new := not hovered.is_empty() and not ":" in hovered
+
+	# Crush only counts when the fist closed while already on the orb. A fist
+	# raised to summon must never archive the agent that arrives in the palm.
+	if is_fist and not _fist_prev:
+		_crush_candidate = _touch_target_id if touching_orb else ""
+		_crush_seconds = 0.0
+	_fist_prev = is_fist
+	if not is_fist:
+		_crush_latched = false
+		_crush_candidate = ""
+
+	var crushing := (
+		is_fist
+		and not _crush_candidate.is_empty()
+		and _touch_target_id == _crush_candidate
+		and _attract_target.is_empty()
+	)
+	if crushing:
 		_crush_seconds += delta
 		if _crush_seconds >= CRUSH_HOLD_SECONDS and not _crush_latched:
 			_crush_latched = true
 			interaction_event.emit(InteractionEvent.new(
 				InteractionEvent.Type.CRUSH,
-				_touch_target_id,
+				_crush_candidate,
 				InteractionEvent.Source.HAND,
 				index_tip,
 				{"gesture": "crush"}
 			))
 		return
 	_crush_seconds = 0.0
-	if not is_fist:
-		_crush_latched = false
 
-	# Fist while pointing at a distant orb pulls it toward the palm.
-	var hovered := _hover_target_id
-	var can_attract := (
-		is_fist
-		and not touching_orb
-		and not hovered.is_empty()
-		and not ":" in hovered
-	)
-	var palm_position := (sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D).origin
-	if can_attract:
-		if _attract_target != hovered:
-			if not _attract_target.is_empty():
-				interaction_event.emit(InteractionEvent.new(
-					InteractionEvent.Type.ATTRACT_END, _attract_target, InteractionEvent.Source.HAND
-				))
-			_attract_target = hovered
+	# A fist raised while the ray is over an agent summons it slowly. The
+	# target is latched, because closing the fist swings the index-derived ray.
+	if not is_fist:
+		if not _attract_target.is_empty():
 			interaction_event.emit(InteractionEvent.new(
-				InteractionEvent.Type.ATTRACT_BEGIN,
-				_attract_target,
-				InteractionEvent.Source.HAND,
-				palm_position,
-				{"gesture": "attract"}
+				InteractionEvent.Type.ATTRACT_END, _attract_target, InteractionEvent.Source.HAND
 			))
-		else:
-			interaction_event.emit(InteractionEvent.new(
-				InteractionEvent.Type.ATTRACT_MOVE,
-				_attract_target,
-				InteractionEvent.Source.HAND,
-				palm_position,
-				{"gesture": "attract"}
-			))
-	elif not _attract_target.is_empty():
+			_attract_target = ""
+		return
+	if _attract_target.is_empty():
+		if not valid_new:
+			return
+		_attract_target = hovered
 		interaction_event.emit(InteractionEvent.new(
-			InteractionEvent.Type.ATTRACT_END, _attract_target, InteractionEvent.Source.HAND
+			InteractionEvent.Type.ATTRACT_BEGIN,
+			_attract_target,
+			InteractionEvent.Source.HAND,
+			palm_position,
+			{"gesture": "attract"}
 		))
-		_attract_target = ""
+		return
+	interaction_event.emit(InteractionEvent.new(
+		InteractionEvent.Type.ATTRACT_MOVE,
+		_attract_target,
+		InteractionEvent.Source.HAND,
+		palm_position,
+		{"gesture": "attract"}
+	))
 
 
 func submit_joint_sample(
@@ -731,25 +743,6 @@ func _register_tap(hand_name: String, now: int) -> void:
 		))
 
 
-func _begin_ray_grab_if_hovering_orb(position: Vector3) -> bool:
-	# Pinching while pointing at a distant agent pulls it to the hand instead
-	# of opening its thread; releasing throws it with the hand's momentum.
-	if _hover_target_id.is_empty() or ":" in _hover_target_id:
-		return false
-	if not _grab_target_id.is_empty():
-		return false
-	_grab_target_id = _hover_target_id
-	_grab_origin_position = position
-	interaction_event.emit(InteractionEvent.new(
-		InteractionEvent.Type.GRAB_BEGIN,
-		_grab_target_id,
-		InteractionEvent.Source.HAND,
-		position,
-		{"gesture": "orb_ray_grab", "phase": "begin"}
-	))
-	return true
-
-
 func get_tracking_flags() -> Dictionary:
 	return {
 		"left": _latest_hand_samples.has("left"),
@@ -863,6 +856,8 @@ func _reset_tracking() -> void:
 	_hand_pinch_states["right"] = false
 	_cancel_tap("left")
 	_cancel_tap("right")
+	_fist_prev = false
+	_crush_candidate = ""
 	_bimanual_active = false
 	_bimanual_target_id = ""
 	_grab_target_id = ""
