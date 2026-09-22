@@ -12,7 +12,7 @@ plugin_target="$client_root/addons/godotopenxrvendors"
 apk_path="$project_root/build/quest/spatial-agent.apk"
 
 usage() {
-	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|deploy"
+	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|deploy|wifi|wifi-install|deploy-wifi"
 }
 
 require_command() {
@@ -186,6 +186,63 @@ dictation_plugin() {
 	printf '%s\n' "Export with Gradle build enabled so the plugin is packaged into the APK."
 }
 
+wireless_device_host() {
+	"$adb_bin" devices | awk 'NR>1 && $2 == "device" && $1 ~ /:/ { print $1; exit }'
+}
+
+usb_device_serial() {
+	"$adb_bin" devices | awk 'NR>1 && $2 == "device" && $1 !~ /:/ { print $1; exit }'
+}
+
+headset_wifi_ip() {
+	host=$(wireless_device_host)
+	if [ -n "$host" ]; then
+		printf '%s\n' "${host%%:*}"
+		return 0
+	fi
+	serial=$(usb_device_serial)
+	if [ -z "$serial" ]; then
+		return 1
+	fi
+	"$adb_bin" -s "$serial" shell ip -4 addr show wlan0 2>/dev/null \
+		| sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p' | head -1
+}
+
+wifi_enable() {
+	require_command "$adb_bin"
+	serial=$(usb_device_serial)
+	if [ -z "$serial" ]; then
+		printf '%s\n' "Attach the headset over USB once to enable wireless debugging." >&2
+		exit 2
+	fi
+	"$adb_bin" -s "$serial" tcpip 5555 >/dev/null
+	sleep 3
+	ip=$(headset_wifi_ip || true)
+	if [ -z "$ip" ]; then
+		printf '%s\n' "Could not read the headset Wi-Fi address from wlan0." >&2
+		exit 1
+	fi
+	"$adb_bin" connect "$ip:5555"
+	printf '%s\n' "Wireless ADB ready: $ip:5555 (persists until the headset reboots)."
+}
+
+wireless_install() {
+	require_command "$adb_bin"
+	ip=$(headset_wifi_ip || true)
+	if [ -z "$ip" ]; then
+		printf '%s\n' "No wireless device; run ./scripts/quest.sh wifi with USB attached." >&2
+		exit 2
+	fi
+	if [ ! -f "$apk_path" ]; then
+		printf '%s\n' "APK not found; run ./scripts/quest.sh export first." >&2
+		exit 2
+	fi
+	"$adb_bin" -s "$ip:5555" push "$apk_path" /data/local/tmp/spatial-agent.apk
+	"$adb_bin" -s "$ip:5555" shell pm install -r /data/local/tmp/spatial-agent.apk
+	"$adb_bin" -s "$ip:5555" shell rm -f /data/local/tmp/spatial-agent.apk
+	printf '%s\n' "Installed over Wi-Fi to $ip:5555"
+}
+
 install_apk() {
 	require_command "$adb_bin"
 	if [ ! -f "$apk_path" ]; then
@@ -210,6 +267,17 @@ case "$action" in
 		;;
 	install)
 		install_apk
+		;;
+	wifi)
+		wifi_enable
+		;;
+	wifi-install)
+		wireless_install
+		;;
+	deploy-wifi)
+		export_debug
+		wireless_install
+		printf '%s\n' "Open Spatial Agent XR from Quest's Unknown Sources library."
 		;;
 	tunnel)
 		tunnel_backend
