@@ -10,6 +10,7 @@ plugin_sha256=6a838dbdf4115549e4511ebee0da9a5dcc8f9f6258d4cc2f2ee57a907a3e2911
 plugin_url="https://github.com/GodotVR/godot_openxr_vendors/releases/download/$plugin_version/godotopenxrvendorsaddon.zip"
 plugin_target="$client_root/addons/godotopenxrvendors"
 apk_path="$project_root/build/quest/spatial-agent.apk"
+wifi_ip_file="$project_root/build/quest/wifi-ip"
 
 usage() {
 	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|deploy|wifi|wifi-install|deploy-wifi"
@@ -196,6 +197,13 @@ usb_device_serial() {
 
 headset_wifi_ip() {
 	host=$(wireless_device_host)
+	if [ -z "$host" ] && [ -f "$wifi_ip_file" ]; then
+		cached_ip=$(cat "$wifi_ip_file")
+		if [ -n "$cached_ip" ]; then
+			"$adb_bin" connect "$cached_ip:5555" >/dev/null 2>&1
+			host=$(wireless_device_host)
+		fi
+	fi
 	if [ -n "$host" ]; then
 		printf '%s\n' "${host%%:*}"
 		return 0
@@ -223,6 +231,8 @@ wifi_enable() {
 		exit 1
 	fi
 	"$adb_bin" connect "$ip:5555"
+	mkdir -p "$(dirname -- "$wifi_ip_file")"
+	printf '%s' "$ip" > "$wifi_ip_file"
 	printf '%s\n' "Wireless ADB ready: $ip:5555 (persists until the headset reboots)."
 }
 
