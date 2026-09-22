@@ -222,28 +222,108 @@ func _run() -> void:
 		"chat touch targets deactivate on the code page"
 	)
 
-	# Double-pinch in empty space is the deliberate console summon.
-	var pinch_source := OpenXRInteractionSource.new()
-	add_child(pinch_source)
-	pinch_source.set_hand_tracking_active(true)
-	var pinch_events: Array[InteractionEvent] = []
-	pinch_source.interaction_event.connect(
-		func(event: InteractionEvent) -> void: pinch_events.append(event)
+	# A deliberate double-pinch summons; a fast flinch or a tracking dropout
+	# must never look like one.
+	var tap_source := OpenXRInteractionSource.new()
+	add_child(tap_source)
+	tap_source.set_hand_tracking_active(true)
+	tap_source.set_physics_process(false)
+	var tap_events: Array[InteractionEvent] = []
+	tap_source.interaction_event.connect(
+		func(event: InteractionEvent) -> void: tap_events.append(event)
 	)
-	var pinch_palm := Transform3D(Basis.IDENTITY, Vector3(3.0, 1.4, -0.4))
-	for _pinch in range(2):
-		pinch_source.submit_joint_sample(
-			"right", pinch_palm,
-			Vector3(3.02, 1.42, -0.65), Vector3(3.0, 1.4, -0.6), Vector3(3.0, 1.42, -0.65)
-		)
-		pinch_source.submit_joint_sample(
-			"right", pinch_palm,
-			Vector3(3.06, 1.42, -0.7), Vector3(3.0, 1.4, -0.6), Vector3(3.0, 1.42, -0.65)
-		)
-	var summons := pinch_events.filter(
-		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.SUMMON
+	var tap_palm := Transform3D(Basis.IDENTITY, Vector3(5.0, 1.4, -0.4))
+	var closed_thumb := Vector3(5.02, 1.42, -0.6)
+	var open_thumb := Vector3(5.0, 1.42, -0.5)
+	var tap_index := Vector3(5.0, 1.42, -0.6)
+	var tap_distal := Vector3(5.0, 1.42, -0.55)
+
+	# Flinch: pinched for 40 ms, below the tap floor.
+	tap_source.set_clock_override_msec(1000)
+	tap_source.submit_joint_sample("left", tap_palm, closed_thumb, tap_distal, tap_index)
+	tap_source.set_clock_override_msec(1040)
+	tap_source.submit_joint_sample("left", tap_palm, open_thumb, tap_distal, tap_index)
+	_check(_summon_count(tap_events) == 0, "a flinch pinch does not summon")
+
+	# Real double pinch: two 200 ms pinches 100 ms apart.
+	tap_source.set_clock_override_msec(1100)
+	tap_source.submit_joint_sample("left", tap_palm, closed_thumb, tap_distal, tap_index)
+	tap_source.set_clock_override_msec(1300)
+	tap_source.submit_joint_sample("left", tap_palm, open_thumb, tap_distal, tap_index)
+	tap_source.set_clock_override_msec(1400)
+	tap_source.submit_joint_sample("left", tap_palm, closed_thumb, tap_distal, tap_index)
+	tap_source.set_clock_override_msec(1600)
+	tap_source.submit_joint_sample("left", tap_palm, open_thumb, tap_distal, tap_index)
+	_check(_summon_count(tap_events) == 1, "double pinch summons the console once")
+	_check(not tap_source.get_pointer_state().is_selecting, "pinch state settles after summon")
+
+	# A single empty pinch on the pointer hand drops focus instead of summoning.
+	var dismiss_source := OpenXRInteractionSource.new()
+	add_child(dismiss_source)
+	dismiss_source.set_hand_tracking_active(true)
+	dismiss_source.set_physics_process(false)
+	var dismiss_events: Array[InteractionEvent] = []
+	dismiss_source.interaction_event.connect(
+		func(event: InteractionEvent) -> void: dismiss_events.append(event)
 	)
-	_check(summons.size() == 1, "double pinch in empty space summons the console")
+	var right_palm := Transform3D(Basis.IDENTITY, Vector3(6.0, 1.4, -0.4))
+	var right_closed_thumb := Vector3(6.02, 1.42, -0.6)
+	var right_open_thumb := Vector3(6.0, 1.42, -0.5)
+	var right_index := Vector3(6.0, 1.42, -0.6)
+	var right_distal := Vector3(6.0, 1.42, -0.55)
+	dismiss_source.set_clock_override_msec(2000)
+	dismiss_source.submit_joint_sample("right", right_palm, right_closed_thumb, right_distal, right_index)
+	dismiss_source.set_clock_override_msec(2250)
+	dismiss_source.submit_joint_sample("right", right_palm, right_open_thumb, right_distal, right_index)
+	var dismiss_count := dismiss_events.filter(
+		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.DISMISS
+	).size()
+	_check(dismiss_count == 1, "a single empty pinch clears focus")
+	_check(_summon_count(dismiss_events) == 0, "a single empty pinch does not summon")
+
+	# Tracking loss must not fabricate the second tap.
+	var loss_source := OpenXRInteractionSource.new()
+	add_child(loss_source)
+	loss_source.set_hand_tracking_active(true)
+	loss_source.set_physics_process(false)
+	var loss_events: Array[InteractionEvent] = []
+	loss_source.interaction_event.connect(
+		func(event: InteractionEvent) -> void: loss_events.append(event)
+	)
+	loss_source.set_clock_override_msec(3000)
+	loss_source.submit_joint_sample("left", tap_palm, closed_thumb, tap_distal, tap_index)
+	loss_source.set_clock_override_msec(3250)
+	loss_source.submit_joint_sample("left", tap_palm, open_thumb, tap_distal, tap_index)
+	loss_source.set_hand_tracking_active(false)
+	loss_source.set_hand_tracking_active(true)
+	loss_source.set_physics_process(false)
+	loss_source.set_clock_override_msec(3400)
+	loss_source.submit_joint_sample("left", tap_palm, closed_thumb, tap_distal, tap_index)
+	loss_source.set_clock_override_msec(3650)
+	loss_source.submit_joint_sample("left", tap_palm, open_thumb, tap_distal, tap_index)
+	_check(_summon_count(loss_events) == 0, "tracking loss cannot fabricate a summon")
+
+	# Pinching at a hovered agent grabs it rather than opening its thread.
+	var grab_source := OpenXRInteractionSource.new()
+	add_child(grab_source)
+	grab_source.set_hand_tracking_active(true)
+	grab_source.set_physics_process(false)
+	grab_source.set_hover_target_id("thread_probe")
+	var grab_events: Array[InteractionEvent] = []
+	grab_source.interaction_event.connect(
+		func(event: InteractionEvent) -> void: grab_events.append(event)
+	)
+	var far_palm := Transform3D(Basis.IDENTITY, Vector3(7.0, 1.4, -0.4))
+	grab_source.submit_joint_sample(
+		"right", far_palm, Vector3(7.02, 1.42, -0.6), Vector3(7.0, 1.42, -0.55), Vector3(7.0, 1.42, -0.6)
+	)
+	var grabs := grab_events.filter(
+		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.GRAB_BEGIN
+	)
+	_check(
+		grabs.size() == 1 and grabs[0].target_id == "thread_probe",
+		"pinching a hovered agent starts a grab"
+	)
 
 	var palm_console := main.get_node("PalmConsole") as PalmConsole
 	palm_console.summon_now()
@@ -254,6 +334,14 @@ func _run() -> void:
 	main.queue_free()
 	source.queue_free()
 	get_tree().quit(1 if _failed else 0)
+
+
+func _summon_count(events: Array[InteractionEvent]) -> int:
+	var total := 0
+	for event in events:
+		if event.type == InteractionEvent.Type.SUMMON:
+			total += 1
+	return total
 
 
 func _check(condition: bool, description: String) -> void:

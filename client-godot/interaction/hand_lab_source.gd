@@ -122,3 +122,15 @@ func _notification(what: int) -> void:
 func send_action(target: String) -> void:
 	# Same application routing and privacy/approval checks as a palm pinch.
 	submit_direct_touch(target, Vector3.ZERO)
+
+
+func _begin_ray_grab_if_hovering_orb(_position: Vector3) -> bool:
+	# The desktop lab keeps pinch-to-focus; pulling agents from a distance is
+	# XR ergonomics that only the headset needs.
+	return false
+
+
+func _begin_grab_if_touching(_position: Vector3) -> bool:
+	# The lab synthesizes a fingertip inside the target, so it would always
+	# read as a grab; keep pinch-to-focus here and let the headset grab.
+	return false

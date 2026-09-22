@@ -133,35 +133,10 @@ func _physics_process(delta: float) -> void:
 	camera_forward = camera_forward.normalized()
 
 	if not visible:
-		# Summon only: glance at the open left palm to bring the console up.
-		var sample := _hand_source.get_latest_hand_sample("left")
-		if sample.is_empty():
-			_dwell = 0.0
-			return
-		var palm_transform := sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D
-		var anchor := palm_transform.origin + Vector3.UP * palm_offset_metres
-		var to_anchor := anchor - camera_position
-		var distance := to_anchor.length()
-		if distance < 0.001:
-			return
-		var outward := to_anchor / distance
-		var in_range := distance >= 0.15 and distance <= 0.9
-		var below_eye := camera_position.y - anchor.y >= 0.0
-		if _hand_source.is_hand_pinching("left") and in_range:
-			# A deliberate left pinch summons instantly; no dwell, no gaze gate.
-			_dwell = show_delay_seconds
-		elif in_range and below_eye:
-			# Holding the open palm below eye level also works, after a beat.
-			_dwell += delta
-		else:
-			_dwell = 0.0
-		if _dwell < show_delay_seconds:
-			return
-		_park_panel(camera_position, camera_forward)
-		visible = true
-		if _viewport != null:
-			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-		_panel_ignored = 0.0
+		# The console opens only on the deliberate double-pinch (the SUMMON
+		# event). Auto-summon from an open palm was removed: a flickering
+		# tracker made it appear on its own and it fought the user.
+		_dwell = 0.0
 		return
 
 	# Parked: hold position until closed or ignored for a while.

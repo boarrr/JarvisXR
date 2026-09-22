@@ -44,6 +44,9 @@ const FIST_CLOSE_DISTANCE := 0.065
 const FIST_OPEN_DISTANCE := 0.09
 const FIST_MIN_CURLED := 3
 const DOUBLE_PINCH_WINDOW_MSEC := 800
+const TAP_MIN_DURATION_MSEC := 90
+const TAP_GAP_MIN_MSEC := 80
+const SUMMON_COOLDOWN_MSEC := 700
 const CRUSH_HOLD_SECONDS := 0.4
 const FIST_JOINTS := ["index_tip", "middle_tip", "ring_tip", "pinky_tip"]
 const REQUIRED_POSITION_FLAGS := (
@@ -102,7 +105,12 @@ var _fist_states := {"left": false, "right": false}
 var _crush_seconds := 0.0
 var _crush_latched := false
 var _attract_target := ""
-var _last_empty_pinch_msec := 0
+var _tap_prev_pinch := {"left": false, "right": false}
+var _tap_begin_msec := {"left": 0, "right": 0}
+var _tap_prev_release_msec := {"left": 0, "right": 0}
+var _tap_pending := {"left": 0, "right": 0}
+var _summon_blocked_until_msec := 0
+var _clock_override_msec := -1
 const GESTURE_LOG_PATH := "user://gesture_session.jsonl"
 const GESTURE_LOG_LIMIT_BYTES := 512 * 1024
 
@@ -239,6 +247,7 @@ func _collect_hand_samples(delta: float) -> void:
 		var sample := _sample_for_hand(hand_name)
 		if sample.is_empty():
 			_hand_pinch_states[hand_name] = false
+			_cancel_tap(hand_name)
 			continue
 		_latest_hand_samples[hand_name] = sample
 		var thumb_tip := sample.get("thumb_tip", Vector3.ZERO) as Vector3
@@ -249,6 +258,7 @@ func _collect_hand_samples(delta: float) -> void:
 			pinch_begin_distance,
 			pinch_release_distance
 		)
+		_track_tap(hand_name)
 	if _latest_hand_samples.is_empty():
 		_missing_seconds += delta
 		if _missing_seconds >= TRACKING_GRACE_SECONDS:
@@ -266,6 +276,8 @@ func _clear_pointer() -> void:
 	_pointer_state.is_grabbing = false
 	_pointer_state.direction = Vector3.ZERO
 	_active_hand_name = ""
+	_cancel_tap("left")
+	_cancel_tap("right")
 	_has_smoothed_ray = false
 	_hand_pinch_states[preferred_hand] = false
 	_touch_target_id = ""
@@ -394,11 +406,11 @@ func _apply_pointer_sample(sample: Dictionary, delta: float = 0.016) -> bool:
 		_pointer_state.direction = ray_direction
 		_has_smoothed_ray = true
 	_pointer_state.is_selecting = is_pinching
-	_pointer_state.is_grabbing = not _grab_target_id.is_empty()
 
 	_update_touch_interaction(index_tip)
 	if is_pinching and not was_pinching:
-		_begin_grab_if_touching(index_tip)
+		if not _begin_grab_if_touching(index_tip):
+			_begin_ray_grab_if_hovering_orb(index_tip)
 	elif is_pinching and not _grab_target_id.is_empty():
 		if index_tip.distance_to(_grab_origin_position) > 0.012:
 			interaction_event.emit(InteractionEvent.new(
@@ -408,12 +420,10 @@ func _apply_pointer_sample(sample: Dictionary, delta: float = 0.016) -> bool:
 				index_tip,
 				{"gesture": "orb_grab", "phase": "move"}
 			))
-	elif not is_pinching and was_pinching:
-		if not _grab_target_id.is_empty():
-			_finish_grab(index_tip)
-		else:
-			_handle_empty_pinch_end(index_tip)
+	elif not is_pinching and was_pinching and not _grab_target_id.is_empty():
+		_finish_grab(index_tip)
 
+	_pointer_state.is_grabbing = not _grab_target_id.is_empty()
 	_update_fist_interaction(sample, index_tip, delta)
 	_update_pinch_scroll(index_tip, was_pinching, is_pinching)
 	pointer_state_changed.emit(_pointer_state.copy())
@@ -530,6 +540,7 @@ func submit_joint_sample(
 		pinch_begin_distance,
 		pinch_release_distance
 	)
+	_track_tap(hand_name)
 	_set_tracking_available(true)
 	if hand_name != preferred_hand:
 		return true
@@ -643,28 +654,100 @@ func _update_touch_interaction(position: Vector3) -> void:
 	_touch_target_id = str((contact as Dictionary)["target_id"])
 	_touch_area = contact["area"] as Area3D
 	_touch_release_needed = true
-	submit_direct_touch(_touch_target_id, position)
+	if ":" in _touch_target_id:
+		submit_direct_touch(_touch_target_id, position)
 
 
-func _handle_empty_pinch_end(position: Vector3) -> void:
-	# Double-pinch in empty space summons the console. It is deliberately
-	# distinct from the headset system gesture (palm-to-face pinch), which the
-	# OS consumes before the app sees it.
-	if not _hover_target_id.is_empty() or not _touch_target_id.is_empty():
-		_last_empty_pinch_msec = 0
+func set_clock_override_msec(value: int) -> void:
+	_clock_override_msec = value
+
+
+func _now_msec() -> int:
+	if _clock_override_msec >= 0:
+		return _clock_override_msec
+	return Time.get_ticks_msec()
+
+
+func _cancel_tap(hand_name: String) -> void:
+	# Tracking loss must never look like a pinch release, or a flickering
+	# tracker turns into phantom double-pinches that toggle the console.
+	_tap_begin_msec[hand_name] = 0
+	_tap_prev_pinch[hand_name] = false
+	_tap_pending[hand_name] = 0
+
+
+func _track_tap(hand_name: String) -> void:
+	var pinching := bool(_hand_pinch_states.get(hand_name, false))
+	var was := bool(_tap_prev_pinch.get(hand_name, false))
+	if pinching == was:
 		return
-	var now := Time.get_ticks_msec()
-	if _last_empty_pinch_msec > 0 and now - _last_empty_pinch_msec <= DOUBLE_PINCH_WINDOW_MSEC:
-		_last_empty_pinch_msec = 0
+	_tap_prev_pinch[hand_name] = pinching
+	var now := _now_msec()
+	if pinching:
+		var prev_release := int(_tap_prev_release_msec.get(hand_name, 0))
+		if prev_release > 0 and now - prev_release < TAP_GAP_MIN_MSEC:
+			_tap_begin_msec[hand_name] = 0
+			return
+		_tap_begin_msec[hand_name] = now
+		return
+	var began := int(_tap_begin_msec.get(hand_name, 0))
+	_tap_begin_msec[hand_name] = 0
+	if began <= 0 or now - began < TAP_MIN_DURATION_MSEC:
+		return
+	_tap_prev_release_msec[hand_name] = now
+	var empty_tap := hand_name != preferred_hand
+	if hand_name == preferred_hand:
+		empty_tap = _hover_target_id.is_empty() and _touch_target_id.is_empty()
+	if not empty_tap:
+		_tap_pending[hand_name] = 0
+		return
+	_register_tap(hand_name, now)
+
+
+func _register_tap(hand_name: String, now: int) -> void:
+	if now < _summon_blocked_until_msec:
+		return
+	var pending := int(_tap_pending.get(hand_name, 0))
+	if pending > 0 and now - pending <= DOUBLE_PINCH_WINDOW_MSEC:
+		_tap_pending[hand_name] = 0
+		_summon_blocked_until_msec = now + SUMMON_COOLDOWN_MSEC
 		interaction_event.emit(InteractionEvent.new(
 			InteractionEvent.Type.SUMMON,
 			"ui:summon",
 			InteractionEvent.Source.HAND,
-			position,
-			{"gesture": "double_pinch"}
+			Vector3.ZERO,
+			{"gesture": "double_pinch", "hand": hand_name}
 		))
 		return
-	_last_empty_pinch_msec = now
+	_tap_pending[hand_name] = now
+	if hand_name == preferred_hand:
+		# A single pinch in empty space drops focus so nothing stays stuck.
+		interaction_event.emit(InteractionEvent.new(
+			InteractionEvent.Type.DISMISS,
+			"",
+			InteractionEvent.Source.HAND,
+			null,
+			{"gesture": "empty_pinch", "hand": hand_name}
+		))
+
+
+func _begin_ray_grab_if_hovering_orb(position: Vector3) -> bool:
+	# Pinching while pointing at a distant agent pulls it to the hand instead
+	# of opening its thread; releasing throws it with the hand's momentum.
+	if _hover_target_id.is_empty() or ":" in _hover_target_id:
+		return false
+	if not _grab_target_id.is_empty():
+		return false
+	_grab_target_id = _hover_target_id
+	_grab_origin_position = position
+	interaction_event.emit(InteractionEvent.new(
+		InteractionEvent.Type.GRAB_BEGIN,
+		_grab_target_id,
+		InteractionEvent.Source.HAND,
+		position,
+		{"gesture": "orb_ray_grab", "phase": "begin"}
+	))
+	return true
 
 
 func get_tracking_flags() -> Dictionary:
@@ -778,6 +861,8 @@ func _reset_tracking() -> void:
 	_latest_hand_samples.clear()
 	_hand_pinch_states["left"] = false
 	_hand_pinch_states["right"] = false
+	_cancel_tap("left")
+	_cancel_tap("right")
 	_bimanual_active = false
 	_bimanual_target_id = ""
 	_grab_target_id = ""

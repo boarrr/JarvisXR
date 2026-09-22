@@ -50,7 +50,12 @@ func _physics_process(_delta: float) -> void:
 	var hit_position: Variant = hit.get("position") if not hit.is_empty() else null
 	_update_hover_target(target_id, hit_position)
 
-	if pointer_state.is_selecting and not _was_selecting and not target_id.is_empty():
+	if (
+		pointer_state.is_selecting
+		and not _was_selecting
+		and not pointer_state.is_grabbing
+		and not target_id.is_empty()
+	):
 		_emit_event(InteractionEvent.Type.SELECT, target_id, hit_position)
 	_was_selecting = pointer_state.is_selecting
 
