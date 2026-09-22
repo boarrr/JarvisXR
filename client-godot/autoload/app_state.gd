@@ -79,6 +79,7 @@ var current_transcript: String = "":
 		current_transcript = value
 		transcript_changed.emit(value)
 
+var palm_console_open := false
 var ui_mode: String = "desktop":
 	set(value):
 		if ui_mode == value:

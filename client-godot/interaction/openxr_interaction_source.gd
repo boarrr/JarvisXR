@@ -110,6 +110,7 @@ var _fist_prev := false
 var _crush_candidate := ""
 var _last_orb_hover_id := ""
 var _last_orb_hover_msec := 0
+var _last_ui_touch_msec := 0
 var _tap_prev_pinch := {"left": false, "right": false}
 var _tap_begin_msec := {"left": 0, "right": 0}
 var _tap_prev_release_msec := {"left": 0, "right": 0}
@@ -684,6 +685,7 @@ func _update_touch_interaction(position: Vector3) -> void:
 	_touch_area = contact["area"] as Area3D
 	_touch_release_needed = true
 	if ":" in _touch_target_id:
+		_last_ui_touch_msec = _now_msec()
 		submit_direct_touch(_touch_target_id, position)
 
 
@@ -749,15 +751,19 @@ func _register_tap(hand_name: String, now: int) -> void:
 		))
 		return
 	_tap_pending[hand_name] = now
-	if hand_name == preferred_hand:
-		# A single pinch in empty space drops focus so nothing stays stuck.
-		interaction_event.emit(InteractionEvent.new(
-			InteractionEvent.Type.DISMISS,
-			"",
-			InteractionEvent.Source.HAND,
-			null,
-			{"gesture": "empty_pinch", "hand": hand_name}
-		))
+	if hand_name != preferred_hand:
+		return
+	if _ui_owns_pointer():
+		# Poking the console must not drop the agent you selected.
+		return
+	# A single pinch in empty space drops focus so nothing stays stuck.
+	interaction_event.emit(InteractionEvent.new(
+		InteractionEvent.Type.DISMISS,
+		"",
+		InteractionEvent.Source.HAND,
+		null,
+		{"gesture": "empty_pinch", "hand": hand_name}
+	))
 
 
 func get_tracking_flags() -> Dictionary:
@@ -769,6 +775,12 @@ func get_tracking_flags() -> Dictionary:
 
 func get_fist_state(hand_name: String) -> bool:
 	return bool(_fist_states.get(hand_name, false))
+
+
+func _ui_owns_pointer() -> bool:
+	if AppState.palm_console_open:
+		return true
+	return _now_msec() - _last_ui_touch_msec <= 400
 
 
 func _remembered_orb_hover() -> String:

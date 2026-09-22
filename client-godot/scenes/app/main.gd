@@ -207,6 +207,8 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				AppState.focus_thread("")
 			elif event.target_id.begins_with("quick:"):
 				_submit_quick_intent(event.target_id)
+			elif AppState.palm_console_open:
+				EventBus.debug_message.emit("Close the console to select an agent")
 			elif AppState.focus_thread(event.target_id):
 				EventBus.debug_message.emit("Focused: %s" % event.target_id)
 		InteractionEvent.Type.FOCUS:

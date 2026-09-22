@@ -286,6 +286,26 @@ func _run() -> void:
 	_check(dismiss_count == 1, "a single empty pinch clears focus")
 	_check(_summon_count(dismiss_events) == 0, "a single empty pinch does not summon")
 
+	# An open console owns hand input, so poking it cannot drop the selection.
+	AppState.palm_console_open = true
+	var guarded_source := OpenXRInteractionSource.new()
+	add_child(guarded_source)
+	guarded_source.set_hand_tracking_active(true)
+	guarded_source.set_physics_process(false)
+	var guarded_events: Array[InteractionEvent] = []
+	guarded_source.interaction_event.connect(
+		func(event: InteractionEvent) -> void: guarded_events.append(event)
+	)
+	guarded_source.set_clock_override_msec(4000)
+	guarded_source.submit_joint_sample("right", right_palm, right_closed_thumb, right_distal, right_index)
+	guarded_source.set_clock_override_msec(4250)
+	guarded_source.submit_joint_sample("right", right_palm, right_open_thumb, right_distal, right_index)
+	var guarded_dismiss := guarded_events.filter(
+		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.DISMISS
+	).size()
+	_check(guarded_dismiss == 0, "an open console suppresses the deselect pinch")
+	AppState.palm_console_open = false
+
 	# Tracking loss must not fabricate the second tap.
 	var loss_source := OpenXRInteractionSource.new()
 	add_child(loss_source)
@@ -374,6 +394,22 @@ func _run() -> void:
 	var palm_console := main.get_node("PalmConsole") as PalmConsole
 	palm_console.summon_now()
 	_check(palm_console.visible, "summon_now parks and shows the console")
+
+	# The open console captures agent selection; closing restores it.
+	AppState.focus_thread("")
+	main._on_interaction_event(InteractionEvent.new(
+		InteractionEvent.Type.SELECT, first_id, InteractionEvent.Source.HAND, null, {}
+	))
+	_check(AppState.focused_thread_id.is_empty(), "the open console ignores agent ray selection")
+	palm_console.summon_now()
+	_check(not palm_console.visible, "a repeat summon hides the console")
+	main._on_interaction_event(InteractionEvent.new(
+		InteractionEvent.Type.SELECT, first_id, InteractionEvent.Source.HAND, null, {}
+	))
+	_check(
+		AppState.focused_thread_id == first_id,
+		"closing the console restores agent selection"
+	)
 
 	if not _failed:
 		print("[TEST] Standing orbit and two-hand role checks passed")

@@ -103,7 +103,7 @@ func _ready() -> void:
 	AppState.orb_layout_changed.connect(_on_layout_changed)
 	AppState.privacy_veil_changed.connect(_on_veil_changed)
 	scale = Vector3.ONE * console_scale
-	visible = false
+	_set_console_visible(false)
 	_summary_label.visible = false
 	_refresh_telemetry()
 	_refresh_screen()
@@ -170,9 +170,14 @@ func _park_panel(camera_position: Vector3, camera_forward: Vector3) -> void:
 	look_at(camera_position, Vector3.UP, true)
 
 
+func _set_console_visible(value: bool) -> void:
+	visible = value
+	AppState.palm_console_open = value
+
+
 func _hide_panel() -> void:
 	_panel_ignored = 0.0
-	visible = false
+	_set_console_visible(false)
 	if _viewport != null:
 		_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
@@ -196,7 +201,7 @@ func summon_now() -> void:
 	if camera_forward.length_squared() < 0.0001:
 		camera_forward = Vector3.FORWARD
 	_park_panel(camera_position, camera_forward.normalized())
-	visible = true
+	_set_console_visible(true)
 	_panel_ignored = 0.0
 	if _viewport != null:
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
