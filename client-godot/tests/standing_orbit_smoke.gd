@@ -331,6 +331,46 @@ func _run() -> void:
 		"a pointed pinch leaves the agent in place"
 	)
 
+	# Closing a fist after the ray drifted off still pulls the last agent.
+	var attract_fist_source := OpenXRInteractionSource.new()
+	add_child(attract_fist_source)
+	attract_fist_source.set_hand_tracking_active(true)
+	attract_fist_source.set_physics_process(false)
+	var attract_fist_events: Array[InteractionEvent] = []
+	attract_fist_source.interaction_event.connect(
+		func(event: InteractionEvent) -> void: attract_fist_events.append(event)
+	)
+	attract_fist_source.set_clock_override_msec(5000)
+	attract_fist_source.set_hover_target_id("thread_probe")
+	attract_fist_source.set_clock_override_msec(5150)
+	attract_fist_source.set_hover_target_id("")
+	var attract_fist_palm := Transform3D(Basis.IDENTITY, Vector3(8.0, 1.4, -0.4))
+	var attract_palm_joint := Vector3(8.0, 1.4, -0.4)
+	var attract_fist_joints := {
+		"palm": attract_palm_joint,
+		"index_tip": attract_palm_joint + Vector3(0.0, 0.0, -0.05),
+		"middle_tip": attract_palm_joint + Vector3(0.0, 0.03, -0.05),
+		"ring_tip": attract_palm_joint + Vector3(0.0, -0.03, -0.05),
+		"pinky_tip": attract_palm_joint + Vector3(0.02, 0.0, -0.05),
+		"index_proximal": attract_palm_joint + Vector3(0.0, 0.0, -0.08),
+		"index_distal": attract_palm_joint + Vector3(0.0, 0.0, -0.06),
+	}
+	attract_fist_source.submit_joint_sample(
+		"right",
+		attract_fist_palm,
+		attract_palm_joint + Vector3(0.03, 0.03, -0.06),
+		attract_palm_joint + Vector3(0.0, 0.0, -0.06),
+		attract_palm_joint + Vector3(0.0, 0.0, -0.05),
+		attract_fist_joints
+	)
+	var memory_attract_begins := attract_fist_events.filter(
+		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.ATTRACT_BEGIN
+	)
+	_check(
+		memory_attract_begins.size() == 1 and memory_attract_begins[0].target_id == "thread_probe",
+		"a fist still pulls the agent the ray last touched"
+	)
+
 	var palm_console := main.get_node("PalmConsole") as PalmConsole
 	palm_console.summon_now()
 	_check(palm_console.visible, "summon_now parks and shows the console")

@@ -40,13 +40,14 @@ const TOUCH_RELEASE_DISTANCE := 0.07
 # camera FOV). Hold the last state briefly so a blink does not cancel a touch,
 # grab, or the aim ray.
 const TRACKING_GRACE_SECONDS := 0.45
-const FIST_CLOSE_DISTANCE := 0.065
-const FIST_OPEN_DISTANCE := 0.09
+const FIST_CLOSE_DISTANCE := 0.07
+const FIST_OPEN_DISTANCE := 0.10
 const FIST_MIN_CURLED := 3
 const DOUBLE_PINCH_WINDOW_MSEC := 800
 const TAP_MIN_DURATION_MSEC := 90
 const TAP_GAP_MIN_MSEC := 80
 const SUMMON_COOLDOWN_MSEC := 700
+const ATTRACT_MEMORY_MSEC := 700
 const CRUSH_HOLD_SECONDS := 0.4
 const FIST_JOINTS := ["index_tip", "middle_tip", "ring_tip", "pinky_tip"]
 const REQUIRED_POSITION_FLAGS := (
@@ -107,6 +108,8 @@ var _crush_latched := false
 var _attract_target := ""
 var _fist_prev := false
 var _crush_candidate := ""
+var _last_orb_hover_id := ""
+var _last_orb_hover_msec := 0
 var _tap_prev_pinch := {"left": false, "right": false}
 var _tap_begin_msec := {"left": 0, "right": 0}
 var _tap_prev_release_msec := {"left": 0, "right": 0}
@@ -173,6 +176,11 @@ func set_hover_target_id(target_id: String) -> void:
 	_hover_target_id = target_id
 	if target_id != "ui:code_surface":
 		_scroll_accumulator = 0.0
+	if not target_id.is_empty() and not ":" in target_id:
+		# Remember the last agent under the ray: closing a fist swings the
+		# index-derived ray off the target before the fist is detected.
+		_last_orb_hover_id = target_id
+		_last_orb_hover_msec = _now_msec()
 
 
 func _physics_process(_delta: float) -> void:
@@ -454,8 +462,16 @@ func _hand_is_fist(hand_name: String) -> bool:
 			curled_count += 1
 		if distance >= FIST_OPEN_DISTANCE:
 			extended_count += 1
+	var index_curled := (
+		joints.has("index_tip")
+		and palm.distance_to(joints["index_tip"]) <= FIST_CLOSE_DISTANCE
+	)
 	var was_fist: bool = _fist_states.get(hand_name, false)
-	var is_fist: bool = extended_count == 0 if was_fist else curled_count >= FIST_MIN_CURLED
+	var is_fist: bool = (
+		extended_count == 0
+		if was_fist
+		else curled_count >= FIST_MIN_CURLED and index_curled
+	)
 	_fist_states[hand_name] = is_fist
 	return is_fist
 
@@ -469,7 +485,7 @@ func _update_fist_interaction(sample: Dictionary, index_tip: Vector3, delta: flo
 
 	# Crush only counts when the fist closed while already on the orb. A fist
 	# raised to summon must never archive the agent that arrives in the palm.
-	if is_fist and not _fist_prev:
+	if is_fist and not _fist_prev and _attract_target.is_empty():
 		_crush_candidate = _touch_target_id if touching_orb else ""
 		_crush_seconds = 0.0
 	_fist_prev = is_fist
@@ -507,9 +523,10 @@ func _update_fist_interaction(sample: Dictionary, index_tip: Vector3, delta: flo
 			_attract_target = ""
 		return
 	if _attract_target.is_empty():
-		if not valid_new:
+		var candidate := hovered if valid_new else _remembered_orb_hover()
+		if candidate.is_empty():
 			return
-		_attract_target = hovered
+		_attract_target = candidate
 		interaction_event.emit(InteractionEvent.new(
 			InteractionEvent.Type.ATTRACT_BEGIN,
 			_attract_target,
@@ -754,6 +771,14 @@ func get_fist_state(hand_name: String) -> bool:
 	return bool(_fist_states.get(hand_name, false))
 
 
+func _remembered_orb_hover() -> String:
+	if _last_orb_hover_id.is_empty():
+		return ""
+	if _now_msec() - _last_orb_hover_msec > ATTRACT_MEMORY_MSEC:
+		return ""
+	return _last_orb_hover_id
+
+
 func _begin_grab_if_touching(position: Vector3) -> bool:
 	if _touch_target_id.is_empty() or ":" in _touch_target_id:
 		return false
@@ -858,6 +883,7 @@ func _reset_tracking() -> void:
 	_cancel_tap("right")
 	_fist_prev = false
 	_crush_candidate = ""
+	_last_orb_hover_id = ""
 	_bimanual_active = false
 	_bimanual_target_id = ""
 	_grab_target_id = ""
