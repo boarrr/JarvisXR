@@ -2,6 +2,7 @@ package com.spatialagent.updater
 
 import android.content.BroadcastReceiver
 import android.util.Log
+import androidx.core.content.FileProvider
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
@@ -42,19 +43,40 @@ class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
             return
         }
         host.runOnUiThread {
+            val file = File(path)
+            if (!file.exists() || !file.name.endsWith(".apk")) {
+                emitSignal("install_result", false, "missing_apk")
+                return@runOnUiThread
+            }
+            // Preferred path on Horizon OS: launch the system installer activity
+            // directly with a content URI we grant read access to.
             try {
-                Log.i(tag, "installApk start: $path")
-                val file = File(path)
-                if (!file.exists() || !file.name.endsWith(".apk")) {
-                    emitSignal("install_result", false, "missing_apk")
-                    return@runOnUiThread
+                val uri = FileProvider.getUriForFile(
+                    host, "${host.packageName}.updater", file
+                )
+                val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    setClassName(
+                        "com.android.packageinstaller",
+                        "com.android.packageinstaller.InstallStart",
+                    )
                 }
+                Log.i(tag, "launching InstallStart for $uri")
+                host.startActivity(intent)
+                emitSignal("install_result", true, "installer_opened")
+                return@runOnUiThread
+            } catch (error: Exception) {
+                Log.w(tag, "InstallStart failed, falling back to session", error)
+            }
+            // Fallback: PackageInstaller session commit.
+            try {
                 val installer = host.packageManager.packageInstaller
                 val params = PackageInstaller.SessionParams(
                     PackageInstaller.SessionParams.MODE_FULL_INSTALL
                 )
                 val sessionId = installer.createSession(params)
-                Log.i(tag, "session created: $sessionId")
                 installer.openSession(sessionId).use { session ->
                     FileInputStream(file).use { input ->
                         session.openWrite("base.apk", 0L, file.length()).use { output ->
@@ -72,7 +94,6 @@ class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                     )
                     session.commit(pending.intentSender)
-                    Log.i(tag, "session committed")
                 }
                 activeInstance = this
                 emitSignal("install_result", true, "session_committed")
