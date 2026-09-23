@@ -62,7 +62,9 @@ class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
                             session.fsync(output)
                         }
                     }
-                    val callback = Intent(host, UpdaterInstallReceiver::class.java)
+                    val callback = Intent(host, UpdaterInstallReceiver::class.java).apply {
+                        action = "com.spatialagent.updater.INSTALL_RESULT"
+                    }
                     val pending = PendingIntent.getBroadcast(
                         host,
                         sessionId,
@@ -91,9 +93,22 @@ class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
 }
 
 class UpdaterInstallReceiver : BroadcastReceiver() {
+    @Suppress("DEPRECATION")
     override fun onReceive(context: Context, intent: Intent) {
+        val keys = intent.extras?.keySet()?.joinToString(",") ?: "none"
+        Log.i("UpdaterPlugin", "receiver action=${intent.action} statusKeys=$keys")
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Int.MIN_VALUE)
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
+        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            val confirm: Intent? = intent.getParcelableExtra(Intent.EXTRA_INTENT)
+            if (confirm != null) {
+                confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                Log.i("UpdaterPlugin", "launching install confirmation UI")
+                context.startActivity(confirm)
+            }
+            UpdaterPlugin.activeInstance?.reportInstall(true, "user_action_required")
+            return
+        }
         val success = status == PackageInstaller.STATUS_SUCCESS
         val label = if (success) "installed" else message.ifEmpty { "install_failed_$status" }
         UpdaterPlugin.activeInstance?.reportInstall(success, label)
