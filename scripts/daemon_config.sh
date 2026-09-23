@@ -28,12 +28,14 @@ if [ "${1:-}" = "--show" ]; then
 	exit 0
 fi
 
+local_name=$(scutil --get LocalHostName 2>/dev/null || hostname -s)
+daemon_host=${SPATIAL_DAEMON_HOST:-$local_name.local}
 config_file=$(mktemp "${TMPDIR:-/tmp}/spatial-agent-daemon.XXXXXX")
 token=$("$project_root/scripts/run_backend.sh" --pair-token 2>/dev/null | tail -1 || true)
 cat > "$config_file" <<EOF
 [daemon]
 
-websocket_url="wss://$lan_ip:8787/ws"
+websocket_url="wss://$daemon_host:8787/ws"
 ca_certificate_path="dev_ca.crt"
 auth_token="$token"
 EOF
@@ -44,6 +46,6 @@ adb shell "run-as $package_name sh -c 'cat > files/dev_ca.crt'" < "$cert_dir/ca.
 adb shell "run-as $package_name sh -c 'cat > files/daemon.cfg'" < "$config_file"
 rm -f "$config_file"
 
-printf '%s\n' "Seeded device daemon config: wss://$lan_ip:8787/ws with the dev CA."
+printf '%s\n' "Seeded device daemon config: wss://$daemon_host:8787/ws with the dev CA."
 printf '%s\n' "A fresh bootstrap device token was written for this headset."
 printf '%s\n' "Next: ./scripts/run_backend.sh --lan  then relaunch Spatial Agent XR."
