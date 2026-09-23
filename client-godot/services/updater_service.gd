@@ -21,7 +21,7 @@ const INSTALLED_SHA_PATH := "user://installed_sha"
 const PLUGIN_NAME := "AndroidUpdater"
 
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
-@export var chunk_bytes: int = 196608
+@export var chunk_bytes: int = 524288
 @export var auto_check: bool = true
 @export var auto_install: bool = true
 
@@ -114,7 +114,8 @@ func begin_install() -> void:
 func _request_chunk(offset: int) -> void:
 	if _bridge == null:
 		return
-	_bridge.send_command("update.fetch", {"offset": offset, "length": chunk_bytes})
+	var length := int(_manifest.get("chunk_bytes", chunk_bytes))
+	_bridge.send_command("update.fetch", {"offset": offset, "length": length})
 
 
 func _on_backend_event(event: BackendEvent) -> void:

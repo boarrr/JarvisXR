@@ -160,7 +160,16 @@ class SpatialAgentServer:
                     )
                     await connection.close(code=1003, reason="Text frames required")
                     break
-                if not session.allow_command(self.settings.commands_per_minute):
+                try:
+                    command = parse_client_message(raw, max_bytes=self.settings.max_packet_bytes)
+                except ProtocolError as error:
+                    await emit("error", "", {"code": error.code, "message": error.message})
+                    continue
+                # The chunked self-update transfer is bulk data, not commands.
+                if (
+                    command.type not in {"update.fetch", "update.check"}
+                    and not session.allow_command(self.settings.commands_per_minute)
+                ):
                     await emit(
                         "error",
                         "",
@@ -168,7 +177,6 @@ class SpatialAgentServer:
                     )
                     continue
                 try:
-                    command = parse_client_message(raw, max_bytes=self.settings.max_packet_bytes)
                     await self._dispatch(session, command, emit)
                 except ProtocolError as error:
                     await emit("error", "", {"code": error.code, "message": error.message})
