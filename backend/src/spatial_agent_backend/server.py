@@ -521,6 +521,12 @@ class SpatialAgentServer:
                 await emit("thread.created", source.id, {"thread": source.to_wire()})
         elif command.type == "update.check":
             payload = self.updates.manifest_payload()
+            log_record(
+                "update_check",
+                session_id=session.id,
+                version=payload.get("version", ""),
+                available=bool(payload),
+            )
             if payload:
                 await emit("update.available", "", payload)
             else:
@@ -534,6 +540,14 @@ class SpatialAgentServer:
                 await emit("error", "", {"code": error.code, "message": error.message})
                 return
             import base64 as _base64
+            if eof or offset == 0:
+                log_record(
+                    "update_transfer",
+                    session_id=session.id,
+                    offset=offset,
+                    bytes=len(data),
+                    eof=eof,
+                )
             await emit(
                 "update.chunk",
                 "",
