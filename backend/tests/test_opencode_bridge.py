@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from urllib.parse import parse_qs, urlparse
 import threading
 import time
 import unittest
@@ -52,15 +53,23 @@ class _FakeOpencodeHandler(BaseHTTPRequestHandler):
         self.wfile.write(chunk)
         self.wfile.flush()
 
+    def _route(self) -> tuple[str, dict]:
+        parsed = urlparse(self.path)
+        self.server.state.last_directory = (  # type: ignore[attr-defined]
+            parse_qs(parsed.query).get("directory", [""])[0]
+        )
+        return parsed.path, parse_qs(parsed.query)
+
     def do_GET(self) -> None:  # noqa: N802
         if not self._authorized():
             self._send_json(401, {"error": "unauthorized"})
             return
+        route, _query = self._route()
         state = self.server.state  # type: ignore[attr-defined]
-        if self.path == "/global/health":
+        if route == "/global/health":
             self._send_json(200, {"healthy": True, "version": "test"})
             return
-        if self.path == "/event":
+        if route == "/event":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -116,24 +125,26 @@ class _FakeOpencodeHandler(BaseHTTPRequestHandler):
         if not self._authorized():
             self._send_json(401, {"error": "unauthorized"})
             return
+        route, _query = self._route()
         state = self.server.state  # type: ignore[attr-defined]
-        if self.path == "/session":
+        if route == "/session":
+            state.session_permission = self._read_body().get("permission")
             self._send_json(200, {"id": state.session_id})
             return
-        if self.path == f"/session/{state.session_id}/prompt_async":
+        if route == f"/session/{state.session_id}/prompt_async":
             self._read_body()
             state.prompt_sent.set()
             self.send_response(204)
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if self.path == f"/session/{state.session_id}/permissions/per_test":
+        if route == f"/session/{state.session_id}/permissions/per_test":
             body = self._read_body()
             state.permission_reply = body.get("response", "")
             state.permission_replied.set()
             self._send_json(200, True)
             return
-        if self.path == f"/session/{state.session_id}/abort":
+        if route == f"/session/{state.session_id}/abort":
             self._send_json(200, True)
             return
         self._send_json(404, {"error": "not found"})
@@ -152,6 +163,8 @@ class _State:
         self.permission_waited = threading.Event()
         self.permission_replied = threading.Event()
         self.permission_reply = ""
+        self.session_permission = None
+        self.last_directory = ""
 
 
 def start_fake_server() -> tuple[ThreadingHTTPServer, str]:
@@ -173,6 +186,23 @@ class OpencodeBridgeTests(unittest.IsolatedAsyncioTestCase):
         unauthorized = OpencodeClient(self.base_url, password="wrong")
         with self.assertRaises(OpencodeError):
             await unauthorized.health()
+
+    async def test_directory_and_permission_ruleset_are_scoped(self) -> None:
+        scoped = OpencodeClient(
+            self.base_url,
+            password="secret",
+            directory="/tmp/worktree/run-1",
+        )
+        session_id = await scoped.create_session(
+            permission={"*": "allow", "edit": "allow", "bash": "ask"}
+        )
+        self.assertEqual(session_id, "ses_test")
+        state = self.server.state  # type: ignore[attr-defined]
+        self.assertEqual(state.last_directory, "/tmp/worktree/run-1")
+        self.assertEqual(
+            state.session_permission,
+            {"*": "allow", "edit": "allow", "bash": "ask"},
+        )
 
     async def test_session_lifecycle_streams_events_and_permissions(self) -> None:
         health = await self.client.health()

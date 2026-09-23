@@ -32,8 +32,15 @@ review diff → APPLY → DEPLOY → self-install → relaunch.
   - `permission.asked` `{id, sessionID, permission, patterns[], always[], metadata, tool:{messageID, callID}}`.
   - `permission.replied` `{sessionID, requestID, reply}`.
 - Approval: `POST /session/:id/permissions/:pid {"response":"once"}` → `true`.
+- **Multi-directory:** every session endpoint takes a `?directory=<path>`
+  query param, and `POST /session` accepts a per-session `permission` ruleset.
+  One `opencode serve` can therefore drive an isolated worktree per run, with
+  `{"*":"allow","edit":"allow","bash":"ask"}` set per session — no per-worktree
+  servers.
   Outcomes are `once` / `always` (uses the event's `always` patterns) / `reject`.
 - Abort: `POST /session/:id/abort`. Status: `GET /session/status`.
+- Agent questions: `POST /question/{requestID}/reply` (the cockpit can answer
+  the model's questions too, later).
 - `GET /session/:id/diff` returned `[]` in our environment, so **diffs are
   computed by the daemon with `git diff` in the run's worktree**, reusing
   `workspace.py`, rather than trusting opencode's diff endpoint.
@@ -51,11 +58,11 @@ reply. This is exactly the agreed policy.
 ## Implementation status
 
 - **Done:** `backend/src/spatial_agent_backend/opencode_bridge.py` — dependency-free
-  client (sessions, `prompt_async`, SSE `events()`, permission reply, abort,
-  status, messages) plus `translate_event()` / `permission_from_event()` mapping
-  opencode events to daemon-facing events. Tests:
-  `backend/tests/test_opencode_bridge.py` (fake opencode server, approval
-  round-trip, auth).
+  client (sessions, directory scoping, per-session permission ruleset,
+  `prompt_async`, SSE `events()`, permission reply, abort, status, messages) plus
+  `translate_event()` / `permission_from_event()` mapping opencode events to
+  daemon-facing events. Tests: `backend/tests/test_opencode_bridge.py` (fake
+  opencode server, approval round-trip, auth, directory + permission scoping).
 - **Done:** deploy substrate — `scripts/quest.sh manifest` writes
   `build/quest/manifest.json` (`version`, `sha256`, `size_bytes`, `built_at`) and
   publishes `build/quest/updates/spatial-agent-<sha8>.apk`; `SPATIAL_CLIENT_ROOT`

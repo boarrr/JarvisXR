@@ -5,6 +5,7 @@ import base64
 import json
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
@@ -53,11 +54,21 @@ class OpencodeClient:
         password: str = "",
         username: str = "opencode",
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        directory: str = "",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        # The server is multi-directory: scoping every call to a directory lets
+        # one server drive an isolated git worktree per run.
+        self.directory = directory
         credentials = f"{username}:{password}".encode()
         self._auth_header = "Basic " + base64.b64encode(credentials).decode()
+
+    def _scoped(self, path: str) -> str:
+        if not self.directory:
+            return path
+        separator = "&" if "?" in path else "?"
+        return f"{path}{separator}directory={urllib.parse.quote(self.directory, safe='')}"
 
     # -- blocking transport -------------------------------------------------
     def _blocking_request(
@@ -69,7 +80,9 @@ class OpencodeClient:
         timeout: float | None = None,
     ) -> Any:
         data = json.dumps(body).encode() if body is not None else None
-        request = urllib.request.Request(self.base_url + path, data=data, method=method)
+        request = urllib.request.Request(
+            self.base_url + self._scoped(path), data=data, method=method
+        )
         request.add_header("Authorization", self._auth_header)
         request.add_header("Content-Type", "application/json")
         try:
@@ -103,8 +116,16 @@ class OpencodeClient:
     async def health(self) -> dict[str, Any]:
         return await self._request("GET", "/global/health")
 
-    async def create_session(self, title: str = "") -> str:
-        body = {"title": title} if title else {}
+    async def create_session(
+        self,
+        title: str = "",
+        permission: dict[str, Any] | None = None,
+    ) -> str:
+        body: dict[str, Any] = {}
+        if title:
+            body["title"] = title
+        if permission:
+            body["permission"] = permission
         session = await self._request("POST", "/session", body)
         session_id = str(session.get("id", "")) if isinstance(session, dict) else ""
         if not session_id:
@@ -157,7 +178,7 @@ class OpencodeClient:
 
         def pump() -> None:
             try:
-                request = urllib.request.Request(self.base_url + "/event")
+                request = urllib.request.Request(self.base_url + self._scoped("/event"))
                 request.add_header("Authorization", self._auth_header)
                 request.add_header("Accept", "text/event-stream")
                 with urllib.request.urlopen(request, timeout=None) as response:
