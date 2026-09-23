@@ -37,6 +37,7 @@ CLIENT_COMMAND_TYPES = frozenset(
         "thread.separate",
         "update.check",
         "update.fetch",
+        "update.apply",
     }
 )
 
@@ -54,6 +55,7 @@ V2_COMMAND_TYPES = frozenset(
         "thread.separate",
         "update.check",
         "update.fetch",
+        "update.apply",
     }
 )
 
@@ -172,6 +174,7 @@ def validate_command_payload(command: Envelope) -> None:
         "thread.separate": set(),
         "update.check": set(),
         "update.fetch": {"offset", "length"},
+        "update.apply": set(),
     }
     unexpected_fields = set(payload) - allowed_fields[command.type]
     if unexpected_fields:

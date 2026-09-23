@@ -141,9 +141,12 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 			AppState.set_file_content(event.thread_id, event.payload)
 		"tool.catalog":
 			AppState.set_tool_catalog(event.payload)
-		"update.available", "update.none", "update.chunk":
+		"update.available", "update.none", "update.chunk", "update.applied":
 			update_message.emit(event.type, event.payload)
 		"error":
+			var error_code := str(event.payload.get("code", ""))
+			if error_code in ["no_adb", "no_adb_device", "install_failed"]:
+				update_message.emit("update.fallback", event.payload)
 			EventBus.debug_message.emit("Backend error: %s" % event.payload.get("message", "unknown error"))
 	if event.type != "agent.message.delta" and event.type != "update.chunk":
 		EventBus.debug_message.emit("Backend event: %s" % event.type)

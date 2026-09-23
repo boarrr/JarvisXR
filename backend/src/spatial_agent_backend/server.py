@@ -519,6 +519,22 @@ class SpatialAgentServer:
             await emit("thread.archived", command.thread_id, {})
             for source in restored:
                 await emit("thread.created", source.id, {"thread": source.to_wire()})
+        elif command.type == "update.apply":
+            package = self.updates.current()
+            if package is None:
+                await emit("error", "", {"code": "no_update", "message": "No update is published"})
+                return
+            result = await asyncio.to_thread(self._adb_install, str(package.apk_path))
+            if result.get("ok"):
+                log_record("update_applied", session_id=session.id, version=package.version)
+                await emit("update.applied", "", {"version": package.version})
+            else:
+                log_record("update_apply_failed", session_id=session.id, code=result.get("code", ""))
+                await emit(
+                    "error",
+                    "",
+                    {"code": result.get("code", "install_failed"), "message": result.get("message", "")},
+                )
         elif command.type == "update.check":
             payload = self.updates.manifest_payload()
             log_record(
@@ -575,6 +591,57 @@ class SpatialAgentServer:
             await emit("thread.created", restored.id, {"thread": restored.to_wire()})
         else:
             await emit("error", command.thread_id, {"code": "unknown_command", "message": "Unknown command"})
+
+    def _adb_install(self, apk_path: str) -> dict[str, Any]:
+        import shutil as _shutil
+        import subprocess as _subprocess
+
+        adb = _shutil.which("adb") or str(
+            Path.home() / "Library/Android/sdk/platform-tools/adb"
+        )
+        if not Path(adb).exists():
+            return {"ok": False, "code": "no_adb", "message": "adb not found on the daemon host"}
+        try:
+            listing = _subprocess.run(
+                [adb, "devices"], capture_output=True, text=True, timeout=10
+            ).stdout
+        except Exception as error:  # noqa: BLE001
+            return {"ok": False, "code": "no_adb", "message": str(error)}
+        serials = [
+            line.split("\t")[0]
+            for line in listing.splitlines()[1:]
+            if "\tdevice" in line
+        ]
+        if not serials:
+            return {"ok": False, "code": "no_adb_device", "message": "No adb device connected"}
+        serial = serials[0]
+        install = _subprocess.run(
+            [adb, "-s", serial, "install", "-r", apk_path],
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        output = (install.stdout or "") + (install.stderr or "")
+        if "Success" not in output:
+            return {"ok": False, "code": "install_failed", "message": output[-400:]}
+        _subprocess.run(
+            [
+                adb,
+                "-s",
+                serial,
+                "shell",
+                "monkey",
+                "-p",
+                "com.spatialagent.xr",
+                "-c",
+                "android.intent.category.LAUNCHER",
+                "1",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return {"ok": True}
 
     def _tool_catalog_payload(self) -> dict[str, Any]:
         return {

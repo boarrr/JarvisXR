@@ -82,17 +82,12 @@ func has_pending_update() -> bool:
 func request_update() -> void:
 	if _downloading:
 		return
-	print("[UPDATER] request_update; connection=%s manifest=%s" % [
-		AppState.connection_state, not _manifest.is_empty()
-	])
+	# Prefer the daemon installing this APK over adb (reliable on Horizon OS);
+	# fall back to the in-app PackageInstaller path if no adb device is attached.
+	print("[UPDATER] request_update via daemon adb; connection=%s" % AppState.connection_state)
 	_install_requested = true
-	if not _manifest.is_empty():
-		if str(_manifest.get("sha256", "")) == _read_installed_sha():
-			print("[UPDATER] already on %s" % str(_manifest.get("version", "")))
-			EventBus.debug_message.emit("Already on the latest build")
-			_install_requested = false
-			return
-		begin_install()
+	if _bridge != null:
+		_bridge.send_command("update.apply", {})
 	else:
 		check_for_update()
 
@@ -178,6 +173,14 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 				begin_install()
 		"update.none":
 			update_up_to_date.emit("")
+		"update.applied":
+			print("[UPDATER] daemon installed %s over adb" % str(payload.get("version", "")))
+			_downloading = false
+			install_launched.emit(str(payload.get("version", "")))
+			EventBus.debug_message.emit("Updated via daemon · relaunching")
+		"update.fallback":
+			print("[UPDATER] no adb device; falling back to in-app install")
+			check_for_update()
 		"update.chunk":
 			_on_chunk(payload)
 
