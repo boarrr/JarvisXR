@@ -32,7 +32,7 @@ var _hasher: HashingContext = null
 var _received := 0
 var _install_requested := false
 var _downloading := false
-var _checked_once := false
+var _check_timer: Timer = null
 
 
 func _ready() -> void:
@@ -40,6 +40,12 @@ func _ready() -> void:
 		_bridge = get_node_or_null(backend_bridge_path)
 	_connect_bridge()
 	set_process(false)
+	_check_timer = Timer.new()
+	_check_timer.wait_time = 45.0
+	_check_timer.one_shot = false
+	_check_timer.autostart = true
+	_check_timer.timeout.connect(_on_check_timer)
+	add_child(_check_timer)
 
 
 func set_bridge(bridge: Node) -> void:
@@ -121,11 +127,15 @@ func _request_chunk(offset: int) -> void:
 func _on_backend_event(event: BackendEvent) -> void:
 	if event == null or event.type != "session.ready":
 		return
-	if not auto_check or _checked_once:
+	if not auto_check:
 		return
-	_checked_once = true
 	print("[UPDATER] session ready; checking for updates")
 	check_for_update()
+
+
+func _on_check_timer() -> void:
+	if auto_check and not _downloading:
+		check_for_update()
 
 
 func _on_update_message(event_type: String, payload: Dictionary) -> void:
