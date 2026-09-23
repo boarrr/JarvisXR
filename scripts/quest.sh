@@ -2,7 +2,7 @@
 set -eu
 
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-client_root="$project_root/client-godot"
+client_root="${SPATIAL_CLIENT_ROOT:-$project_root/client-godot}"
 godot_bin=${GODOT_BIN:-/Applications/Godot.app/Contents/MacOS/Godot}
 adb_bin=${ADB_BIN:-adb}
 plugin_version=5.1.0-stable
@@ -11,9 +11,11 @@ plugin_url="https://github.com/GodotVR/godot_openxr_vendors/releases/download/$p
 plugin_target="$client_root/addons/godotopenxrvendors"
 apk_path="$project_root/build/quest/spatial-agent.apk"
 wifi_ip_file="$project_root/build/quest/wifi-ip"
+manifest_path="$project_root/build/quest/manifest.json"
+updates_dir="$project_root/build/quest/updates"
 
 usage() {
-	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|deploy|wifi|wifi-install|deploy-wifi"
+	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|deploy|wifi|wifi-install|deploy-wifi|manifest"
 }
 
 require_command() {
@@ -144,6 +146,36 @@ export_debug() {
 		printf '%s\n' "Note: Godot exited with code $export_status after writing the APK (known OpenXR vendor plugin shutdown crash); the APK is fresh."
 	fi
 	printf '%s\n' "Exported: $apk_path"
+	write_manifest
+}
+
+write_manifest() {
+	if [ ! -f "$apk_path" ]; then
+		printf '%s\n' "APK not found; run ./scripts/quest.sh export first." >&2
+		exit 2
+	fi
+	require_command shasum
+	mkdir -p "$updates_dir"
+	sha=$(shasum -a 256 "$apk_path" | awk '{print $1}')
+	short_sha=$(printf '%s' "$sha" | cut -c1-12)
+	size=$(wc -c < "$apk_path" | tr -d ' ')
+	git_rev=$(git -C "$client_root" rev-parse --short HEAD 2>/dev/null || printf 'unknown')
+	built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	published="$updates_dir/spatial-agent-$short_sha.apk"
+	cp "$apk_path" "$published"
+	cat > "$manifest_path" <<EOF
+{
+  "app": "spatial-agent",
+  "package": "com.spatialagent.xr",
+  "version": "$git_rev",
+  "sha256": "$sha",
+  "size_bytes": $size,
+  "built_at": "$built_at",
+  "apk": "$(basename -- "$published")"
+}
+EOF
+	printf '%s\n' "Published update: $published"
+	printf '%s\n' "Manifest: $manifest_path"
 }
 
 tunnel_backend() {
@@ -297,6 +329,9 @@ case "$action" in
 		;;
 	dictation-plugin)
 		dictation_plugin
+		;;
+	manifest)
+		write_manifest
 		;;
 	deploy)
 		export_debug
