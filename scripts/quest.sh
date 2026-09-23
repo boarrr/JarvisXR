@@ -26,19 +26,21 @@ require_command() {
 }
 
 resolve_java17_home() {
-	if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
-		java_line=$("$JAVA_HOME/bin/java" -version 2>&1 | sed -n '1p')
-		case "$java_line" in
-			*\"17.*) printf '%s\n' "$JAVA_HOME"; return 0 ;;
-		esac
-	fi
-	if [ -x /usr/libexec/java_home ]; then
-		java_home_candidate=$(/usr/libexec/java_home -v 17 2>/dev/null || true)
-		if [ -n "$java_home_candidate" ] && [ -x "$java_home_candidate/bin/java" ]; then
-			printf '%s\n' "$java_home_candidate"
-			return 0
+	# Prefer a JDK that actually runs on this machine (arm64). A stale x86_64
+	# JDK otherwise breaks Godot's Gradle export with "Bad CPU type".
+	for candidate in \
+		"${JAVA_HOME:-}" \
+		"/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+		"$(/usr/libexec/java_home -v 21 2>/dev/null || true)" \
+		"$(/usr/libexec/java_home -v 17 2>/dev/null || true)"
+	do
+		if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ]; then
+			if "$candidate/bin/java" -version >/dev/null 2>&1; then
+				printf '%s\n' "$candidate"
+				return 0
+			fi
 		fi
-	fi
+	done
 	return 1
 }
 
@@ -129,8 +131,11 @@ export_debug() {
 	fi
 	# The Android build template must stay invisible to Godot's importer:
 	# generated .import sidecars break the Gradle resource merger.
-	mkdir -p "$client_root/android"
-	: > "$client_root/android/.gdignore"
+	mkdir -p "$client_root/android/build"
+	# Hide only the generated Gradle template from Godot's importer; the rest of
+	# res://android (including res://android/plugins) must stay discoverable.
+	rm -f "$client_root/android/.gdignore"
+	: > "$client_root/android/build/.gdignore"
 	find "$client_root/android" -name "*.import" -delete 2>/dev/null || true
 	apk_timestamp_before=$(stat -f %m "$apk_path" 2>/dev/null || printf '0')
 	set +e
@@ -286,17 +291,7 @@ wireless_install() {
 }
 
 resolve_android_java_home() {
-	for candidate in \
-		"/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
-		"$(/usr/libexec/java_home -v 21 2>/dev/null || true)" \
-		"$(/usr/libexec/java_home -v 17 2>/dev/null || true)"
-	do
-		if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ]; then
-			printf '%s\n' "$candidate"
-			return 0
-		fi
-	done
-	return 1
+	resolve_java17_home
 }
 
 updater_plugin() {
@@ -330,7 +325,8 @@ updater_plugin() {
 		printf '%s\n' "Updater AAR was not produced." >&2
 		exit 1
 	fi
-	plugin_target="$client_root/android/plugins/AndroidUpdater"
+	# Godot discovers *.gdap non-recursively in res://android/plugins.
+	plugin_target="$client_root/android/plugins"
 	mkdir -p "$plugin_target"
 	cp "$aar" "$plugin_target/UpdaterPlugin.aar"
 	cp "$plugin_source/AndroidUpdater.gdap" "$plugin_target/AndroidUpdater.gdap"
