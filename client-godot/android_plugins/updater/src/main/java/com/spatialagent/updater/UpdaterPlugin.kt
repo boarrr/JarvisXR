@@ -6,6 +6,7 @@ import androidx.core.content.FileProvider
 import org.godotengine.godot.Godot
 import org.godotengine.godot.plugin.GodotPlugin
 import org.godotengine.godot.plugin.SignalInfo
+import org.godotengine.godot.plugin.UsedByGodot
 import java.io.File
 
 /**
@@ -24,13 +25,13 @@ class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
         SignalInfo("install_result", Boolean::class.java, String::class.java),
     )
 
-    @Suppress("unused")
+    @UsedByGodot
     fun canRequestPackageInstalls(): Boolean {
         val host = activity ?: return false
         return host.packageManager.canRequestPackageInstalls()
     }
 
-    @Suppress("unused")
+    @UsedByGodot
     fun installApk(path: String) {
         val host = activity ?: run {
             emitSignal("install_result", false, "no_activity")
