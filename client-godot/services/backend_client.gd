@@ -78,6 +78,10 @@ func _connect_socket() -> void:
 	if _stopping:
 		return
 	_socket = WebSocketPeer.new()
+	# The self-update streams large base64 chunks; the default 64 KB inbound
+	# buffer silently drops frames that big (the manifest is small, so it works).
+	_socket.set("inbound_buffer_size", 4 * 1024 * 1024)
+	_socket.set("outbound_buffer_size", 2 * 1024 * 1024)
 	_has_opened = false
 	_session_id = ""
 	_set_connection_state(STATE_CONNECTING)

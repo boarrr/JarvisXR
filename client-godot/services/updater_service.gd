@@ -33,6 +33,8 @@ var _received := 0
 var _install_requested := false
 var _downloading := false
 var _check_timer: Timer = null
+var _last_progress_msec := 0
+var _next_log_bytes := 0
 
 
 func _ready() -> void:
@@ -114,6 +116,8 @@ func begin_install() -> void:
 	_hasher = HashingContext.new()
 	_hasher.start(HashingContext.HASH_SHA256)
 	_received = 0
+	_last_progress_msec = Time.get_ticks_msec()
+	_next_log_bytes = 0
 	_request_chunk(0)
 
 
@@ -134,7 +138,17 @@ func _on_backend_event(event: BackendEvent) -> void:
 
 
 func _on_check_timer() -> void:
-	if auto_check and not _downloading:
+	if _downloading:
+		if Time.get_ticks_msec() - _last_progress_msec > 30000:
+			print("[UPDATER] transfer stalled; aborting this attempt")
+			if _file != null:
+				_file.close()
+				_file = null
+			_downloading = false
+			_install_requested = false
+			update_failed.emit("stalled")
+		return
+	if auto_check:
 		check_for_update()
 
 
@@ -175,6 +189,12 @@ func _on_chunk(payload: Dictionary) -> void:
 	_file.store_buffer(data)
 	_hasher.update(data)
 	_received += data.size()
+	_last_progress_msec = Time.get_ticks_msec()
+	if _received >= _next_log_bytes:
+		_next_log_bytes = _received + 16 * 1024 * 1024
+		print("[UPDATER] progress %d / %d" % [
+			_received, int(_manifest.get("size_bytes", _received))
+		])
 	download_progress.emit(_received, int(_manifest.get("size_bytes", _received)))
 	if bool(payload.get("eof", false)):
 		_file.close()
