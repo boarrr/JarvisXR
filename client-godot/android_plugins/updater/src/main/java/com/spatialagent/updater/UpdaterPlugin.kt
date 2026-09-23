@@ -1,6 +1,7 @@
 package com.spatialagent.updater
 
 import android.content.BroadcastReceiver
+import android.util.Log
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
@@ -19,6 +20,8 @@ import java.io.FileInputStream
  * supported path. The app must hold REQUEST_INSTALL_PACKAGES.
  */
 class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
+
+    private val tag = "UpdaterPlugin"
 
     override fun getPluginName(): String = "AndroidUpdater"
 
@@ -40,6 +43,7 @@ class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
         }
         host.runOnUiThread {
             try {
+                Log.i(tag, "installApk start: $path")
                 val file = File(path)
                 if (!file.exists() || !file.name.endsWith(".apk")) {
                     emitSignal("install_result", false, "missing_apk")
@@ -50,6 +54,7 @@ class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
                     PackageInstaller.SessionParams.MODE_FULL_INSTALL
                 )
                 val sessionId = installer.createSession(params)
+                Log.i(tag, "session created: $sessionId")
                 installer.openSession(sessionId).use { session ->
                     FileInputStream(file).use { input ->
                         session.openWrite("base.apk", 0L, file.length()).use { output ->
@@ -65,10 +70,12 @@ class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                     )
                     session.commit(pending.intentSender)
+                    Log.i(tag, "session committed")
                 }
                 activeInstance = this
                 emitSignal("install_result", true, "session_committed")
             } catch (error: Exception) {
+                Log.e(tag, "install failed", error)
                 emitSignal("install_result", false, error.message ?: "install_failed")
             }
         }

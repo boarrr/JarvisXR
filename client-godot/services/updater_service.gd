@@ -42,6 +42,8 @@ func _ready() -> void:
 	if _bridge == null:
 		_bridge = get_node_or_null(backend_bridge_path)
 	_connect_bridge()
+	update_failed.connect(func(reason: String): print("[UPDATER] failed: %s" % reason))
+	update_up_to_date.connect(func(version: String): print("[UPDATER] up to date: %s" % version))
 	set_process(false)
 	_check_timer = Timer.new()
 	_check_timer.wait_time = 45.0
@@ -224,13 +226,12 @@ func _launch_installer() -> void:
 		update_failed.emit("plugin_missing")
 		return
 	var updater := Engine.get_singleton(PLUGIN_NAME)
-	if not updater.has_method("installApk"):
-		update_failed.emit("plugin_incompatible")
-		return
 	var callable := Callable(self, "_on_install_result")
 	if not updater.is_connected("install_result", callable):
 		updater.connect("install_result", callable)
-	updater.call("installApk", ProjectSettings.globalize_path(UPDATE_PATH))
+	var apk_path := ProjectSettings.globalize_path(UPDATE_PATH)
+	print("[UPDATER] invoking installApk: %s" % apk_path)
+	updater.call("installApk", apk_path)
 	install_launched.emit(str(_manifest.get("version", "")))
 	EventBus.debug_message.emit("Update downloaded · confirm install on the headset")
 
