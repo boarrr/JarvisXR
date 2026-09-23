@@ -31,6 +31,8 @@ var _file: FileAccess = null
 var _hasher: HashingContext = null
 var _received := 0
 var _install_requested := false
+var _downloading := false
+var _checked_once := false
 
 
 func _ready() -> void:
@@ -38,8 +40,6 @@ func _ready() -> void:
 		_bridge = get_node_or_null(backend_bridge_path)
 	_connect_bridge()
 	set_process(false)
-	if auto_check:
-		call_deferred("check_for_update")
 
 
 func set_bridge(bridge: Node) -> void:
@@ -69,6 +69,8 @@ func has_pending_update() -> bool:
 
 
 func request_update() -> void:
+	if _downloading:
+		return
 	print("[UPDATER] request_update; connection=%s manifest=%s" % [
 		AppState.connection_state, not _manifest.is_empty()
 	])
@@ -85,6 +87,9 @@ func request_update() -> void:
 
 
 func begin_install() -> void:
+	if _downloading:
+		return
+	_downloading = true
 	if _manifest.is_empty():
 		print("[UPDATER] begin_install without a manifest")
 		update_failed.emit("no_manifest")
@@ -97,6 +102,7 @@ func begin_install() -> void:
 	_file = FileAccess.open(UPDATE_PATH, FileAccess.WRITE)
 	if _file == null:
 		print("[UPDATER] cannot open target file: error %d" % FileAccess.get_open_error())
+		_downloading = false
 		update_failed.emit("cannot_write")
 		return
 	_hasher = HashingContext.new()
@@ -112,9 +118,13 @@ func _request_chunk(offset: int) -> void:
 
 
 func _on_backend_event(event: BackendEvent) -> void:
-	if event != null and event.type == "session.ready" and auto_check:
-		print("[UPDATER] session ready; checking for updates")
-		check_for_update()
+	if event == null or event.type != "session.ready":
+		return
+	if not auto_check or _checked_once:
+		return
+	_checked_once = true
+	print("[UPDATER] session ready; checking for updates")
+	check_for_update()
 
 
 func _on_update_message(event_type: String, payload: Dictionary) -> void:
@@ -148,6 +158,7 @@ func _on_chunk(payload: Dictionary) -> void:
 		return
 	var data := Marshalls.base64_to_raw(str(payload.get("data", "")))
 	if data.is_empty() and not bool(payload.get("eof", false)):
+		_downloading = false
 		update_failed.emit("empty_chunk")
 		return
 	_file.store_buffer(data)
@@ -168,6 +179,7 @@ func _finish_download() -> void:
 	var expected := str(_manifest.get("sha256", ""))
 	print("[UPDATER] download complete; sha %s expected %s" % [computed.left(12), expected.left(12)])
 	if computed != expected:
+		_downloading = false
 		update_failed.emit("checksum_mismatch")
 		return
 	_launch_installer()
@@ -192,6 +204,7 @@ func _launch_installer() -> void:
 
 
 func _on_install_result(success: bool, message: String) -> void:
+	_downloading = false
 	if not success:
 		update_failed.emit(message)
 
