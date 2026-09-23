@@ -1,0 +1,242 @@
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import threading
+import time
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from spatial_agent_backend.opencode_bridge import (
+    OpencodeClient,
+    OpencodeError,
+    permission_from_event,
+    translate_event,
+)
+
+AUTH = "Basic b3BlbmNvZGU6c2VjcmV0"  # opencode:secret
+
+
+class _FakeOpencodeHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.0"
+    server_version = "fake-opencode/1"
+
+    # Silence per-request logging.
+    def log_message(self, _format: str, *_args) -> None:  # noqa: A003
+        return
+
+    def _authorized(self) -> bool:
+        return self.headers.get("Authorization") == AUTH
+
+    def _send_json(self, code: int, payload: dict) -> None:
+        body = json.dumps(payload).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length <= 0:
+            return {}
+        try:
+            return json.loads(self.rfile.read(length).decode() or "{}")
+        except json.JSONDecodeError:
+            return {}
+
+    def _emit(self, event_type: str, properties: dict | None = None) -> None:
+        payload = {"type": event_type, "properties": properties or {}}
+        chunk = f"data: {json.dumps(payload)}\n\n".encode()
+        self.wfile.write(chunk)
+        self.wfile.flush()
+
+    def do_GET(self) -> None:  # noqa: N802
+        if not self._authorized():
+            self._send_json(401, {"error": "unauthorized"})
+            return
+        state = self.server.state  # type: ignore[attr-defined]
+        if self.path == "/global/health":
+            self._send_json(200, {"healthy": True, "version": "test"})
+            return
+        if self.path == "/event":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self._emit("server.connected")
+            if not state.prompt_sent.wait(timeout=10):
+                return
+            self._emit("session.status", {"sessionID": state.session_id, "status": {"type": "busy"}})
+            self._emit(
+                "message.part.delta",
+                {"messageID": "msg_1", "partID": "prt_1", "field": "text", "delta": "Hel"},
+            )
+            self._emit(
+                "message.part.delta",
+                {"messageID": "msg_1", "partID": "prt_1", "field": "text", "delta": "lo"},
+            )
+            self._emit(
+                "message.part.updated",
+                {
+                    "part": {
+                        "type": "tool",
+                        "tool": "bash",
+                        "callID": "call_1",
+                        "state": {"status": "running"},
+                    }
+                },
+            )
+            self._emit(
+                "permission.asked",
+                {
+                    "id": "per_test",
+                    "sessionID": state.session_id,
+                    "permission": "bash",
+                    "patterns": ["echo hello"],
+                    "always": ["echo *"],
+                    "metadata": {"command": "echo hello"},
+                },
+            )
+            state.permission_waited.set()
+            if not state.permission_replied.wait(timeout=10):
+                return
+            self._emit(
+                "permission.replied",
+                {"sessionID": state.session_id, "requestID": "per_test", "reply": "once"},
+            )
+            self._emit("file.edited", {"file": "/tmp/worktree/seed.txt"})
+            self._emit("session.status", {"sessionID": state.session_id, "status": {"type": "idle"}})
+            self._emit("session.idle", {"sessionID": state.session_id})
+            return
+        self._send_json(404, {"error": "not found"})
+
+    def do_POST(self) -> None:  # noqa: N802
+        if not self._authorized():
+            self._send_json(401, {"error": "unauthorized"})
+            return
+        state = self.server.state  # type: ignore[attr-defined]
+        if self.path == "/session":
+            self._send_json(200, {"id": state.session_id})
+            return
+        if self.path == f"/session/{state.session_id}/prompt_async":
+            self._read_body()
+            state.prompt_sent.set()
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if self.path == f"/session/{state.session_id}/permissions/per_test":
+            body = self._read_body()
+            state.permission_reply = body.get("response", "")
+            state.permission_replied.set()
+            self._send_json(200, True)
+            return
+        if self.path == f"/session/{state.session_id}/abort":
+            self._send_json(200, True)
+            return
+        self._send_json(404, {"error": "not found"})
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        if not self._authorized():
+            self._send_json(401, {"error": "unauthorized"})
+            return
+        self._send_json(200, True)
+
+
+class _State:
+    def __init__(self) -> None:
+        self.session_id = "ses_test"
+        self.prompt_sent = threading.Event()
+        self.permission_waited = threading.Event()
+        self.permission_replied = threading.Event()
+        self.permission_reply = ""
+
+
+def start_fake_server() -> tuple[ThreadingHTTPServer, str]:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _FakeOpencodeHandler)
+    server.state = _State()  # type: ignore[attr-defined]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address[:2]
+    return server, f"http://{host}:{port}"
+
+
+class OpencodeBridgeTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.server, self.base_url = start_fake_server()
+        self.addCleanup(self.server.shutdown)
+        self.client = OpencodeClient(self.base_url, password="secret")
+
+    async def test_auth_is_required(self) -> None:
+        unauthorized = OpencodeClient(self.base_url, password="wrong")
+        with self.assertRaises(OpencodeError):
+            await unauthorized.health()
+
+    async def test_session_lifecycle_streams_events_and_permissions(self) -> None:
+        health = await self.client.health()
+        self.assertTrue(health["healthy"])
+        session_id = await self.client.create_session()
+        self.assertEqual(session_id, "ses_test")
+
+        collected: list[dict] = []
+        approvals: list = []
+        deltas: list[str] = []
+
+        async def consume() -> None:
+            async for event in self.client.events():
+                if event.get("type") == "__stream_error__":
+                    self.fail(f"stream error: {event}")
+                request = permission_from_event(event)
+                if request is not None:
+                    approvals.append(request)
+                    await self.client.reply_permission(
+                        request.session_id, request.approval_id, "once"
+                    )
+                    continue
+                translated = translate_event(event)
+                if translated is None:
+                    continue
+                collected.append(translated)
+                if translated["type"] == "message.delta":
+                    deltas.append(translated["text"])
+
+        consumer = asyncio.create_task(consume())
+        await asyncio.sleep(0.2)
+        await self.client.prompt(session_id, "do the thing")
+
+        deadline = time.time() + 10
+        while time.time() < deadline and not any(
+            event["type"] == "run.completed" for event in collected
+        ):
+            await asyncio.sleep(0.05)
+
+        if not consumer.done():
+            consumer.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await consumer
+
+        self.assertEqual("".join(deltas), "Hello")
+        self.assertTrue(any(event["type"] == "tool.activity" for event in collected))
+        self.assertTrue(any(event["type"] == "file.edited" for event in collected))
+        self.assertTrue(any(event["type"] == "run.completed" for event in collected))
+
+        self.assertEqual(len(approvals), 1)
+        request = approvals[0]
+        self.assertEqual(request.permission, "bash")
+        self.assertEqual(request.patterns, ["echo hello"])
+        self.assertEqual(request.always, ["echo *"])
+        self.assertEqual(request.metadata, {"command": "echo hello"})
+        self.assertTrue(
+            any(event["type"] == "approval.resolved" for event in collected),
+            "permission reply should surface as approval.resolved",
+        )
+        self.assertEqual(
+            self.server.state.permission_reply,  # type: ignore[attr-defined]
+            "once",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
