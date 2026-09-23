@@ -215,7 +215,8 @@ dictation_plugin() {
 		exit 2
 	fi
 	(cd "$plugin_source" && gradle assembleRelease --quiet)
-	plugin_target="$client_root/android/plugins/AndroidDictation"
+	# Godot discovers *.gdap non-recursively in res://android/plugins.
+	plugin_target="$client_root/android/plugins"
 	mkdir -p "$plugin_target"
 	cp "$plugin_source/build/outputs/aar/dictation-release.aar" \
 		"$plugin_target/DictationPlugin.aar"
