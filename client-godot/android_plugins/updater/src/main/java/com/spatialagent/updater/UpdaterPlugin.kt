@@ -26,7 +26,7 @@ class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
     override fun getPluginName(): String = "AndroidUpdater"
 
     override fun getPluginSignals(): Set<SignalInfo> = setOf(
-        SignalInfo("install_result", Boolean::class.java, String::class.java),
+        SignalInfo("install_result", Boolean::class.javaObjectType, String::class.java),
     )
 
     @UsedByGodot
