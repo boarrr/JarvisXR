@@ -31,6 +31,7 @@ var _file: FileAccess = null
 var _hasher: HashingContext = null
 var _received := 0
 var _install_requested := false
+var _auto_attempted := false
 var _downloading := false
 var _check_timer: Timer = null
 var _last_progress_msec := 0
@@ -170,7 +171,8 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 				str(_manifest.get("sha256", "")),
 				int(_manifest.get("size_bytes", 0))
 			)
-			if auto_install or _install_requested:
+			if (auto_install and not _auto_attempted) or _install_requested:
+				_auto_attempted = true
 				begin_install()
 		"update.none":
 			update_up_to_date.emit("")
@@ -228,7 +230,6 @@ func _launch_installer() -> void:
 	var callable := Callable(self, "_on_install_result")
 	if not updater.is_connected("install_result", callable):
 		updater.connect("install_result", callable)
-	_write_installed_sha(str(_manifest.get("sha256", "")))
 	updater.call("installApk", ProjectSettings.globalize_path(UPDATE_PATH))
 	install_launched.emit(str(_manifest.get("version", "")))
 	EventBus.debug_message.emit("Update downloaded · confirm install on the headset")
@@ -237,6 +238,8 @@ func _launch_installer() -> void:
 func _on_install_result(success: bool, message: String) -> void:
 	_downloading = false
 	print("[UPDATER] install_result success=%s message=%s" % [success, message])
+	if success and message == "installed":
+		_write_installed_sha(str(_manifest.get("sha256", "")))
 	if not success:
 		update_failed.emit(message)
 

@@ -88,7 +88,7 @@ class UpdaterInstallReceiver : BroadcastReceiver() {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Int.MIN_VALUE)
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
         val success = status == PackageInstaller.STATUS_SUCCESS
-        val label = if (message.isNotEmpty()) message else "status_$status"
+        val label = if (success) "installed" else message.ifEmpty { "install_failed_$status" }
         UpdaterPlugin.activeInstance?.reportInstall(success, label)
     }
 }
