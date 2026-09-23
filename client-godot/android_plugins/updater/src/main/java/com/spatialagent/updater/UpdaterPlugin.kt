@@ -1,21 +1,22 @@
 package com.spatialagent.updater
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import androidx.core.content.FileProvider
+import android.content.pm.PackageInstaller
+import android.app.PendingIntent
 import org.godotengine.godot.Godot
 import org.godotengine.godot.plugin.GodotPlugin
 import org.godotengine.godot.plugin.SignalInfo
 import org.godotengine.godot.plugin.UsedByGodot
 import java.io.File
+import java.io.FileInputStream
 
 /**
- * Godot Android plugin that hands a downloaded APK to the system package
- * installer. GDScript writes the verified APK under user://updates/ and calls
- * installApk(); the OS shows its normal install confirmation.
- *
- * The plugin never downloads anything and never installs silently: Android
- * requires the user to confirm, and the app must hold REQUEST_INSTALL_PACKAGES.
+ * Godot Android plugin that installs a downloaded APK through the platform
+ * PackageInstaller session API. Horizon OS does not resolve ACTION_VIEW for
+ * APKs, so a session commit (which still shows the system confirmation) is the
+ * supported path. The app must hold REQUEST_INSTALL_PACKAGES.
  */
 class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
 
@@ -44,18 +45,50 @@ class UpdaterPlugin(godot: Godot) : GodotPlugin(godot) {
                     emitSignal("install_result", false, "missing_apk")
                     return@runOnUiThread
                 }
-                val authority = "${host.packageName}.updater"
-                val uri: Uri = FileProvider.getUriForFile(host, authority, file)
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val installer = host.packageManager.packageInstaller
+                val params = PackageInstaller.SessionParams(
+                    PackageInstaller.SessionParams.MODE_FULL_INSTALL
+                )
+                val sessionId = installer.createSession(params)
+                installer.openSession(sessionId).use { session ->
+                    FileInputStream(file).use { input ->
+                        session.openWrite("base.apk", 0L, file.length()).use { output ->
+                            input.copyTo(output)
+                            session.fsync(output)
+                        }
+                    }
+                    val callback = Intent(host, UpdaterInstallReceiver::class.java)
+                    val pending = PendingIntent.getBroadcast(
+                        host,
+                        sessionId,
+                        callback,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                    )
+                    session.commit(pending.intentSender)
                 }
-                host.startActivity(intent)
-                emitSignal("install_result", true, "installer_opened")
+                activeInstance = this
+                emitSignal("install_result", true, "session_committed")
             } catch (error: Exception) {
                 emitSignal("install_result", false, error.message ?: "install_failed")
             }
         }
+    }
+
+    fun reportInstall(success: Boolean, message: String) {
+        emitSignal("install_result", success, message)
+    }
+
+    companion object {
+        var activeInstance: UpdaterPlugin? = null
+    }
+}
+
+class UpdaterInstallReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Int.MIN_VALUE)
+        val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
+        val success = status == PackageInstaller.STATUS_SUCCESS
+        val label = if (message.isNotEmpty()) message else "status_$status"
+        UpdaterPlugin.activeInstance?.reportInstall(success, label)
     }
 }

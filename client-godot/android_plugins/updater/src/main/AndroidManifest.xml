@@ -4,6 +4,9 @@
         <meta-data
             android:name="org.godotengine.plugin.v2.AndroidUpdater"
             android:value="com.spatialagent.updater.UpdaterPlugin" />
+        <receiver
+            android:name="com.spatialagent.updater.UpdaterInstallReceiver"
+            android:exported="false" />
         <provider
             android:name="com.spatialagent.updater.UpdaterFileProvider"
             android:authorities="com.spatialagent.xr.updater"

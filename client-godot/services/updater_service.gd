@@ -236,6 +236,7 @@ func _launch_installer() -> void:
 
 func _on_install_result(success: bool, message: String) -> void:
 	_downloading = false
+	print("[UPDATER] install_result success=%s message=%s" % [success, message])
 	if not success:
 		update_failed.emit(message)
 
