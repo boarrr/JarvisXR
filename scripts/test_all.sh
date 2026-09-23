@@ -79,6 +79,7 @@ for scene in \
 	cockpit_transport_smoke \
 	cockpit_panels_smoke \
 	standing_orbit_smoke \
+	updater_service_smoke \
 	daemon_config_smoke \
 	perf_probe_smoke \
 	backend_client_smoke \

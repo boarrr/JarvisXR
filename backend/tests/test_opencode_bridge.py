@@ -179,6 +179,7 @@ def start_fake_server() -> tuple[ThreadingHTTPServer, str]:
 class OpencodeBridgeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.server, self.base_url = start_fake_server()
+        self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         self.client = OpencodeClient(self.base_url, password="secret")
 

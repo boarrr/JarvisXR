@@ -15,7 +15,7 @@ manifest_path="$project_root/build/quest/manifest.json"
 updates_dir="$project_root/build/quest/updates"
 
 usage() {
-	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|deploy|wifi|wifi-install|deploy-wifi|manifest"
+	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|updater-plugin|deploy|wifi|wifi-install|deploy-wifi|manifest"
 }
 
 require_command() {
@@ -285,6 +285,59 @@ wireless_install() {
 	printf '%s\n' "Installed over Wi-Fi to $ip:5555"
 }
 
+resolve_android_java_home() {
+	for candidate in \
+		"/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+		"$(/usr/libexec/java_home -v 21 2>/dev/null || true)" \
+		"$(/usr/libexec/java_home -v 17 2>/dev/null || true)"
+	do
+		if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ]; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
+updater_plugin() {
+	plugin_source="$client_root/android_plugins/updater"
+	if [ ! -d "$plugin_source" ]; then
+		printf '%s\n' "Updater plugin source not found: $plugin_source" >&2
+		exit 2
+	fi
+	gradlew="$client_root/android/build/gradlew"
+	if [ ! -x "$gradlew" ]; then
+		printf '%s\n' "Android build template missing; run ./scripts/quest.sh setup first." >&2
+		exit 2
+	fi
+	android_java_home=$(resolve_android_java_home || true)
+	if [ -z "$android_java_home" ]; then
+		printf '%s\n' "No arm64 JDK 17/21 found. Install Android Studio or a JDK 21." >&2
+		exit 2
+	fi
+	android_sdk="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+	if [ ! -d "$android_sdk" ]; then
+		printf '%s\n' "Android SDK not found. Set ANDROID_HOME (tried: $android_sdk)." >&2
+		exit 2
+	fi
+	(
+		cd "$plugin_source" &&
+			JAVA_HOME="$android_java_home" ANDROID_HOME="$android_sdk" \
+				"$gradlew" assembleRelease --no-daemon --console=plain
+	)
+	aar=$(find "$plugin_source/build/outputs/aar" -name "*.aar" 2>/dev/null | head -1)
+	if [ -z "$aar" ]; then
+		printf '%s\n' "Updater AAR was not produced." >&2
+		exit 1
+	fi
+	plugin_target="$client_root/android/plugins/AndroidUpdater"
+	mkdir -p "$plugin_target"
+	cp "$aar" "$plugin_target/UpdaterPlugin.aar"
+	cp "$plugin_source/AndroidUpdater.gdap" "$plugin_target/AndroidUpdater.gdap"
+	printf '%s\n' "Installed updater plugin at $plugin_target"
+	printf '%s\n' "Export with Gradle build enabled so the plugin is packaged into the APK."
+}
+
 install_apk() {
 	require_command "$adb_bin"
 	if [ ! -f "$apk_path" ]; then
@@ -329,6 +382,9 @@ case "$action" in
 		;;
 	dictation-plugin)
 		dictation_plugin
+		;;
+	updater-plugin)
+		updater_plugin
 		;;
 	manifest)
 		write_manifest

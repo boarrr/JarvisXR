@@ -37,6 +37,7 @@ from .providers import (
 )
 from .storage import SQLiteStore
 from .thread_service import ThreadNotFoundError, ThreadService
+from .update_service import UpdateError, UpdateService
 from .tools import ToolRegistry
 from .workspace import WorkspaceError, WorkspaceManager
 
@@ -78,6 +79,7 @@ class SpatialAgentServer:
             self.store, ttl_seconds=settings.pairing_code_ttl_seconds
         )
         self.mcp = McpHost(settings.mcp_config_path)
+        self.updates = UpdateService(settings.update_manifest_path)
         self.mcp.load()
         for error in self.mcp.load_errors:
             log_record("mcp_config_error", error=error)
@@ -509,6 +511,30 @@ class SpatialAgentServer:
             await emit("thread.archived", command.thread_id, {})
             for source in restored:
                 await emit("thread.created", source.id, {"thread": source.to_wire()})
+        elif command.type == "update.check":
+            payload = self.updates.manifest_payload()
+            if payload:
+                await emit("update.available", "", payload)
+            else:
+                await emit("update.none", "", {})
+        elif command.type == "update.fetch":
+            offset = int(command.payload.get("offset", 0))
+            length = int(command.payload.get("length", self.updates.chunk_bytes))
+            try:
+                data, eof = self.updates.read_chunk(offset, length)
+            except UpdateError as error:
+                await emit("error", "", {"code": error.code, "message": error.message})
+                return
+            import base64 as _base64
+            await emit(
+                "update.chunk",
+                "",
+                {
+                    "offset": offset,
+                    "data": _base64.b64encode(data).decode("ascii"),
+                    "eof": eof,
+                },
+            )
         elif command.type == "thread.restore":
             try:
                 restored = await self.threads.restore_thread(command.thread_id)

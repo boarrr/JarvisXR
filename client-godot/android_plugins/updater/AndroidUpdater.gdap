@@ -1,0 +1,4 @@
+[config]
+name="AndroidUpdater"
+binary_type="local"
+binary="UpdaterPlugin.aar"

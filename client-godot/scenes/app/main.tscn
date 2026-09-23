@@ -1,4 +1,4 @@
-[gd_scene load_steps=47 format=3]
+[gd_scene load_steps=48 format=3]
 
 [ext_resource type="Script" path="res://scenes/app/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/user/user_rig.tscn" id="2_rig"]
@@ -32,6 +32,7 @@
 [ext_resource type="Script" path="res://scenes/panels/file_viewer.gd" id="30_file_viewer"]
 [ext_resource type="Script" path="res://scenes/panels/daemon_settings_panel.gd" id="31_daemon_settings"]
 [ext_resource type="Script" path="res://services/perf_probe.gd" id="32_perf_probe"]
+[ext_resource type="Script" path="res://services/updater_service.gd" id="33_updater"]
 
 [sub_resource type="Environment" id="Environment_development"]
 background_mode = 1
@@ -171,6 +172,9 @@ script = ExtResource("32_perf_probe")
 
 [node name="BackendBridge" type="Node" parent="."]
 script = ExtResource("8_backend_bridge")
+
+[node name="UpdaterService" type="Node" parent="."]
+script = ExtResource("33_updater")
 
 [node name="FakeBackendTransport" type="Node" parent="BackendBridge"]
 script = ExtResource("9_fake_transport")

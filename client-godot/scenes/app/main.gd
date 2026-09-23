@@ -19,6 +19,7 @@ var _speech_service: SpeechService = null
 @onready var _privacy_veil: PrivacyVeil = $PrivacyVeil
 @onready var _orb_manager: OrbManager = $OrbManager
 @onready var _palm_console: PalmConsole = $PalmConsole
+@onready var _updater: UpdaterService = $UpdaterService
 @onready var _workspace_panel: WorkspacePanel = $WorkspacePanel
 @onready var _diff_review_panel: DiffReviewPanel = $DiffReviewPanel
 @onready var _file_viewer: FileViewer = $FileViewer
@@ -176,6 +177,8 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_undo_last_agent()
 			elif event.target_id == "palm:uncombine":
 				_uncombine_agent(AppState.focused_thread_id)
+			elif event.target_id == "palm:update":
+				_updater.request_update()
 			elif event.target_id == "palm:cognition_toggle":
 				_cognition_layer.toggle_enabled()
 			elif event.target_id == "palm:mission_toggle":

@@ -3,6 +3,7 @@ extends Node
 
 signal backend_event_applied(event: BackendEvent)
 signal backend_command_sent(command_type: String, thread_id: String)
+signal update_message(event_type: String, payload: Dictionary)
 
 var _transport: BackendTransport = null
 var _last_event_type: String = ""
@@ -140,9 +141,11 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 			AppState.set_file_content(event.thread_id, event.payload)
 		"tool.catalog":
 			AppState.set_tool_catalog(event.payload)
+		"update.available", "update.none", "update.chunk":
+			update_message.emit(event.type, event.payload)
 		"error":
 			EventBus.debug_message.emit("Backend error: %s" % event.payload.get("message", "unknown error"))
-	if event.type != "agent.message.delta":
+	if event.type != "agent.message.delta" and event.type != "update.chunk":
 		EventBus.debug_message.emit("Backend event: %s" % event.type)
 	backend_event_applied.emit(event)
 

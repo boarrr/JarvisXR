@@ -42,6 +42,7 @@ const CHAT_BUTTONS := [
 	["SUMMARIZE", "quick:summarize"],
 	["EXPLAIN", "quick:explain_code"],
 	["PRIVACY", "quick:privacy_review"],
+	["UPDATE", "palm:update"],
 ]
 
 @export var hand_source_path: NodePath = ^"../XRRuntime/OpenXRInteractionSource"

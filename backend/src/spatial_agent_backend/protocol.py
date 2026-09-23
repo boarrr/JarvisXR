@@ -35,6 +35,8 @@ CLIENT_COMMAND_TYPES = frozenset(
         "thread.combine",
         "thread.restore",
         "thread.separate",
+        "update.check",
+        "update.fetch",
     }
 )
 
@@ -50,6 +52,8 @@ V2_COMMAND_TYPES = frozenset(
         "thread.combine",
         "thread.restore",
         "thread.separate",
+        "update.check",
+        "update.fetch",
     }
 )
 
@@ -166,6 +170,8 @@ def validate_command_payload(command: Envelope) -> None:
         "thread.combine": {"thread_ids"},
         "thread.restore": set(),
         "thread.separate": set(),
+        "update.check": set(),
+        "update.fetch": {"offset", "length"},
     }
     unexpected_fields = set(payload) - allowed_fields[command.type]
     if unexpected_fields:
@@ -189,6 +195,12 @@ def validate_command_payload(command: Envelope) -> None:
         _require_thread_id(command)
     elif command.type == "thread.separate":
         _require_thread_id(command)
+    elif command.type == "update.fetch":
+        for field_name in ("offset", "length"):
+            if field_name in payload and not isinstance(payload[field_name], int):
+                raise ProtocolError("invalid_payload", f"{field_name} must be an integer")
+            if isinstance(payload.get(field_name), int) and payload[field_name] < 0:
+                raise ProtocolError("invalid_payload", f"{field_name} must not be negative")
     elif command.type == "workspace.bind":
         _require_thread_id(command)
         _optional_text(payload, "workspace_id", 80)

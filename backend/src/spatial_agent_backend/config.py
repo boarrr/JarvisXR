@@ -67,6 +67,7 @@ class Settings:
     fake_chunk_delay_seconds: float = 0.015
     workspaces_file: Path = Path("data/workspaces.json")
     mcp_config_path: Path = Path("data/mcp.json")
+    update_manifest_path: Path = Path("../build/quest/manifest.json")
     auth_required: bool = False
     tls_certificate_path: Path | None = None
     tls_private_key_path: Path | None = None
@@ -95,6 +96,12 @@ class Settings:
             fake_chunk_delay_seconds=float(os.getenv("SPATIAL_AGENT_FAKE_DELAY", "0.015")),
             workspaces_file=Path(os.getenv("SPATIAL_AGENT_WORKSPACES_FILE", "data/workspaces.json")),
             mcp_config_path=Path(os.getenv("SPATIAL_AGENT_MCP_CONFIG", "data/mcp.json")),
+            update_manifest_path=Path(
+                os.getenv(
+                    "SPATIAL_AGENT_UPDATE_MANIFEST",
+                    str(Path(__file__).resolve().parents[3] / "build" / "quest" / "manifest.json"),
+                )
+            ),
             auth_required=_truthy(os.getenv("SPATIAL_AGENT_AUTH_REQUIRED", "0")),
             tls_certificate_path=_optional_path(os.getenv("SPATIAL_AGENT_TLS_CERT", "")),
             tls_private_key_path=_optional_path(os.getenv("SPATIAL_AGENT_TLS_KEY", "")),
