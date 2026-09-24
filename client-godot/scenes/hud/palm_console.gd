@@ -320,8 +320,19 @@ func _build_screen() -> void:
 	for child in get_children():
 		if child == _screen or child == backing:
 			continue
+		if child == _status_label:
+			# Keep the status line: it reports link state, build version, and
+			# update status to the user.
+			child.visible = true
+			continue
 		if child is MeshInstance3D or child is Label3D:
 			child.visible = false
+	if _status_label != null:
+		_status_label.font_size = 16
+		_status_label.pixel_size = 0.0024
+		_status_label.outline_size = 6
+		_status_label.modulate = Color(0.5, 1.0, 0.65, 1.0)
+		_refresh_telemetry()
 
 
 func _build_system_buttons() -> void:
