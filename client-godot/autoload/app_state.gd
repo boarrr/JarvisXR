@@ -9,6 +9,7 @@ signal hovered_target_changed(target_id: String)
 signal listening_state_changed(value: String)
 signal transcript_changed(value: String)
 signal ui_mode_changed(value: String)
+signal update_banner_changed(value: String)
 signal text_input_active_changed(value: bool)
 signal approval_requested(request: Dictionary)
 signal approval_resolved(approval_id: String)
@@ -80,6 +81,14 @@ var current_transcript: String = "":
 		transcript_changed.emit(value)
 
 var palm_console_open := false
+var update_banner := ""
+
+
+func set_update_banner(value: String) -> void:
+	if update_banner == value:
+		return
+	update_banner = value
+	update_banner_changed.emit(value)
 var ui_mode: String = "desktop":
 	set(value):
 		if ui_mode == value:

@@ -137,6 +137,14 @@ export_debug() {
 	rm -f "$client_root/android/.gdignore"
 	: > "$client_root/android/build/.gdignore"
 	find "$client_root/android" -name "*.import" -delete 2>/dev/null || true
+	version_name=$(sed -n 's/^version\/name="\(.*\)"$/\1/p' "$client_root/export_presets.cfg" | head -1)
+	if [ -n "$version_name" ]; then
+		if grep -q '^config/version=' "$client_root/project.godot"; then
+			sed -i '' "s|^config/version=.*|config/version=\"$version_name\"|" "$client_root/project.godot"
+		else
+			sed -i '' "s|^config/name=.*|&\nconfig/version=\"$version_name\"|" "$client_root/project.godot"
+		fi
+	fi
 	apk_timestamp_before=$(stat -f %m "$apk_path" 2>/dev/null || printf '0')
 	set +e
 	JAVA_HOME="$java17_home" "$godot_bin" --headless --path "$client_root" --export-debug "Quest 3/3S" "$apk_path"

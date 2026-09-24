@@ -100,6 +100,7 @@ func _ready() -> void:
 	AppState.connection_state_changed.connect(_refresh_telemetry)
 	AppState.provider_identity_changed.connect(_on_provider_identity_changed)
 	AppState.listening_state_changed.connect(_refresh_telemetry)
+	AppState.update_banner_changed.connect(_refresh_telemetry)
 	AppState.focused_thread_changed.connect(_on_state_changed)
 	AppState.thread_updated.connect(_on_thread_updated)
 	AppState.orb_layout_changed.connect(_on_layout_changed)
@@ -650,8 +651,11 @@ func _focused_label() -> String:
 
 func _refresh_telemetry(_unused: Variant = null) -> void:
 	var link := AppState.connection_state.to_upper()
-	var speech := "MIC %s" % AppState.listening_state.to_upper()
-	_status_label.text = "LINK %s  //  %s" % [link, speech]
+	var build := str(ProjectSettings.get_setting("application/config/version", "dev"))
+	if AppState.update_banner.is_empty():
+		_status_label.text = "LINK %s  //  BUILD %s" % [link, build]
+	else:
+		_status_label.text = "%s  //  BUILD %s" % [AppState.update_banner.to_upper(), build]
 	_provider_label.text = "%s  //  %s" % [
 		AppState.provider_name.to_upper(),
 		AppState.model_name.to_upper(),

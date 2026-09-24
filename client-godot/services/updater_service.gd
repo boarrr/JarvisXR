@@ -22,7 +22,7 @@ const PLUGIN_NAME := "AndroidUpdater"
 
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
 @export var chunk_bytes: int = 524288
-@export var auto_check: bool = false
+@export var auto_check: bool = true
 @export var auto_install: bool = false
 
 var _bridge: Node = null
@@ -86,6 +86,7 @@ func request_update() -> void:
 	# fall back to the in-app PackageInstaller path if no adb device is attached.
 	print("[UPDATER] request_update via daemon adb; connection=%s" % AppState.connection_state)
 	_install_requested = true
+	AppState.set_update_banner("Requesting update...")
 	_apply_via_daemon()
 
 
@@ -168,8 +169,11 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 			])
 			if str(_manifest.get("sha256", "")) == installed and not installed.is_empty():
 				update_up_to_date.emit(str(_manifest.get("version", "")))
+				AppState.set_update_banner("")
 				_install_requested = false
 				return
+			if not _install_requested:
+				AppState.set_update_banner("Update available - pinch UPDATE")
 			update_available.emit(
 				str(_manifest.get("version", "")),
 				str(_manifest.get("sha256", "")),
@@ -185,6 +189,7 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 			_downloading = false
 			# Record the applied build so the next launch is not treated as stale.
 			_write_installed_sha(str(_manifest.get("sha256", "")))
+			AppState.set_update_banner("Updated - relaunching")
 			install_launched.emit(str(payload.get("version", "")))
 			EventBus.debug_message.emit("Updated via daemon · relaunching")
 		"update.fallback":
@@ -255,6 +260,7 @@ func _on_install_result(success: bool, message: String) -> void:
 	if success and message == "installed":
 		_write_installed_sha(str(_manifest.get("sha256", "")))
 	if not success:
+		AppState.set_update_banner("Update failed")
 		update_failed.emit(message)
 
 
