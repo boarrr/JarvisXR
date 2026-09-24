@@ -613,6 +613,23 @@ class SpatialAgentServer:
             if "\tdevice" in line
         ]
         if not serials:
+            # Try to re-establish a cached wireless adb connection first.
+            ip_file = self.settings.update_manifest_path.parent / "wifi-ip"
+            if ip_file.exists():
+                ip = ip_file.read_text().strip()
+                if ip:
+                    _subprocess.run(
+                        [adb, "connect", f"{ip}:5555"], capture_output=True, text=True, timeout=10
+                    )
+                    listing = _subprocess.run(
+                        [adb, "devices"], capture_output=True, text=True, timeout=10
+                    ).stdout
+                    serials = [
+                        line.split("\t")[0]
+                        for line in listing.splitlines()[1:]
+                        if "\tdevice" in line
+                    ]
+        if not serials:
             return {"ok": False, "code": "no_adb_device", "message": "No adb device connected"}
         serial = serials[0]
         install = _subprocess.run(
