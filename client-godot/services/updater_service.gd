@@ -38,6 +38,10 @@ var _last_progress_msec := 0
 var _next_log_bytes := 0
 
 
+func _build_version() -> String:
+	return str(ProjectSettings.get_setting("application/config/version", "dev"))
+
+
 func _ready() -> void:
 	if _bridge == null:
 		_bridge = get_node_or_null(backend_bridge_path)
@@ -84,6 +88,10 @@ func request_update() -> void:
 		return
 	# Prefer the daemon installing this APK over adb (reliable on Horizon OS);
 	# fall back to the in-app PackageInstaller path if no adb device is attached.
+	if not _manifest.is_empty() and str(_manifest.get("version", "")) == _build_version():
+		print("[UPDATER] already on %s" % _build_version())
+		AppState.set_update_banner("Up to date - BUILD %s" % _build_version())
+		return
 	print("[UPDATER] request_update via daemon adb; connection=%s" % AppState.connection_state)
 	_install_requested = true
 	AppState.set_update_banner("Requesting update...")
@@ -167,7 +175,7 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 				str(_manifest.get("version", "")), installed.left(12),
 				str(_manifest.get("sha256", "")).left(12)
 			])
-			if str(_manifest.get("sha256", "")) == installed and not installed.is_empty():
+			if str(_manifest.get("version", "")) == _build_version():
 				update_up_to_date.emit(str(_manifest.get("version", "")))
 				AppState.set_update_banner("")
 				_install_requested = false
@@ -260,7 +268,7 @@ func _on_install_result(success: bool, message: String) -> void:
 	if success and message == "installed":
 		_write_installed_sha(str(_manifest.get("sha256", "")))
 	if not success:
-		AppState.set_update_banner("Update failed")
+		AppState.set_update_banner("Update failed - check adb")
 		update_failed.emit(message)
 
 

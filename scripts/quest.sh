@@ -213,6 +213,8 @@ write_manifest() {
 	short_sha=$(printf '%s' "$sha" | cut -c1-12)
 	size=$(wc -c < "$apk_path" | tr -d ' ')
 	git_rev=$(git -C "$client_root" rev-parse --short HEAD 2>/dev/null || printf 'unknown')
+	version_name=$(sed -n 's/^version\/name="\(.*\)"$/\1/p' "$client_root/export_presets.cfg" | head -1)
+	[ -n "$version_name" ] || version_name="$git_rev"
 	built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 	published="$updates_dir/spatial-agent-$short_sha.apk"
 	cp "$apk_path" "$published"
@@ -220,7 +222,8 @@ write_manifest() {
 {
   "app": "spatial-agent",
   "package": "com.spatialagent.xr",
-  "version": "$git_rev",
+  "version": "$version_name",
+  "git_rev": "$git_rev",
   "sha256": "$sha",
   "size_bytes": $size,
   "built_at": "$built_at",
