@@ -22,8 +22,8 @@ const PLUGIN_NAME := "AndroidUpdater"
 
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
 @export var chunk_bytes: int = 524288
-@export var auto_check: bool = true
-@export var auto_install: bool = true
+@export var auto_check: bool = false
+@export var auto_install: bool = false
 
 var _bridge: Node = null
 var _manifest: Dictionary = {}
