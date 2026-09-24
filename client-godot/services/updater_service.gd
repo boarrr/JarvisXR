@@ -90,6 +90,9 @@ func request_update() -> void:
 
 
 func _apply_via_daemon() -> void:
+	if not _manifest.is_empty():
+		# Record now: the daemon replaces and kills this process immediately.
+		_write_installed_sha(str(_manifest.get("sha256", "")))
 	if _bridge != null:
 		_bridge.send_command("update.apply", {})
 	else:
@@ -268,3 +271,5 @@ func _write_installed_sha(sha: String) -> void:
 	var file := FileAccess.open(INSTALLED_SHA_PATH, FileAccess.WRITE)
 	if file != null:
 		file.store_string(sha)
+		file.flush()
+		file.close()
