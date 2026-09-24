@@ -86,6 +86,10 @@ func request_update() -> void:
 	# fall back to the in-app PackageInstaller path if no adb device is attached.
 	print("[UPDATER] request_update via daemon adb; connection=%s" % AppState.connection_state)
 	_install_requested = true
+	_apply_via_daemon()
+
+
+func _apply_via_daemon() -> void:
 	if _bridge != null:
 		_bridge.send_command("update.apply", {})
 	else:
@@ -170,7 +174,7 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 			)
 			if (auto_install and not _auto_attempted) or _install_requested:
 				_auto_attempted = true
-				begin_install()
+				_apply_via_daemon()
 		"update.none":
 			update_up_to_date.emit("")
 		"update.applied":
@@ -180,7 +184,8 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 			EventBus.debug_message.emit("Updated via daemon · relaunching")
 		"update.fallback":
 			print("[UPDATER] no adb device; falling back to in-app install")
-			check_for_update()
+			if not _manifest.is_empty() and not _downloading:
+				begin_install()
 		"update.chunk":
 			_on_chunk(payload)
 
