@@ -37,7 +37,6 @@ func _ready() -> void:
 	_configure_syntax_highlighter()
 	AppState.focused_thread_changed.connect(_on_focused_thread_changed)
 	AppState.thread_updated.connect(_on_thread_updated)
-	AppState.privacy_veil_changed.connect(_on_privacy_veil_changed)
 	visible = false
 
 
@@ -49,9 +48,6 @@ func toggle() -> bool:
 
 
 func open_focused_thread() -> bool:
-	if AppState.privacy_veil_active:
-		visible = false
-		return false
 	var thread := AppState.get_thread(AppState.focused_thread_id)
 	if thread == null:
 		return false
@@ -274,10 +270,3 @@ func _on_focused_thread_changed(thread_id: String) -> void:
 func _on_thread_updated(thread: AgentThread) -> void:
 	if visible and thread.id == _displayed_thread_id:
 		_render_thread_code(thread)
-
-
-func _on_privacy_veil_changed(value: bool) -> void:
-	if value:
-		visible = false
-	elif not _displayed_thread_id.is_empty() and AppState.get_thread(_displayed_thread_id) != null:
-		open_focused_thread()

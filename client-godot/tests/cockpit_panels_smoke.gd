@@ -103,10 +103,6 @@ func _run() -> void:
 		)
 
 	_check(workspace_panel.toggle(), "workspace panel reopens after approval")
-	main.call("_toggle_privacy_veil")
-	_check(not workspace_panel.visible, "privacy veil closes cockpit panels")
-	main.call("_toggle_privacy_veil")
-	_check(workspace_panel.visible, "cockpit panels restore after the veil clears")
 
 	if not _failed:
 		print("[TEST] Cockpit panel checks passed")

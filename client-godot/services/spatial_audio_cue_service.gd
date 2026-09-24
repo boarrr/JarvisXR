@@ -29,7 +29,6 @@ func _ready() -> void:
 	AppState.focused_thread_changed.connect(_on_focused_thread_changed)
 	AppState.thread_updated.connect(_on_thread_updated)
 	AppState.approval_requested.connect(_on_approval_requested)
-	AppState.privacy_veil_changed.connect(_on_privacy_veil_changed)
 	for thread_id in AppState.ordered_thread_ids:
 		var thread := AppState.get_thread(thread_id)
 		if thread != null:
@@ -136,6 +135,3 @@ func _on_thread_updated(thread: AgentThread) -> void:
 func _on_approval_requested(request: Dictionary) -> void:
 	emit_cue("approval", _orb_position(str(request.get("thread_id", ""))))
 
-
-func _on_privacy_veil_changed(value: bool) -> void:
-	emit_cue("veil_on" if value else "veil_off", global_position)

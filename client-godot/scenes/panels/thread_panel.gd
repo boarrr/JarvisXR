@@ -31,7 +31,6 @@ func _ready() -> void:
 	_room_anchors = get_node_or_null(room_anchor_registry_path) as RoomAnchorRegistry
 	AppState.focused_thread_changed.connect(_on_focused_thread_changed)
 	AppState.thread_updated.connect(_on_thread_updated)
-	AppState.privacy_veil_changed.connect(_on_privacy_veil_changed)
 	visible = false
 	_build_pager()
 	for child in get_children():
@@ -43,9 +42,6 @@ func _ready() -> void:
 
 
 func open_thread(thread_id: String) -> bool:
-	if AppState.privacy_veil_active:
-		visible = false
-		return false
 	var thread := AppState.get_thread(thread_id)
 	if thread == null:
 		return false
@@ -113,7 +109,7 @@ func _render_thread(thread: AgentThread) -> void:
 
 
 func turn_page(direction: int) -> void:
-	if not visible or AppState.privacy_veil_active:
+	if not visible:
 		return
 	_page_index = clampi(_page_index + direction, 0, maxi(0, _pages.size() - 1))
 	_show_page()
@@ -231,10 +227,3 @@ func _on_focused_thread_changed(thread_id: String) -> void:
 func _on_thread_updated(thread: AgentThread) -> void:
 	if visible and thread.id == _displayed_thread_id:
 		_render_thread(thread)
-
-
-func _on_privacy_veil_changed(value: bool) -> void:
-	if value:
-		visible = false
-	elif not AppState.focused_thread_id.is_empty():
-		open_thread(AppState.focused_thread_id)

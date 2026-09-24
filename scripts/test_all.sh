@@ -69,7 +69,6 @@ for scene in \
 	quick_intent_smoke \
 	cognition_layer_smoke \
 	mission_topology_smoke \
-	privacy_veil_smoke \
 	spatial_services_smoke \
 	milestone_1_smoke \
 	milestone_2_smoke \

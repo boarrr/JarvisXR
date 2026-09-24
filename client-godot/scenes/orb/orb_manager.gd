@@ -42,9 +42,8 @@ func _ready() -> void:
 	AppState.thread_added.connect(_on_thread_added)
 	AppState.thread_updated.connect(_on_thread_updated)
 	AppState.thread_removed.connect(_on_thread_removed)
-	AppState.privacy_veil_changed.connect(_on_privacy_veil_changed)
 	AppState.orb_layout_changed.connect(_on_orb_layout_changed)
-	visible = not AppState.privacy_veil_active
+	visible = true
 
 	for thread_id in AppState.ordered_thread_ids:
 		var thread := AppState.get_thread(thread_id)
@@ -351,6 +350,3 @@ func _on_thread_removed(thread_id: String) -> void:
 	_orbs_by_thread_id.erase(thread_id)
 	_refresh_layout()
 
-
-func _on_privacy_veil_changed(value: bool) -> void:
-	visible = not value

@@ -13,7 +13,6 @@ signal update_banner_changed(value: String)
 signal text_input_active_changed(value: bool)
 signal approval_requested(request: Dictionary)
 signal approval_resolved(approval_id: String)
-signal privacy_veil_changed(value: bool)
 signal thread_added(thread: AgentThread)
 signal thread_updated(thread: AgentThread)
 signal thread_removed(thread_id: String)
@@ -102,13 +101,6 @@ var text_input_active: bool = false:
 			return
 		text_input_active = value
 		text_input_active_changed.emit(value)
-
-var privacy_veil_active: bool = false:
-	set(value):
-		if privacy_veil_active == value:
-			return
-		privacy_veil_active = value
-		privacy_veil_changed.emit(value)
 
 var threads_by_id: Dictionary = {}
 var ordered_thread_ids: Array[String] = []

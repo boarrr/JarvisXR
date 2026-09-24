@@ -1,4 +1,4 @@
-[gd_scene load_steps=48 format=3]
+[gd_scene load_steps=47 format=3]
 
 [ext_resource type="Script" path="res://scenes/app/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/user/user_rig.tscn" id="2_rig"]
@@ -22,7 +22,6 @@
 [ext_resource type="PackedScene" path="res://scenes/panels/quick_intent_panel.tscn" id="20_quick_intent"]
 [ext_resource type="PackedScene" path="res://scenes/cognition/cognition_layer.tscn" id="21_cognition"]
 [ext_resource type="PackedScene" path="res://scenes/mission/mission_topology.tscn" id="22_mission"]
-[ext_resource type="PackedScene" path="res://scenes/privacy/privacy_veil.tscn" id="23_privacy"]
 [ext_resource type="Script" path="res://services/room_anchor_registry.gd" id="24_anchors"]
 [ext_resource type="PackedScene" path="res://services/spatial_audio_cue_service.tscn" id="25_audio"]
 [ext_resource type="Script" path="res://scenes/hud/hand_lab.gd" id="26_hand_lab"]
@@ -191,8 +190,6 @@ script = ExtResource("14_speech")
 [node name="SpatialAudioCueService" parent="." instance=ExtResource("25_audio")]
 
 [node name="ApprovalPanel" parent="." instance=ExtResource("13_approval")]
-
-[node name="PrivacyVeil" parent="." instance=ExtResource("23_privacy")]
 
 [node name="DesktopComposer" parent="." instance=ExtResource("12_composer")]
 

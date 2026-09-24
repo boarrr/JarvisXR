@@ -45,7 +45,6 @@ func _ready() -> void:
 	add_child(_motes)
 	set_quality(1)
 	AppState.ui_mode_changed.connect(_update_visibility)
-	AppState.privacy_veil_changed.connect(_update_visibility)
 	AppState.focused_thread_changed.connect(func(_id: String) -> void: _focus_pulse = 1.0)
 	_update_visibility()
 
@@ -60,7 +59,7 @@ func _process(delta: float) -> void:
 
 
 func _update_visibility(_unused: Variant = null) -> void:
-	visible = AppState.ui_mode != "xr_hands" and not AppState.privacy_veil_active
+	visible = AppState.ui_mode != "xr_hands"
 	set_process(visible)
 
 

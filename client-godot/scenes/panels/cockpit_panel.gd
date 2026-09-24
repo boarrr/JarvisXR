@@ -27,7 +27,6 @@ var _viewport: SubViewport = null
 var _screen: MeshInstance3D = null
 var _ui_root: Control = null
 var _primary_body: RichTextLabel = null
-var _restore_after_veil := false
 var _action_targets: Array[Area3D] = []
 
 
@@ -39,7 +38,6 @@ func _ready() -> void:
 	_build_surface()
 	_build_ui(_ui_root)
 	_connect_state()
-	AppState.privacy_veil_changed.connect(_on_privacy_veil_changed)
 	visible = false
 
 
@@ -52,8 +50,6 @@ func _build_ui(_root: Control) -> void:
 
 
 func open() -> bool:
-	if AppState.privacy_veil_active:
-		return false
 	_place_in_reading_zone()
 	refresh()
 	visible = true
@@ -66,7 +62,6 @@ func refresh() -> void:
 
 func close() -> void:
 	visible = false
-	_restore_after_veil = false
 
 
 func toggle() -> bool:
@@ -235,12 +230,3 @@ func _place_in_reading_zone() -> void:
 		_room_anchors.register_anchor(
 			"cockpit_%s" % name.to_lower(), "reading_zone", global_transform
 		)
-
-
-func _on_privacy_veil_changed(value: bool) -> void:
-	if value:
-		_restore_after_veil = visible
-		visible = false
-	elif _restore_after_veil:
-		_restore_after_veil = false
-		open()

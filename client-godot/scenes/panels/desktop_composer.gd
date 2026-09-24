@@ -37,7 +37,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func begin_editing() -> bool:
-	if AppState.focused_thread_id.is_empty() or AppState.privacy_veil_active or not AppState.approval_requests.is_empty():
+	if AppState.focused_thread_id.is_empty() or not AppState.approval_requests.is_empty():
 		return false
 	_editing = true
 	_panel.visible = true

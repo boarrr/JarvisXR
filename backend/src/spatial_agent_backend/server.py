@@ -657,34 +657,62 @@ class SpatialAgentServer:
                 continue
 
             await emit("update.progress", "", {"stage": "transferring", "percent": 0})
-            proc = await asyncio.create_subprocess_exec(
-                adb, "-s", serial, "push", apk_path, remote,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-            buffer = b""
-            last_percent = -1
-            while True:
-                chunk = await proc.stdout.read(256)
-                if not chunk:
-                    break
-                buffer += chunk
-                found = _re.findall(rb"(\d{1,3})%", buffer)
-                if found:
-                    percent = min(100, int(found[-1]))
-                    if percent != last_percent:
-                        last_percent = percent
-                        await emit("update.progress", "", {"stage": "transferring", "percent": percent})
-                    buffer = buffer[-64:]
-            push_rc = await proc.wait()
-            if push_rc != 0:
+            # adb suppresses its progress bar when piped, so we push the APK in
+            # slices and report real progress from the bytes sent.
+            import os as _os
+            import tempfile as _tempfile
+
+            remote_dir = "/data/local/tmp/spatial-agent-update"
+            with suppress(Exception):
+                await run(["-s", serial, "shell", "rm", "-rf", remote_dir], 20)
+                await run(["-s", serial, "shell", "mkdir", "-p", remote_dir], 20)
+            file_size = _os.path.getsize(apk_path) or 1
+            part_size = 4 * 1024 * 1024
+            sent = 0
+            push_ok = True
+            temp_dir = _tempfile.mkdtemp(prefix="sa-update-")
+            try:
+                with open(apk_path, "rb") as handle:
+                    index = 0
+                    while True:
+                        chunk = handle.read(part_size)
+                        if not chunk:
+                            break
+                        index += 1
+                        part_path = _os.path.join(temp_dir, f"part{index:04d}")
+                        with open(part_path, "wb") as part_file:
+                            part_file.write(chunk)
+                        rc, _out = await run(
+                            ["-s", serial, "push", part_path, f"{remote_dir}/part{index:04d}"],
+                            180,
+                        )
+                        if rc != 0:
+                            push_ok = False
+                            break
+                        sent += len(chunk)
+                        await emit(
+                            "update.progress",
+                            "",
+                            {"stage": "transferring", "percent": min(99, int(sent * 100 / file_size))},
+                        )
+            finally:
+                with suppress(Exception):
+                    _os.remove(part_path)
+                with suppress(Exception):
+                    _os.rmdir(temp_dir)
+            if not push_ok:
                 last_code, last_message = "transfer_failed", "adb push failed"
                 if ":" in serial:
                     with suppress(Exception):
                         await run(["disconnect", serial], 10)
                 await asyncio.sleep(2)
                 continue
-
+            with suppress(Exception):
+                await run(
+                    ["-s", serial, "shell", f"cat {remote_dir}/part* > {remote}"],
+                    120,
+                )
+                await run(["-s", serial, "shell", "rm", "-rf", remote_dir], 20)
             await emit("update.progress", "", {"stage": "installing", "percent": 100})
             _rc, out = await run(["-s", serial, "shell", "pm", "install", "-r", remote], 900)
             if "Success" in out:

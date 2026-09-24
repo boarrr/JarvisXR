@@ -194,7 +194,7 @@ func _clear_links() -> void:
 
 
 func _refresh_visibility() -> void:
-	visible = _enabled and not _blocked and not AppState.privacy_veil_active
+	visible = _enabled and not _blocked
 
 
 func _status_color(thread: AgentThread) -> Color:

@@ -24,7 +24,6 @@ func _ready() -> void:
 	_room_anchors = get_node_or_null(room_anchor_registry_path) as RoomAnchorRegistry
 	AppState.approval_requested.connect(_on_approval_requested)
 	AppState.approval_resolved.connect(_on_approval_resolved)
-	AppState.privacy_veil_changed.connect(_on_privacy_veil_changed)
 	visible = false
 	_show_next_approval()
 
@@ -38,9 +37,6 @@ func is_open() -> bool:
 
 
 func _show_next_approval() -> void:
-	if AppState.privacy_veil_active:
-		visible = false
-		return
 	var request := AppState.get_next_approval()
 	if request.is_empty():
 		visible = false
@@ -79,10 +75,3 @@ func _on_approval_resolved(approval_id: String) -> void:
 
 func get_impact_preview() -> ApprovalImpactPreview:
 	return _impact_preview
-
-
-func _on_privacy_veil_changed(value: bool) -> void:
-	if value:
-		visible = false
-	else:
-		_show_next_approval()

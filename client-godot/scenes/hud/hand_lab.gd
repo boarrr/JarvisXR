@@ -15,7 +15,7 @@ var _quality := 1
 var _auto := true
 var _slow_windows := 0
 var _fast_windows := 0
-var _checks := {"focus": false, "code": false, "scroll": false, "grab": false, "privacy": false, "ask": false}
+var _checks := {"focus": false, "code": false, "scroll": false, "grab": false, "ask": false}
 var _previous_scroll := 0.0
 var _previous_max_fps := 0
 
@@ -38,7 +38,6 @@ func start(main: Node) -> HandLabSource:
 	_build_ui()
 	_apply_quality(1)
 	source.interaction_event.connect(_observe_gesture)
-	AppState.privacy_veil_changed.connect(func(value: bool) -> void: _checks.privacy = _checks.privacy or value)
 	return source
 
 
@@ -99,7 +98,7 @@ func _build_ui() -> void:
 	for entry in [
 		["Next agent", "palm:focus_next"], ["Code", "palm:code_toggle"],
 		["Ask", "palm:voice_toggle"], ["Cognition", "palm:cognition_toggle"],
-		["Mission map", "palm:mission_toggle"], ["Privacy", "palm:privacy_toggle"],
+		["Mission map", "palm:mission_toggle"],
 		["Dismiss", "palm:dismiss"],
 	]:
 		_button(actions, entry[0], source.send_action.bind(entry[1]))
@@ -173,11 +172,8 @@ func _refresh_ui() -> void:
 		"PINCH · drag code vertically to scroll" if source.pinching else "AIM · click an orb or palm button"
 	))
 	_hint.text = "%s    /    RMB look · WASD move · Enter type · Tab next · C code" % status
-	if AppState.privacy_veil_active:
-		_guide.text = "PRIVACY VEIL ACTIVE\nUse Privacy to reveal the workspace.\nBackground agents may still be running."
-		return
 	_guide.text = "NO HEADSET REQUIRED\nMouse = right hand · left click = pinch\nShift + left drag = two-hand code move\nWhile grabbing: wheel = scale · Alt+wheel = yaw\nP = palm menu · T = tracking loss · Home = reset\nF1 = hide this guide\n\nPRACTICE CIRCUIT  (synthetic input)"
-	for entry in [["focus", "Select an agent"], ["code", "Open Code Trace"], ["scroll", "Scroll the code"], ["grab", "Move with two hands"], ["privacy", "Try Privacy Veil"], ["ask", "Send a quick intent"]]:
+	for entry in [["focus", "Select an agent"], ["code", "Open Code Trace"], ["scroll", "Scroll the code"], ["grab", "Move with two hands"], ["ask", "Send a quick intent"]]:
 		_guide.text += "\n%s  %s" % ["✓" if _checks[entry[0]] else "○", entry[1]]
 
 

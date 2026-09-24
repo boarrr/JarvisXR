@@ -33,7 +33,6 @@ const SYSTEM_BUTTONS := [
 	["UNDO", "palm:undo", ""],
 	["COGNITION", "palm:cognition_toggle", "CognitionTarget"],
 	["MISSION MAP", "palm:mission_toggle", "MissionTarget"],
-	["PRIVACY VEIL", "palm:privacy_toggle", "PrivacyTarget"],
 	["UNCOMBINE", "palm:uncombine", ""],
 ]
 
@@ -104,7 +103,6 @@ func _ready() -> void:
 	AppState.focused_thread_changed.connect(_on_state_changed)
 	AppState.thread_updated.connect(_on_thread_updated)
 	AppState.orb_layout_changed.connect(_on_layout_changed)
-	AppState.privacy_veil_changed.connect(_on_veil_changed)
 	scale = Vector3.ONE * console_scale
 	_set_console_visible(false)
 	_summary_label.visible = false
@@ -117,7 +115,6 @@ func _physics_process(delta: float) -> void:
 		AppState.ui_mode not in ["xr_hands", "hand_lab"]
 		or _hand_source == null
 		or _user_rig == null
-		or AppState.privacy_veil_active
 	):
 		_dwell = 0.0
 		_hide_panel()
@@ -692,7 +689,3 @@ func _on_thread_updated(_thread: AgentThread) -> void:
 
 func _on_layout_changed(_thread_id: String) -> void:
 	_refresh_screen()
-
-
-func _on_veil_changed(_value: bool) -> void:
-	_refresh_telemetry()

@@ -109,13 +109,7 @@ func _run() -> void:
 	source._notification(NOTIFICATION_APPLICATION_FOCUS_OUT)
 	_check(not source.get_pointer_state().is_selecting and not viewer._bimanual_active, "window focus loss ends the grab and releases pinch")
 	source._notification(NOTIFICATION_APPLICATION_FOCUS_IN)
-	source.send_action("palm:privacy_toggle")
 	var focus_before := AppState.focused_thread_id
-	source.send_action("palm:focus_next")
-	_check(AppState.focused_thread_id == focus_before and not viewer.visible, "lab toolbar cannot bypass privacy")
-	_check(not main.get_node("ReactorField").visible, "privacy conceals reactive field")
-	_check(not (main.get_node("DesktopComposer") as DesktopComposer).begin_editing(), "typing cannot reopen hidden content during privacy")
-	source.send_action("palm:privacy_toggle")
 	(main.get_node("BackendBridge/FakeBackendTransport") as FakeBackendTransport).advance_streams(10.0)
 	var router := main.get_node("CommandRouter") as CommandRouter
 	_check(router.submit_text("/tool note Hand Lab test"), "local demo requests explicit tool consent")
@@ -125,6 +119,7 @@ func _run() -> void:
 	source.send_action("approval:deny")
 	_check(AppState.approval_requests.is_empty(), "explicit denial still works through the hand source")
 	var panel := main.get_node("ThreadPanel") as ThreadPanel
+	panel.open_thread(AppState.focused_thread_id)
 	panel._paginate("Long transcript with preserved words and explicit paging. ".repeat(80))
 	_check(panel._pages.size() > 1, "long transcripts paginate instead of overflowing the glass")
 	for page in panel._pages:
@@ -179,7 +174,7 @@ func _run() -> void:
 		print("[PERF] Code/cognition/mission workspace: %s" % lab._metrics.text)
 		print("[TEST] Hand Lab screenshot saved")
 	if not _failed:
-		print("[TEST] Hand Lab joint input, raycast, bimanual, privacy and performance checks passed")
+		print("[TEST] Hand Lab joint input, raycast, bimanual and performance checks passed")
 	main.queue_free()
 	await get_tree().process_frame
 	get_tree().quit(1 if _failed else 0)

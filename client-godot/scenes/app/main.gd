@@ -16,7 +16,6 @@ var _speech_service: SpeechService = null
 @onready var _thread_panel: ThreadPanel = $ThreadPanel
 @onready var _desktop_composer: DesktopComposer = $DesktopComposer
 @onready var _pointer_hud: CanvasLayer = $PointerHUD
-@onready var _privacy_veil: PrivacyVeil = $PrivacyVeil
 @onready var _orb_manager: OrbManager = $OrbManager
 @onready var _palm_console: PalmConsole = $PalmConsole
 @onready var _updater: UpdaterService = $UpdaterService
@@ -29,8 +28,6 @@ var _approval_mode_active := false
 var _restore_code_viewer := false
 var _restore_thread_panel := false
 var _restore_quick_intent_panel := false
-var _restore_quick_after_privacy := false
-var _restore_composer_after_privacy := false
 var _pending_spawn_position: Variant = null
 var _pending_restore_offsets: Dictionary = {}
 var _combine_restore_points: Dictionary = {}
@@ -139,14 +136,8 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 			if AppState.hovered_target_id == event.target_id:
 				AppState.hovered_target_id = ""
 		InteractionEvent.Type.SELECT:
-			if (
-				_approval_mode_active
-				and not event.target_id.begins_with("approval:")
-				and event.target_id != "palm:privacy_toggle"
-			):
+			if _approval_mode_active and not event.target_id.begins_with("approval:"):
 				EventBus.debug_message.emit("Resolve the approval gate before continuing")
-			elif AppState.privacy_veil_active and event.target_id != "palm:privacy_toggle":
-				EventBus.debug_message.emit("Privacy veil active")
 			elif event.target_id == "approval:approve":
 				_respond_to_next_approval("approve")
 			elif event.target_id == "approval:deny":
@@ -203,8 +194,6 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_daemon_settings_panel.handle_action(event.target_id)
 			elif event.target_id.begins_with("palm_screen:"):
 				_palm_console.handle_screen_action(event.target_id)
-			elif event.target_id == "palm:privacy_toggle":
-				_toggle_privacy_veil()
 			elif event.target_id == "palm:voice_toggle":
 				if _speech_service.is_available():
 					_toggle_voice_input()
@@ -463,32 +452,6 @@ func _respond_to_next_approval(decision: String) -> bool:
 	return accepted
 
 
-func _toggle_privacy_veil() -> bool:
-	var next_value := not AppState.privacy_veil_active
-	if next_value and AppState.listening_state == SpeechService.STATE_LISTENING:
-		_speech_service.stop_listening()
-	if next_value:
-		_restore_quick_after_privacy = _quick_intent_panel.visible
-		_restore_composer_after_privacy = _desktop_composer.visible
-	AppState.privacy_veil_active = next_value
-	_quick_intent_panel.visible = (
-		false
-		if next_value
-		else _restore_quick_after_privacy and not _approval_mode_active
-	)
-	_desktop_composer.visible = (
-		false
-		if next_value
-		else _restore_composer_after_privacy and not _approval_mode_active
-	)
-	_cognition_layer.set_blocked(next_value or _approval_mode_active)
-	_mission_topology.set_blocked(next_value or _approval_mode_active)
-	EventBus.debug_message.emit("Privacy veil %s" % ("active" if next_value else "cleared"))
-	if not next_value:
-		_restore_quick_after_privacy = false
-		_restore_composer_after_privacy = false
-	return next_value
-
 
 func _begin_voice_input() -> void:
 	if AppState.focused_thread_id.is_empty():
@@ -564,14 +527,6 @@ func _on_approval_resolved(_approval_id: String) -> void:
 	if not _approval_mode_active or not AppState.approval_requests.is_empty():
 		return
 	_approval_mode_active = false
-	if AppState.privacy_veil_active:
-		_code_viewer.visible = false
-		_thread_panel.visible = false
-		_quick_intent_panel.visible = false
-		_cognition_layer.set_blocked(true)
-		_mission_topology.set_blocked(true)
-		_desktop_composer.visible = false
-		return
 	_code_viewer.visible = _restore_code_viewer
 	_thread_panel.visible = _restore_thread_panel
 	_quick_intent_panel.visible = _restore_quick_intent_panel
