@@ -524,7 +524,7 @@ class SpatialAgentServer:
             if package is None:
                 await emit("error", "", {"code": "no_update", "message": "No update is published"})
                 return
-            result = await asyncio.to_thread(self._adb_install, str(package.apk_path))
+            result = await self._adb_install(str(package.apk_path), emit)
             if result.get("ok"):
                 log_record("update_applied", session_id=session.id, version=package.version)
                 await emit("update.applied", "", {"version": package.version})
@@ -592,17 +592,15 @@ class SpatialAgentServer:
         else:
             await emit("error", command.thread_id, {"code": "unknown_command", "message": "Unknown command"})
 
-    def _adb_install(self, apk_path: str) -> dict[str, Any]:
-        """Install the published APK over adb, surviving a flaky transport.
+    async def _adb_install(self, apk_path: str, emit: Any) -> dict[str, Any]:
+        """Install the published APK over adb, streaming progress to the client.
 
-        Wireless adb is unreliable: the host server restarts, the headset drops
-        to "offline" when idle, and tcpip resets on reboot. We start the server,
-        prefer USB, reconnect the cached wireless address, and retry the whole
-        install a few times before giving up.
+        We push then `pm install` (instead of `adb install`) so we can report
+        transfer percentage, and we start the server, prefer USB, reconnect the
+        cached wireless address, and retry the whole thing a few times.
         """
+        import re as _re
         import shutil as _shutil
-        import subprocess as _subprocess
-        import time as _time
 
         adb = _shutil.which("adb") or str(
             Path.home() / "Library/Android/sdk/platform-tools/adb"
@@ -613,82 +611,98 @@ class SpatialAgentServer:
         ip_file = self.settings.update_manifest_path.parent / "wifi-ip"
         cached_ip = ip_file.read_text().strip() if ip_file.exists() else ""
 
-        def run(args: list[str], timeout: float = 30) -> Any:
-            return _subprocess.run(
-                [adb, *args], capture_output=True, text=True, timeout=timeout
+        async def run(args: list[str], timeout: float = 30.0) -> tuple[int, str]:
+            proc = await asyncio.create_subprocess_exec(
+                adb, *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
             )
+            try:
+                out, _ = await asyncio.wait_for(proc.communicate(), timeout)
+            except asyncio.TimeoutError:
+                with suppress(Exception):
+                    proc.kill()
+                return 1, "timeout"
+            return proc.returncode, (out or b"").decode("utf-8", errors="replace")
 
-        def devices() -> list[tuple[str, str]]:
-            out = run(["devices"], 10).stdout
-            rows = [
-                line.split("\t")
-                for line in out.splitlines()[1:]
-                if "\t" in line
-            ]
+        def parse_devices(text: str) -> list[tuple[str, str]]:
+            rows = [line.split("\t") for line in text.splitlines()[1:] if "\t" in line]
             return [(row[0].strip(), row[1].strip()) for row in rows if len(row) >= 2]
 
-        def pick_serial() -> str:
-            current = devices()
-            usb = [name for name, state in current if ":" not in name and state == "device"]
+        async def pick() -> str:
+            _rc, out = await run(["devices"], 10)
+            devs = parse_devices(out)
+            usb = [name for name, state in devs if ":" not in name and state == "device"]
             if usb:
                 return usb[0]
-            wifi = [name for name, state in current if ":" in name and state == "device"]
-            if wifi:
-                return wifi[0]
-            return ""
+            wifi = [name for name, state in devs if ":" in name and state == "device"]
+            return wifi[0] if wifi else ""
 
-        try:
-            run(["start-server"], 20)
-        except Exception:  # noqa: BLE001
-            pass
+        with suppress(Exception):
+            await run(["start-server"], 20)
 
-        last_code = "no_adb_device"
-        last_message = "No adb device connected"
+        last_code, last_message = "no_adb_device", "No adb device connected"
+        remote = "/data/local/tmp/spatial-agent-update.apk"
         for _attempt in range(4):
-            serial = pick_serial()
+            serial = await pick()
             if not serial and cached_ip:
                 with suppress(Exception):
-                    run(["disconnect", f"{cached_ip}:5555"], 10)
-                    run(["connect", f"{cached_ip}:5555"], 10)
-                _time.sleep(2)
-                serial = pick_serial()
+                    await run(["disconnect", f"{cached_ip}:5555"], 10)
+                    await run(["connect", f"{cached_ip}:5555"], 10)
+                await asyncio.sleep(2)
+                serial = await pick()
             if not serial:
-                last_code = "no_adb_device"
-                last_message = "No adb device connected"
-                _time.sleep(3)
+                last_code, last_message = "no_adb_device", "No adb device connected"
+                await asyncio.sleep(3)
                 continue
-            try:
-                install = run(["-s", serial, "install", "-r", apk_path], 1200)
-            except Exception as error:  # noqa: BLE001
-                last_code = "install_failed"
-                last_message = str(error)[:400]
-                _time.sleep(3)
+
+            await emit("update.progress", "", {"stage": "transferring", "percent": 0})
+            proc = await asyncio.create_subprocess_exec(
+                adb, "-s", serial, "push", apk_path, remote,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            buffer = b""
+            last_percent = -1
+            while True:
+                chunk = await proc.stdout.read(256)
+                if not chunk:
+                    break
+                buffer += chunk
+                found = _re.findall(rb"(\d{1,3})%", buffer)
+                if found:
+                    percent = min(100, int(found[-1]))
+                    if percent != last_percent:
+                        last_percent = percent
+                        await emit("update.progress", "", {"stage": "transferring", "percent": percent})
+                    buffer = buffer[-64:]
+            push_rc = await proc.wait()
+            if push_rc != 0:
+                last_code, last_message = "transfer_failed", "adb push failed"
+                if ":" in serial:
+                    with suppress(Exception):
+                        await run(["disconnect", serial], 10)
+                await asyncio.sleep(2)
                 continue
-            output = (install.stdout or "") + (install.stderr or "")
-            if "Success" in output:
+
+            await emit("update.progress", "", {"stage": "installing", "percent": 100})
+            _rc, out = await run(["-s", serial, "shell", "pm", "install", "-r", remote], 900)
+            if "Success" in out:
                 with suppress(Exception):
-                    run(
-                        [
-                            "-s",
-                            serial,
-                            "shell",
-                            "monkey",
-                            "-p",
-                            "com.spatialagent.xr",
-                            "-c",
-                            "android.intent.category.LAUNCHER",
-                            "1",
-                        ],
+                    await run(["-s", serial, "shell", "rm", "-f", remote], 20)
+                await emit("update.progress", "", {"stage": "relaunching"})
+                with suppress(Exception):
+                    await run(
+                        ["-s", serial, "shell", "monkey", "-p", "com.spatialagent.xr",
+                         "-c", "android.intent.category.LAUNCHER", "1"],
                         30,
                     )
                 return {"ok": True}
-            last_code = "install_failed"
-            last_message = output[-400:]
-            # Heal the transport before the next attempt.
+            last_code, last_message = "install_failed", out[-400:]
             if ":" in serial:
                 with suppress(Exception):
-                    run(["disconnect", serial], 10)
-            _time.sleep(3)
+                    await run(["disconnect", serial], 10)
+            await asyncio.sleep(2)
 
         return {"ok": False, "code": last_code, "message": last_message}
 

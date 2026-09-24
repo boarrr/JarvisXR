@@ -192,6 +192,17 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 				_apply_via_daemon()
 		"update.none":
 			update_up_to_date.emit("")
+		"update.progress":
+			var stage := str(payload.get("stage", ""))
+			match stage:
+				"transferring":
+					AppState.set_update_banner("Updating %d%%" % int(payload.get("percent", 0)))
+				"installing":
+					AppState.set_update_banner("Installing...")
+				"relaunching":
+					AppState.set_update_banner("Updated - relaunching")
+				_:
+					AppState.set_update_banner("Updating...")
 		"update.applied":
 			print("[UPDATER] daemon installed %s over adb" % str(payload.get("version", "")))
 			_downloading = false
