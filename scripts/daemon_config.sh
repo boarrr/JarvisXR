@@ -48,4 +48,5 @@ rm -f "$config_file"
 
 printf '%s\n' "Seeded device daemon config: wss://$daemon_host:8787/ws with the dev CA."
 printf '%s\n' "A fresh bootstrap device token was written for this headset."
+"$project_root/scripts/adb_tune.sh" >/dev/null 2>&1 || true
 printf '%s\n' "Next: ./scripts/run_backend.sh --lan  then relaunch Spatial Agent XR."

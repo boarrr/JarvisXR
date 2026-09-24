@@ -593,72 +593,104 @@ class SpatialAgentServer:
             await emit("error", command.thread_id, {"code": "unknown_command", "message": "Unknown command"})
 
     def _adb_install(self, apk_path: str) -> dict[str, Any]:
+        """Install the published APK over adb, surviving a flaky transport.
+
+        Wireless adb is unreliable: the host server restarts, the headset drops
+        to "offline" when idle, and tcpip resets on reboot. We start the server,
+        prefer USB, reconnect the cached wireless address, and retry the whole
+        install a few times before giving up.
+        """
         import shutil as _shutil
         import subprocess as _subprocess
+        import time as _time
 
         adb = _shutil.which("adb") or str(
             Path.home() / "Library/Android/sdk/platform-tools/adb"
         )
         if not Path(adb).exists():
             return {"ok": False, "code": "no_adb", "message": "adb not found on the daemon host"}
+
+        ip_file = self.settings.update_manifest_path.parent / "wifi-ip"
+        cached_ip = ip_file.read_text().strip() if ip_file.exists() else ""
+
+        def run(args: list[str], timeout: float = 30) -> Any:
+            return _subprocess.run(
+                [adb, *args], capture_output=True, text=True, timeout=timeout
+            )
+
+        def devices() -> list[tuple[str, str]]:
+            out = run(["devices"], 10).stdout
+            rows = [
+                line.split("\t")
+                for line in out.splitlines()[1:]
+                if "\t" in line
+            ]
+            return [(row[0].strip(), row[1].strip()) for row in rows if len(row) >= 2]
+
+        def pick_serial() -> str:
+            current = devices()
+            usb = [name for name, state in current if ":" not in name and state == "device"]
+            if usb:
+                return usb[0]
+            wifi = [name for name, state in current if ":" in name and state == "device"]
+            if wifi:
+                return wifi[0]
+            return ""
+
         try:
-            listing = _subprocess.run(
-                [adb, "devices"], capture_output=True, text=True, timeout=10
-            ).stdout
-        except Exception as error:  # noqa: BLE001
-            return {"ok": False, "code": "no_adb", "message": str(error)}
-        serials = [
-            line.split("\t")[0]
-            for line in listing.splitlines()[1:]
-            if "\tdevice" in line
-        ]
-        if not serials:
-            # Try to re-establish a cached wireless adb connection first.
-            ip_file = self.settings.update_manifest_path.parent / "wifi-ip"
-            if ip_file.exists():
-                ip = ip_file.read_text().strip()
-                if ip:
-                    _subprocess.run(
-                        [adb, "connect", f"{ip}:5555"], capture_output=True, text=True, timeout=10
+            run(["start-server"], 20)
+        except Exception:  # noqa: BLE001
+            pass
+
+        last_code = "no_adb_device"
+        last_message = "No adb device connected"
+        for _attempt in range(4):
+            serial = pick_serial()
+            if not serial and cached_ip:
+                with suppress(Exception):
+                    run(["disconnect", f"{cached_ip}:5555"], 10)
+                    run(["connect", f"{cached_ip}:5555"], 10)
+                _time.sleep(2)
+                serial = pick_serial()
+            if not serial:
+                last_code = "no_adb_device"
+                last_message = "No adb device connected"
+                _time.sleep(3)
+                continue
+            try:
+                install = run(["-s", serial, "install", "-r", apk_path], 1200)
+            except Exception as error:  # noqa: BLE001
+                last_code = "install_failed"
+                last_message = str(error)[:400]
+                _time.sleep(3)
+                continue
+            output = (install.stdout or "") + (install.stderr or "")
+            if "Success" in output:
+                with suppress(Exception):
+                    run(
+                        [
+                            "-s",
+                            serial,
+                            "shell",
+                            "monkey",
+                            "-p",
+                            "com.spatialagent.xr",
+                            "-c",
+                            "android.intent.category.LAUNCHER",
+                            "1",
+                        ],
+                        30,
                     )
-                    listing = _subprocess.run(
-                        [adb, "devices"], capture_output=True, text=True, timeout=10
-                    ).stdout
-                    serials = [
-                        line.split("\t")[0]
-                        for line in listing.splitlines()[1:]
-                        if "\tdevice" in line
-                    ]
-        if not serials:
-            return {"ok": False, "code": "no_adb_device", "message": "No adb device connected"}
-        serial = serials[0]
-        install = _subprocess.run(
-            [adb, "-s", serial, "install", "-r", apk_path],
-            capture_output=True,
-            text=True,
-            timeout=900,
-        )
-        output = (install.stdout or "") + (install.stderr or "")
-        if "Success" not in output:
-            return {"ok": False, "code": "install_failed", "message": output[-400:]}
-        _subprocess.run(
-            [
-                adb,
-                "-s",
-                serial,
-                "shell",
-                "monkey",
-                "-p",
-                "com.spatialagent.xr",
-                "-c",
-                "android.intent.category.LAUNCHER",
-                "1",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return {"ok": True}
+                return {"ok": True}
+            last_code = "install_failed"
+            last_message = output[-400:]
+            # Heal the transport before the next attempt.
+            if ":" in serial:
+                with suppress(Exception):
+                    run(["disconnect", serial], 10)
+            _time.sleep(3)
+
+        return {"ok": False, "code": last_code, "message": last_message}
 
     def _tool_catalog_payload(self) -> dict[str, Any]:
         return {

@@ -15,7 +15,7 @@ manifest_path="$project_root/build/quest/manifest.json"
 updates_dir="$project_root/build/quest/updates"
 
 usage() {
-	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|updater-plugin|deploy|wifi|wifi-install|deploy-wifi|manifest"
+	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|updater-plugin|deploy|wifi|wifi-install|deploy-wifi|manifest|export-release|deploy-release|deploy-release-wifi|adb|tune"
 }
 
 require_command() {
@@ -162,6 +162,46 @@ export_debug() {
 	write_manifest
 }
 
+export_release() {
+	# Release build with compressed native libraries: ~30 MB instead of ~95 MB,
+	# which makes Wi-Fi updates far faster and more reliable.
+	if [ ! -x "$godot_bin" ]; then
+		printf '%s\n' "Godot executable not found: $godot_bin" >&2
+		exit 2
+	fi
+	mkdir -p "$(dirname -- "$apk_path")"
+	java17_home=$(resolve_java17_home || true)
+	if [ -z "$java17_home" ]; then
+		printf '%s\n' "A JDK was not found. Set JAVA_HOME." >&2
+		exit 2
+	fi
+	mkdir -p "$client_root/android/build"
+	rm -f "$client_root/android/.gdignore"
+	: > "$client_root/android/build/.gdignore"
+	find "$client_root/android" -name "*.import" -delete 2>/dev/null || true
+	version_name=$(sed -n 's/^version\/name="\(.*\)"$/\1/p' "$client_root/export_presets.cfg" | head -1)
+	if [ -n "$version_name" ]; then
+		if grep -q '^config/version=' "$client_root/project.godot"; then
+			sed -i '' "s|^config/version=.*|config/version=\"$version_name\"|" "$client_root/project.godot"
+		else
+			sed -i '' "s|^config/name=.*|&\nconfig/version=\"$version_name\"|" "$client_root/project.godot"
+		fi
+	fi
+	apk_timestamp_before=$(stat -f %m "$apk_path" 2>/dev/null || printf '0')
+	set +e
+	JAVA_HOME="$java17_home" "$godot_bin" --headless --path "$client_root" --export-release "Quest 3/3S" "$apk_path"
+	export_status=$?
+	set -e
+	apk_timestamp_after=$(stat -f %m "$apk_path" 2>/dev/null || printf '0')
+	if [ "$apk_timestamp_after" = "$apk_timestamp_before" ]; then
+		printf '%s\n' "Release export did not produce a fresh APK (exit $export_status)." >&2
+		exit 1
+	fi
+	printf '%s\n' "Exported: $apk_path ($(du -h "$apk_path" | cut -f1))"
+	printf '%s\n' "Update payload size: $(du -h "$apk_path" | cut -f1)"
+	write_manifest
+}
+
 write_manifest() {
 	if [ ! -f "$apk_path" ]; then
 		printf '%s\n' "APK not found; run ./scripts/quest.sh export first." >&2
@@ -284,19 +324,19 @@ wifi_enable() {
 
 wireless_install() {
 	require_command "$adb_bin"
-	ip=$(headset_wifi_ip || true)
-	if [ -z "$ip" ]; then
-		printf '%s\n' "No wireless device; run ./scripts/quest.sh wifi with USB attached." >&2
-		exit 2
-	fi
 	if [ ! -f "$apk_path" ]; then
 		printf '%s\n' "APK not found; run ./scripts/quest.sh export first." >&2
 		exit 2
 	fi
-	"$adb_bin" -s "$ip:5555" push "$apk_path" /data/local/tmp/spatial-agent.apk
-	"$adb_bin" -s "$ip:5555" shell pm install -r /data/local/tmp/spatial-agent.apk
-	"$adb_bin" -s "$ip:5555" shell rm -f /data/local/tmp/spatial-agent.apk
-	printf '%s\n' "Installed over Wi-Fi to $ip:5555"
+	serial=$("$project_root/scripts/adb_ensure.sh" --prefer wifi --wait 20 2>/dev/null || true)
+	if [ -z "$serial" ]; then
+		printf '%s\n' "No wireless adb device; arm it with ./scripts/quest.sh wifi (USB)." >&2
+		exit 2
+	fi
+	# Streaming install is more resilient than push+pm over flaky Wi-Fi, and
+	# adb_ensure already healed the transport.
+	"$adb_bin" -s "$serial" install -r "$apk_path"
+	printf '%s\n' "Installed over Wi-Fi to $serial"
 }
 
 resolve_android_java_home() {
@@ -349,7 +389,13 @@ install_apk() {
 		printf '%s\n' "APK not found; run ./scripts/quest.sh export first." >&2
 		exit 2
 	fi
-	"$adb_bin" install -r "$apk_path"
+	serial=$("$project_root/scripts/adb_ensure.sh" --wait 20 2>/dev/null || true)
+	if [ -z "$serial" ]; then
+		printf '%s\n' "No usable adb device (USB or wireless)." >&2
+		exit 2
+	fi
+	printf '%s\n' "Installing to $serial ..."
+	"$adb_bin" -s "$serial" install -r "$apk_path"
 }
 
 action=${1:-doctor}
@@ -367,6 +413,12 @@ case "$action" in
 		;;
 	install)
 		install_apk
+		;;
+	adb)
+		"$project_root/scripts/adb_ensure.sh" --wait 20
+		;;
+	tune)
+		"$project_root/scripts/adb_tune.sh"
 		;;
 	wifi)
 		wifi_enable
@@ -393,6 +445,17 @@ case "$action" in
 		;;
 	manifest)
 		write_manifest
+		;;
+	export-release)
+		export_release
+		;;
+	deploy-release)
+		export_release
+		install_apk
+		;;
+	deploy-release-wifi)
+		export_release
+		wireless_install
 		;;
 	deploy)
 		export_debug

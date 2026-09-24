@@ -328,9 +328,13 @@ func _build_screen() -> void:
 		if child is MeshInstance3D or child is Label3D:
 			child.visible = false
 	if _status_label != null:
-		_status_label.font_size = 16
-		_status_label.pixel_size = 0.0024
-		_status_label.outline_size = 6
+		# Sit on the panel's bottom edge (above the legacy WORKSPACE label).
+		_status_label.position = Vector3(SCREEN_CENTER.x, -0.214, 0.026)
+		_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_status_label.width = 340.0
+		_status_label.font_size = 12
+		_status_label.pixel_size = 0.0015
+		_status_label.outline_size = 5
 		_status_label.modulate = Color(0.5, 1.0, 0.65, 1.0)
 		_refresh_telemetry()
 
