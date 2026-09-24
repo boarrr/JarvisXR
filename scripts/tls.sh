@@ -19,10 +19,17 @@ if [ "$force" -eq 0 ] && [ -f "$cert_dir/server.crt" ] && [ "$current" = "$desir
 	exit 0
 fi
 
-printf '%s\n' "Generating dev CA and server certificate for $desired"
-openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 730 \
-	-subj "/CN=Spatial Agent Dev CA" \
-	-keyout "$cert_dir/ca.key" -out "$cert_dir/ca.crt" >/dev/null 2>&1
+printf '%s\n' "Preparing development certificates for $desired"
+# Keep the CA stable across network changes so already-paired devices keep
+# trusting the daemon; only the server certificate is reissued.
+if [ -f "$cert_dir/ca.key" ] && [ -f "$cert_dir/ca.crt" ]; then
+	printf '%s\n' "Reusing existing dev CA"
+else
+	printf '%s\n' "Creating dev CA"
+	openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 730 \
+		-subj "/CN=Spatial Agent Dev CA" \
+		-keyout "$cert_dir/ca.key" -out "$cert_dir/ca.crt" >/dev/null 2>&1
+fi
 
 san="DNS:localhost,IP:127.0.0.1"
 if [ -n "$lan_ip" ]; then

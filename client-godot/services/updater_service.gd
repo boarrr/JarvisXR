@@ -180,6 +180,8 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 		"update.applied":
 			print("[UPDATER] daemon installed %s over adb" % str(payload.get("version", "")))
 			_downloading = false
+			# Record the applied build so the next launch is not treated as stale.
+			_write_installed_sha(str(_manifest.get("sha256", "")))
 			install_launched.emit(str(payload.get("version", "")))
 			EventBus.debug_message.emit("Updated via daemon · relaunching")
 		"update.fallback":
