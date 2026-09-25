@@ -23,6 +23,9 @@ const BUTTON_HEIGHT_PX := 62.0
 const HEADER_HEIGHT_PX := 52.0
 const FOOTER_ROWS := 2
 const FOOTER_HEIGHT_PX := BUTTON_HEIGHT_PX * FOOTER_ROWS + 22.0
+# Keep the chat page short enough that no line hides behind the quick-action
+# buttons; older messages are reached by swiping (page by page).
+const CHAT_MESSAGES_PER_PAGE := 4
 
 # Label, semantic target, and the existing Area3D node that carries it (empty
 # node means the panel creates its own touch target).
@@ -455,10 +458,12 @@ func _render_chat() -> void:
 		return
 	var lines: PackedStringArray = []
 	var messages := thread.messages
-	var start := clampi(messages.size() - 8 - _chat_offset, 0, messages.size())
+	var page_size := CHAT_MESSAGES_PER_PAGE
 	var end := clampi(messages.size() - _chat_offset, 0, messages.size())
-	if start >= end and messages.size() > 0:
-		start = maxi(0, end - 8)
+	var start := clampi(end - page_size, 0, messages.size())
+	if end <= start and messages.size() > 0:
+		end = messages.size()
+		start = maxi(0, end - page_size)
 	for index in range(start, end):
 		var message := messages[index]
 		var speaker := "AGENT"
@@ -474,14 +479,20 @@ func _render_chat() -> void:
 				speaker = "SYS"
 				color = "#6b9aa5"
 		var content := message.content.strip_edges().replace("[", "[lb]")
-		if content.length() > 320:
-			content = content.substr(0, 317) + "..."
+		if content.length() > 200:
+			content = content.substr(0, 197) + "..."
 		lines.append("[color=%s]%s[/color] %s" % [color, speaker, content])
 	if lines.is_empty():
 		lines.append("[color=#6b9aa5]No messages yet. Use a quick action below.[/color]")
-	if _chat_offset > 0:
-		lines.append("")
-		lines.append("[color=#6b9aa5]swipe up for newer messages[/color]")
+	elif messages.size() > 0:
+		var total := int(ceil(float(messages.size()) / float(page_size)))
+		var page := int(ceil(float(end) / float(page_size)))
+		var hint := ""
+		if _chat_offset > 0:
+			hint = "   [color=#6b9aa5]swipe up = newer[/color]"
+		elif messages.size() > page_size:
+			hint = "   [color=#6b9aa5]swipe down = older[/color]"
+		lines.append("[color=#3d7d88]-- %d/%d%s --[/color]" % [page, total, hint])
 	_body.text = "\n\n".join(lines)
 
 
@@ -648,7 +659,7 @@ func _change_page(direction: int) -> void:
 
 func _scroll_page(direction: int) -> void:
 	if _page == PAGE_CHAT:
-		_chat_offset = maxi(0, _chat_offset + direction)
+		_chat_offset = maxi(0, _chat_offset + direction * CHAT_MESSAGES_PER_PAGE)
 	elif _page == PAGE_CODE:
 		_code_offset = maxi(0, _code_offset + direction)
 	_refresh_screen()

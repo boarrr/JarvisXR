@@ -260,19 +260,3 @@ width = 235.0
 modulate = Color(0.62, 0.88, 1, 1)
 no_depth_test = true
 
-[node name="Mesh" type="MeshInstance3D" parent="PrivacyTarget"]
-cast_shadow = 0
-mesh = SubResource("Mesh_action_wide")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PrivacyTarget"]
-shape = SubResource("Shape_action_wide")
-
-[node name="Label" type="Label3D" parent="PrivacyTarget"]
-position = Vector3(0, 0, 0.014)
-pixel_size = 0.0017
-text = "PRIVACY VEIL // CONCEAL"
-font_size = 11
-outline_size = 4
-width = 235.0
-modulate = Color(0.52, 0.9, 1, 1)
-no_depth_test = true

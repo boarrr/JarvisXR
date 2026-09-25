@@ -527,6 +527,18 @@ class AgentCoordinator:
                     response = "once" if resolved == "approve" else "reject"
                     with suppress(Exception):
                         await client.reply_permission(request.session_id, request.approval_id, response)
+                    # Tell the cockpit the gate is closed so it clears the
+                    # approval from its queue (otherwise the next approve
+                    # resends this stale id and does nothing).
+                    await emit(
+                        "approval.resolved",
+                        run.thread_id,
+                        {
+                            "approval_id": request.approval_id,
+                            "decision": resolved,
+                            "run_id": run.run_id,
+                        },
+                    )
                 elif event_type == "file.edited":
                     await emit(
                         "file.edited",

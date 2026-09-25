@@ -115,6 +115,7 @@ var _tap_prev_pinch := {"left": false, "right": false}
 var _tap_begin_msec := {"left": 0, "right": 0}
 var _tap_prev_release_msec := {"left": 0, "right": 0}
 var _tap_pending := {"left": 0, "right": 0}
+var _single_tap_due := {"left": 0, "right": 0}
 var _summon_blocked_until_msec := 0
 var _clock_override_msec := -1
 const GESTURE_LOG_PATH := "user://gesture_session.jsonl"
@@ -197,6 +198,7 @@ func _physics_process(_delta: float) -> void:
 		_pointer_missing_seconds = 0.0
 		_apply_pointer_sample(pointer_sample, _delta)
 	_update_bimanual_gesture()
+	_flush_single_taps()
 	if _telemetry_enabled:
 		_telemetry_elapsed += _delta
 		if _telemetry_elapsed >= 1.0:
@@ -705,6 +707,7 @@ func _cancel_tap(hand_name: String) -> void:
 	_tap_begin_msec[hand_name] = 0
 	_tap_prev_pinch[hand_name] = false
 	_tap_pending[hand_name] = 0
+	_single_tap_due[hand_name] = 0
 
 
 func _track_tap(hand_name: String) -> void:
@@ -741,6 +744,7 @@ func _register_tap(hand_name: String, now: int) -> void:
 	var pending := int(_tap_pending.get(hand_name, 0))
 	if pending > 0 and now - pending <= DOUBLE_PINCH_WINDOW_MSEC:
 		_tap_pending[hand_name] = 0
+		_single_tap_due[hand_name] = 0
 		_summon_blocked_until_msec = now + SUMMON_COOLDOWN_MSEC
 		interaction_event.emit(InteractionEvent.new(
 			InteractionEvent.Type.SUMMON,
@@ -753,6 +757,21 @@ func _register_tap(hand_name: String, now: int) -> void:
 	_tap_pending[hand_name] = now
 	if hand_name != preferred_hand:
 		return
+	# Do not dismiss on the first tap: it may be the opening tap of a
+	# double-pinch. Defer the "empty pinch drops focus" action until the
+	# double-pinch window has elapsed (see _flush_single_taps).
+	_single_tap_due[hand_name] = now
+
+
+func _flush_single_taps() -> void:
+	var hand_name := preferred_hand
+	var due := int(_single_tap_due.get(hand_name, 0))
+	if due <= 0:
+		return
+	if _now_msec() - due <= DOUBLE_PINCH_WINDOW_MSEC:
+		return
+	_single_tap_due[hand_name] = 0
+	_tap_pending[hand_name] = 0
 	if _ui_owns_pointer():
 		# Poking the console must not drop the agent you selected.
 		return

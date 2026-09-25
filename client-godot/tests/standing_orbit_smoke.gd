@@ -292,6 +292,10 @@ func _run() -> void:
 	dismiss_source.submit_joint_sample("right", right_palm, right_closed_thumb, right_distal, right_index)
 	dismiss_source.set_clock_override_msec(2250)
 	dismiss_source.submit_joint_sample("right", right_palm, right_open_thumb, right_distal, right_index)
+	# The deselect is deferred past the double-pinch window so the opening tap
+	# of a double-pinch does not drop the selected agent.
+	dismiss_source.set_clock_override_msec(2250 + 850)
+	dismiss_source._flush_single_taps()
 	var dismiss_count := dismiss_events.filter(
 		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.DISMISS
 	).size()
@@ -312,6 +316,8 @@ func _run() -> void:
 	guarded_source.submit_joint_sample("right", right_palm, right_closed_thumb, right_distal, right_index)
 	guarded_source.set_clock_override_msec(4250)
 	guarded_source.submit_joint_sample("right", right_palm, right_open_thumb, right_distal, right_index)
+	guarded_source.set_clock_override_msec(4250 + 850)
+	guarded_source._flush_single_taps()
 	var guarded_dismiss := guarded_events.filter(
 		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.DISMISS
 	).size()
@@ -407,12 +413,16 @@ func _run() -> void:
 	palm_console.summon_now()
 	_check(palm_console.visible, "summon_now parks and shows the console")
 
-	# The open console captures agent selection; closing restores it.
+	# Selecting an agent while the console is open now focuses it, so you can
+	# switch agents without closing the panel first.
 	AppState.focus_thread("")
 	main._on_interaction_event(InteractionEvent.new(
 		InteractionEvent.Type.SELECT, first_id, InteractionEvent.Source.HAND, null, {}
 	))
-	_check(AppState.focused_thread_id.is_empty(), "the open console ignores agent ray selection")
+	_check(
+		AppState.focused_thread_id == first_id,
+		"an agent can be selected while the console is open"
+	)
 	palm_console.summon_now()
 	_check(not palm_console.visible, "a repeat summon hides the console")
 	main._on_interaction_event(InteractionEvent.new(
@@ -420,7 +430,7 @@ func _run() -> void:
 	))
 	_check(
 		AppState.focused_thread_id == first_id,
-		"closing the console restores agent selection"
+		"closing the console keeps agent selection"
 	)
 
 	if not _failed:

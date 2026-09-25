@@ -112,6 +112,10 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 			approval["thread_id"] = event.thread_id
 			AppState.add_approval(approval)
 			EventBus.debug_message.emit("Approval requested: %s" % event.payload.get("tool_name", "tool"))
+		"approval.resolved":
+			var resolved_id := str(event.payload.get("approval_id", ""))
+			if not resolved_id.is_empty():
+				AppState.resolve_approval(resolved_id)
 		"tool.running", "tool.completed", "tool.failed":
 			var approval_id := str(event.payload.get("approval_id", ""))
 			if not approval_id.is_empty():

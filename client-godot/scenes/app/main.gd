@@ -204,8 +204,6 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				AppState.focus_thread("")
 			elif event.target_id.begins_with("quick:"):
 				_submit_quick_intent(event.target_id)
-			elif AppState.palm_console_open:
-				EventBus.debug_message.emit("Close the console to select an agent")
 			elif AppState.focus_thread(event.target_id):
 				EventBus.debug_message.emit("Focused: %s" % event.target_id)
 		InteractionEvent.Type.FOCUS:
@@ -448,6 +446,9 @@ func _respond_to_next_approval(decision: String) -> bool:
 		thread_id
 	)
 	if accepted:
+		# Drop it locally right away so a missed/failed round-trip can never
+		# wedge the queue on a stale approval id.
+		AppState.resolve_approval(approval_id)
 		EventBus.debug_message.emit("Approval %s: %s" % [decision, approval_id])
 	return accepted
 
