@@ -653,7 +653,7 @@ func _update_swipe() -> void:
 			# Continuous drag scroll while the fingertip stays on the screen.
 			var frame_dy := position_2d.y - _scroll_anchor_y
 			_scroll_anchor_y = position_2d.y
-			_scroll_chat_lines(-frame_dy * CHAT_SCROLL_LINES_PER_METRE)
+			_scroll_chat_lines(frame_dy * CHAT_SCROLL_LINES_PER_METRE)
 		_swipe_last = position_2d
 		return
 	if not _swipe_active:
