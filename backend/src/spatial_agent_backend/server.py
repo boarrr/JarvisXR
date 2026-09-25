@@ -750,6 +750,39 @@ class SpatialAgentServer:
 
         return {"ok": False, "code": last_code, "message": last_message}
 
+    async def _configure_workspace_binding(self) -> None:
+        path_value = self.settings.workspace_path.strip()
+        if not path_value:
+            return
+        path = Path(path_value).expanduser().resolve()
+        if not path.is_dir():
+            log_record("workspace_binding_skipped", path=str(path), reason="not_a_directory")
+            return
+        workspace = next(
+            (w for w in self.workspaces.list_workspaces() if w.path == path), None
+        )
+        if workspace is None:
+            try:
+                workspace = self.workspaces.register(
+                    self.settings.workspace_name or path.name,
+                    path,
+                    self.settings.workspace_branch or "main",
+                )
+            except WorkspaceError as error:
+                log_record("workspace_binding_skipped", path=str(path), reason=str(error))
+                return
+        bound = 0
+        for thread in await self.threads.list_threads():
+            metadata = dict(thread.metadata)
+            if metadata.get("workspace_id") == workspace.id:
+                continue
+            metadata["workspace_id"] = workspace.id
+            thread.metadata = metadata
+            thread.touch()
+            await self.threads.persist_thread(thread.id)
+            bound += 1
+        log_record("workspace_bound", workspace_id=workspace.id, threads=bound)
+
     def _tool_catalog_payload(self) -> dict[str, Any]:
         return {
             "tools": [

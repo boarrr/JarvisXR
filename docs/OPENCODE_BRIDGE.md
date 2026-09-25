@@ -104,6 +104,27 @@ SPATIAL_AGENT_OPENCODE_DIR="$PWD" \
 Then focus an agent in the cockpit and send a prompt. Shell commands surface as
 approval requests; edits proceed automatically.
 
+## Phase 2: isolation + apply gate
+
+- Each opencode run works in the daemon-created **git worktree** for the run
+  (`_prepare_worktree`), and opencode is scoped to it via `?directory=`.
+- **Apply is gated by tests:** with `SPATIAL_AGENT_TEST_COMMAND` set, the daemon
+  runs it in the worktree before committing; a non-zero exit refuses the apply
+  and keeps the worktree.
+- Register this repo and bind every thread automatically at startup via
+  `SPATIAL_AGENT_WORKSPACE_PATH` / `_NAME` / `_BRANCH`.
+
+### Run the whole builder loop
+
+```sh
+./scripts/run_builder.sh            # opencode serve + daemon, repo bound
+```
+
+Then, in the headset: focus an agent and send a prompt. opencode edits the
+worktree, streams into the cockpit, shell commands appear as approvals, and
+APPLY commits the branch (after tests, if configured). DEPLOY then ships it via
+the update loop.
+
 ## Next
 
 1. Wire `opencode` as a provider mode in the coordinator/server: thread ↔ session,

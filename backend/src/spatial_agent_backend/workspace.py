@@ -10,6 +10,8 @@ import secrets
 import subprocess
 from typing import Any
 
+from contextlib import suppress
+
 from .observability import log_record
 
 MAX_DIFF_BYTES = 512 * 1024
@@ -264,6 +266,28 @@ class WorkspaceManager:
         if len(raw.encode("utf-8")) > MAX_DIFF_BYTES:
             raw = raw[:MAX_DIFF_BYTES]
         return raw
+
+    async def run_tests(
+        self, worktree: Worktree, command: str, timeout_seconds: float = 900.0
+    ) -> tuple[bool, str]:
+        """Run the operator-provided test command inside the worktree."""
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                cwd=str(worktree.path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        except Exception as error:  # noqa: BLE001
+            return False, str(error)
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout_seconds)
+        except asyncio.TimeoutError:
+            with suppress(Exception):
+                proc.kill()
+            return False, "test command timed out"
+        text = (out or b"").decode("utf-8", errors="replace")
+        return proc.returncode == 0, text[:4000]
 
     async def commit(self, worktree: Worktree, message: str) -> str:
         await self._git(worktree.path, "add", "-A")

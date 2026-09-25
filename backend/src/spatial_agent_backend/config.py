@@ -66,6 +66,10 @@ class Settings:
     opencode_username: str = "opencode"
     opencode_directory: str = ""
     opencode_model: str = ""
+    test_command: str = ""
+    workspace_path: str = ""
+    workspace_name: str = ""
+    workspace_branch: str = "main"
     max_output_tokens: int = 1024
     max_packet_bytes: int = 1_048_576
     commands_per_minute: int = 120
@@ -100,6 +104,10 @@ class Settings:
             opencode_username=os.getenv("SPATIAL_AGENT_OPENCODE_USERNAME", "opencode"),
             opencode_directory=os.getenv("SPATIAL_AGENT_OPENCODE_DIR", ""),
             opencode_model=os.getenv("SPATIAL_AGENT_OPENCODE_MODEL", ""),
+            test_command=os.getenv("SPATIAL_AGENT_TEST_COMMAND", ""),
+            workspace_path=os.getenv("SPATIAL_AGENT_WORKSPACE_PATH", ""),
+            workspace_name=os.getenv("SPATIAL_AGENT_WORKSPACE_NAME", ""),
+            workspace_branch=os.getenv("SPATIAL_AGENT_WORKSPACE_BRANCH", "main"),
             max_output_tokens=int(os.getenv("SPATIAL_AGENT_MAX_OUTPUT_TOKENS", "1024")),
             max_packet_bytes=int(os.getenv("SPATIAL_AGENT_MAX_PACKET_BYTES", "1048576")),
             commands_per_minute=int(os.getenv("SPATIAL_AGENT_COMMANDS_PER_MINUTE", "120")),

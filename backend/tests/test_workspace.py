@@ -71,6 +71,19 @@ class WorkspaceManagerTests(unittest.IsolatedAsyncioTestCase):
         branches = run_git("branch", "--list", cwd=self.repo).stdout
         self.assertNotIn(worktree.branch, branches)
 
+    async def test_run_tests_in_worktree(self) -> None:
+        worktree = await self.manager.create_worktree(self.workspace.id, "run_tests")
+        passed, output = await self.manager.run_tests(
+            worktree, "python3 -c 'print(42)'"
+        )
+        self.assertTrue(passed)
+        self.assertIn("42", output)
+        failed, _output = await self.manager.run_tests(
+            worktree, "python3 -c 'import sys; sys.exit(3)'"
+        )
+        self.assertFalse(failed)
+        await self.manager.remove_worktree(worktree)
+
     async def test_commit_without_changes_fails(self) -> None:
         worktree = await self.manager.create_worktree(self.workspace.id, "run_nochange")
         with self.assertRaises(WorkspaceError):

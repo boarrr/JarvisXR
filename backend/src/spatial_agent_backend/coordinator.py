@@ -84,6 +84,7 @@ class AgentCoordinator:
         workspaces: WorkspaceManager | None = None,
         opencode: OpencodeClient | None = None,
         opencode_directory: str = "",
+        test_command: str = "",
     ) -> None:
         self.threads = threads
         self.provider = provider
@@ -92,6 +93,7 @@ class AgentCoordinator:
         self.workspaces = workspaces
         self.opencode = opencode
         self.opencode_directory = opencode_directory
+        self.test_command = test_command
         self._opencode_permissions: dict[str, PendingOpencodePermission] = {}
         self._opencode_sessions: dict[str, str] = {}
         self._runs: dict[str, ActiveRun] = {}
@@ -827,6 +829,14 @@ class AgentCoordinator:
         if worktree is None or self.workspaces is None:
             raise WorkspaceError("Unknown diff run")
         if decision == "apply":
+            tests_result = "skipped"
+            if self.test_command.strip():
+                passed, output = await self.workspaces.run_tests(worktree, self.test_command)
+                if not passed:
+                    raise WorkspaceError(
+                        "Tests failed; the change was not applied.\n" + output[-1500:]
+                    )
+                tests_result = "passed"
             commit = await self.workspaces.commit(
                 worktree, f"spatial agent run {run_id}"
             )
@@ -836,6 +846,7 @@ class AgentCoordinator:
                 "decision": "apply",
                 "branch": worktree.branch,
                 "commit": commit,
+                "tests": tests_result,
             }
         else:
             await self.workspaces.remove_worktree(worktree)
