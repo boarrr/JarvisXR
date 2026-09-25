@@ -91,6 +91,7 @@ var _chat_offset := 0
 var _chat_follow := true
 var _chat_dirty := false
 var _chat_elapsed := 0.0
+var _chat_scroll_line := 0
 var _code_offset := 0
 var _swipe_active := false
 var _swipe_start := Vector2.ZERO
@@ -497,7 +498,8 @@ func _render_chat() -> void:
 	if working:
 		_chat_follow = true
 	if _chat_follow:
-		_body.scroll_to_line(maxi(0, _body.get_line_count() - 1))
+		_chat_scroll_line = maxi(0, _body.get_line_count() - 1)
+		_body.scroll_to_line(_chat_scroll_line)
 
 
 func _render_code() -> void:
@@ -664,11 +666,13 @@ func _change_page(direction: int) -> void:
 
 func _scroll_page(direction: int) -> void:
 	if _page == PAGE_CHAT:
+		# scroll_to_line() takes a LINE index, so track our own line cursor
+		# instead of mixing it with the pixel-valued vertical scroll.
 		var step := 6
 		var last_line := maxi(0, _body.get_line_count() - 1)
-		var target := clampi(int(_body.get_v_scroll()) - direction * step, 0, last_line)
-		_body.scroll_to_line(target)
-		_chat_follow = target >= last_line
+		_chat_scroll_line = clampi(_chat_scroll_line - direction * step, 0, last_line)
+		_body.scroll_to_line(_chat_scroll_line)
+		_chat_follow = _chat_scroll_line >= last_line
 		if _viewport != null and visible:
 			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		return
