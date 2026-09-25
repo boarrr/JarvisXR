@@ -12,6 +12,7 @@ const DAEMON_CONFIG_PATH := "user://daemon.cfg"
 @export var auto_reconnect: bool = true
 @export_range(0.05, 30.0, 0.05) var reconnect_initial_delay_seconds: float = 0.25
 @export_range(0.1, 60.0, 0.1) var reconnect_max_delay_seconds: float = 5.0
+@export_range(0.05, 3.0, 0.05) var candidate_retry_delay_seconds: float = 0.35
 
 var _socket: WebSocketPeer = null
 var _session_id: String = ""
@@ -23,10 +24,19 @@ var _reconnect_attempt: int = 0
 var _reconnect_remaining_seconds: float = -1.0
 var _protocol_version: int = BackendEvent.PROTOCOL_VERSION
 var _url_from_config: bool = false
+# Link fallback: keep the configured name first, then a remembered working URL
+# and any baked fallbacks (an IP), so a failed .local lookup does not brick the
+# headset when a direct IP still works.
+var _primal_url: String = ""
+var _last_good_url: String = ""
+var _fallback_urls: PackedStringArray = []
+var _candidate_urls: PackedStringArray = []
+var _candidate_index: int = 0
 
 
 func _ready() -> void:
 	_load_daemon_config()
+	_rebuild_candidates()
 	set_process(false)
 
 
@@ -44,6 +54,7 @@ func _process(delta: float) -> void:
 		_has_opened = true
 		_reconnect_attempt = 0
 		_reconnect_remaining_seconds = -1.0
+		_record_last_good()
 		_set_connection_state(STATE_CONNECTED)
 		_send_command_envelope("session.hello", _hello_payload(), "")
 	if _socket.get_available_packet_count() > 0:
@@ -66,6 +77,9 @@ func start() -> void:
 	_stopping = false
 	_reconnect_attempt = 0
 	_reconnect_remaining_seconds = -1.0
+	_rebuild_candidates()
+	_candidate_index = 0
+	_apply_candidate(0)
 	if not _is_valid_websocket_url(websocket_url):
 		_set_connection_state(STATE_ERROR)
 		_emit_local_error("invalid_url", "Backend URL must begin with ws:// or wss://")
@@ -90,7 +104,7 @@ func _connect_socket() -> void:
 		_socket = null
 		_set_connection_state(STATE_ERROR)
 		_emit_local_error("connect_failed", "WebSocket connect failed with code %d" % result)
-		_schedule_reconnect()
+		_schedule_next_attempt()
 		return
 	set_process(true)
 
@@ -139,6 +153,39 @@ func set_default_url(url: String) -> void:
 	# headset can be repointed at a LAN daemon without a re-export.
 	if not _url_from_config and not url.is_empty():
 		websocket_url = url
+		_primal_url = url
+	_rebuild_candidates()
+
+
+func set_default_fallbacks(value: String) -> void:
+	if value.strip_edges().is_empty():
+		return
+	_fallback_urls = _dedupe_urls(Array(_fallback_urls) + Array(value.split(",", false)))
+	_rebuild_candidates()
+
+
+func set_manual_url(url: String) -> bool:
+	var trimmed := url.strip_edges()
+	if not _is_valid_websocket_url(trimmed):
+		return false
+	_primal_url = trimmed
+	_url_from_config = true
+	_rebuild_candidates()
+	reconnect()
+	return true
+
+
+func reconnect() -> void:
+	stop()
+	start()
+
+
+func get_candidate_urls() -> PackedStringArray:
+	return _candidate_urls.duplicate()
+
+
+func get_last_good_url() -> String:
+	return _last_good_url
 
 
 func build_tls_options(url: String) -> TLSOptions:
@@ -183,7 +230,12 @@ func _load_daemon_config() -> void:
 		var configured_url := str(config.get_value("daemon", "websocket_url", ""))
 		if not configured_url.is_empty():
 			websocket_url = configured_url
+			_primal_url = configured_url
 			_url_from_config = true
+		_last_good_url = str(config.get_value("daemon", "last_good_url", ""))
+		var fallbacks := str(config.get_value("daemon", "fallbacks", ""))
+		if not fallbacks.strip_edges().is_empty():
+			_fallback_urls = _dedupe_urls(Array(fallbacks.split(",", false)))
 		auth_token = str(config.get_value("daemon", "auth_token", auth_token))
 		ca_certificate_path = str(
 			config.get_value("daemon", "ca_certificate_path", ca_certificate_path)
@@ -194,7 +246,14 @@ func _load_daemon_config() -> void:
 
 func _save_daemon_config() -> void:
 	var config := ConfigFile.new()
-	config.set_value("daemon", "websocket_url", websocket_url)
+	config.set_value(
+		"daemon",
+		"websocket_url",
+		_primal_url if not _primal_url.is_empty() else websocket_url
+	)
+	config.set_value("daemon", "last_good_url", _last_good_url)
+	if not _fallback_urls.is_empty():
+		config.set_value("daemon", "fallbacks", ",".join(_fallback_urls))
 	config.set_value("daemon", "auth_token", auth_token)
 	config.set_value("daemon", "ca_certificate_path", ca_certificate_path)
 	config.save(DAEMON_CONFIG_PATH)
@@ -295,7 +354,12 @@ func _handle_socket_closed() -> void:
 		"connection_closed",
 		"%s (code=%d reason=%s)" % [detail, close_code, close_reason]
 	)
-	_schedule_reconnect()
+	if opened_before_close:
+		_schedule_reconnect()
+	else:
+		# Never opened: most likely the hostname did not resolve or the host is
+		# unreachable. Try the next candidate (e.g. a direct IP) before backing off.
+		_schedule_next_attempt()
 
 
 func _schedule_reconnect() -> void:
@@ -326,6 +390,63 @@ func _emit_local_error(code: String, message: String, thread_id: String = "") ->
 
 func _is_valid_websocket_url(value: String) -> bool:
 	return value.begins_with("ws://") or value.begins_with("wss://")
+
+
+func _rebuild_candidates() -> void:
+	var primary := _primal_url if not _primal_url.is_empty() else websocket_url
+	var values: Array = []
+	if not primary.is_empty():
+		values.append(primary)
+	values.append(_last_good_url)
+	for fallback in _fallback_urls:
+		values.append(fallback)
+	_candidate_urls = _dedupe_urls(values)
+
+
+func _dedupe_urls(values: Array) -> PackedStringArray:
+	var out := PackedStringArray()
+	for value in values:
+		var url := str(value).strip_edges()
+		if url.is_empty() or out.has(url):
+			continue
+		out.append(url)
+	return out
+
+
+func _apply_candidate(index: int) -> void:
+	if _candidate_urls.is_empty():
+		return
+	_candidate_index = clampi(index, 0, _candidate_urls.size() - 1)
+	websocket_url = _candidate_urls[_candidate_index]
+
+
+func _schedule_next_attempt() -> void:
+	if _stopping or not auto_reconnect:
+		set_process(false)
+		return
+	if _candidate_index + 1 < _candidate_urls.size():
+		# Another address to try (e.g. the direct IP after a failed name lookup).
+		_candidate_index += 1
+		_apply_candidate(_candidate_index)
+		_reconnect_attempt = 0
+		_reconnect_remaining_seconds = candidate_retry_delay_seconds
+		set_process(true)
+		return
+	# Every candidate failed: start over and back off exponentially.
+	_candidate_index = 0
+	_apply_candidate(0)
+	_schedule_reconnect()
+
+
+func _record_last_good() -> void:
+	# Only remember a working *fallback* (i.e. not the configured primary). This
+	# keeps daemon.cfg from being rewritten on every normal connection.
+	if _primal_url.is_empty() or websocket_url.is_empty() or websocket_url == _primal_url:
+		return
+	if websocket_url == _last_good_url:
+		return
+	_last_good_url = websocket_url
+	_save_daemon_config()
 
 
 func _timestamp() -> String:

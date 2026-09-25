@@ -115,6 +115,10 @@ func _configure_backend_transport() -> bool:
 				"spatial_agent/backend_websocket_url",
 				"ws://127.0.0.1:8787/ws"
 			)))
+			_websocket_backend_client.set_default_fallbacks(str(ProjectSettings.get_setting(
+				"spatial_agent/backend_websocket_fallback",
+				""
+			)))
 			transport = _websocket_backend_client
 		"fake":
 			transport = _fake_backend_transport

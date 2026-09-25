@@ -145,6 +145,7 @@ export_debug() {
 			sed -i '' "s|^config/name=.*|&\nconfig/version=\"$version_name\"|" "$client_root/project.godot"
 		fi
 	fi
+	inject_fallback_host
 	apk_timestamp_before=$(stat -f %m "$apk_path" 2>/dev/null || printf '0')
 	set +e
 	JAVA_HOME="$java17_home" "$godot_bin" --headless --path "$client_root" --export-debug "Quest 3/3S" "$apk_path"
@@ -187,6 +188,7 @@ export_release() {
 			sed -i '' "s|^config/name=.*|&\nconfig/version=\"$version_name\"|" "$client_root/project.godot"
 		fi
 	fi
+	inject_fallback_host
 	apk_timestamp_before=$(stat -f %m "$apk_path" 2>/dev/null || printf '0')
 	set +e
 	JAVA_HOME="$java17_home" "$godot_bin" --headless --path "$client_root" --export-release "Quest 3/3S" "$apk_path"
@@ -201,6 +203,28 @@ export_release() {
 	printf '%s\n' "Update payload size: $(du -h "$apk_path" | cut -f1)"
 	write_manifest
 }
+
+inject_fallback_host() {
+	# Bake the host's current LAN IP as a link fallback so a headset whose mDNS
+	# cannot resolve <host>.local still reaches the daemon directly.
+	local ip=""
+	for candidate in en0 en1 en2 en3 en4; do
+		ip=$(ipconfig getifaddr "$candidate" 2>/dev/null || true)
+		[ -n "$ip" ] && break
+	done
+	if [ -z "$ip" ]; then
+		printf '%s\n' "No LAN IP found; leaving backend_websocket_fallback untouched." >&2
+		return 0
+	fi
+	local fallback="wss://$ip:8787/ws"
+	if grep -q '^backend_websocket_fallback=' "$client_root/project.godot"; then
+		sed -i '' "s|^backend_websocket_fallback=.*|backend_websocket_fallback=\"$fallback\"|" "$client_root/project.godot"
+	elif grep -q '^backend_websocket_url=' "$client_root/project.godot"; then
+		sed -i '' "s|^backend_websocket_url=.*|&\nbackend_websocket_fallback=\"$fallback\"|" "$client_root/project.godot"
+	fi
+	printf '%s\n' "Fallback daemon URL: $fallback"
+}
+
 
 write_manifest() {
 	if [ ! -f "$apk_path" ]; then

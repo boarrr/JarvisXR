@@ -13,7 +13,9 @@ const GRID_TOP := 204.0
 
 var _body: RichTextLabel = null
 var _pairing := false
+var _addr := false
 var _code := ""
+var _addr_text := ""
 var _status := ""
 var _keypad_nodes: Array[Node] = []
 var _keypad_targets: Array[Area3D] = []
@@ -41,8 +43,9 @@ func _build_ui(root: Control) -> void:
 	_body_rect = Rect2(Vector2(22, 80), Vector2(viewport_size.x - 44, 180))
 	_body_rect_pairing = Rect2(Vector2(22, 96), Vector2(viewport_size.x - 44, 92))
 	_body = make_body(root, _body_rect)
-	make_button(root, Rect2(Vector2(110, 430), Vector2(240, 46)), "REFRESH", "daemon:refresh", COLOR_MUTED)
-	make_button(root, Rect2(Vector2(410, 430), Vector2(240, 46)), "PAIR WITH CODE", "daemon:pair_mode", COLOR_TITLE)
+	make_button(root, Rect2(Vector2(20, 430), Vector2(220, 46)), "REFRESH", "daemon:refresh", COLOR_MUTED)
+	make_button(root, Rect2(Vector2(255, 430), Vector2(220, 46)), "SET ADDR", "daemon:addr_mode", COLOR_TITLE)
+	make_button(root, Rect2(Vector2(490, 430), Vector2(220, 46)), "PAIR WITH CODE", "daemon:pair_mode", COLOR_TITLE)
 
 
 func open_pairing() -> void:
@@ -64,6 +67,17 @@ func handle_action(target_id: String) -> void:
 			refresh()
 		"daemon:pair_mode":
 			_enter_pairing()
+		"daemon:addr_mode":
+			_enter_addr()
+		"daemon:addr_cancel":
+			_exit_addr()
+		"daemon:addr_clear":
+			_addr_text = ""
+			refresh()
+		"daemon:addr_apply":
+			_apply_addr()
+		"daemon:addr_use_name":
+			_use_hostname()
 		"daemon:pair_cancel":
 			_exit_pairing()
 		"daemon:key_clear":
@@ -74,6 +88,8 @@ func handle_action(target_id: String) -> void:
 		_:
 			if target_id.begins_with("daemon:key:"):
 				_append_code(target_id.trim_prefix("daemon:key:"))
+			elif target_id.begins_with("daemon:addr_key:"):
+				_append_addr(target_id.trim_prefix("daemon:addr_key:"))
 			else:
 				refresh()
 
@@ -81,9 +97,11 @@ func handle_action(target_id: String) -> void:
 func refresh() -> void:
 	if _body == null:
 		return
-	_body.size = _body_rect_pairing.size if _pairing else _body_rect.size
+	_body.size = _body_rect_pairing.size if (_pairing or _addr) else _body_rect.size
 	if _pairing:
 		_render_pairing()
+	elif _addr:
+		_render_addr()
 	else:
 		_render_status()
 
@@ -106,6 +124,11 @@ func _render_status() -> void:
 	var lines: PackedStringArray = []
 	lines.append("[color=#55f5ff]LINK[/color]")
 	lines.append("• addr %s" % url)
+	if transport != null and transport.has_method("get_candidate_urls"):
+		var candidates: PackedStringArray = transport.call("get_candidate_urls")
+		if candidates.size() > 1:
+			lines.append("• fallbacks %s" % ", ".join(candidates))
+			lines.append("• last-good %s" % str(transport.call("get_last_good_url")))
 	lines.append("• mode [b]%s[/b] · state [b]%s[/b] · protocol v%d" % [
 		AppState.backend_mode, AppState.connection_state, protocol_version
 	])
@@ -138,8 +161,10 @@ func _render_pairing() -> void:
 
 func _enter_pairing() -> void:
 	_pairing = true
+	_addr = false
 	_code = ""
 	_status = ""
+	_clear_keypad()
 	_build_keypad()
 	refresh()
 
@@ -176,6 +201,106 @@ func _submit_pairing() -> void:
 	else:
 		_status = "Pairing request was not accepted"
 	refresh()
+
+
+func _enter_addr() -> void:
+	_pairing = false
+	_addr = true
+	_addr_text = ""
+	_status = ""
+	_clear_keypad()
+	_build_addr_keypad()
+	refresh()
+
+
+func _exit_addr() -> void:
+	_addr = false
+	_status = ""
+	_clear_keypad()
+	refresh()
+
+
+func _render_addr() -> void:
+	var lines: PackedStringArray = []
+	lines.append("[color=#55f5ff]DAEMON ADDRESS[/color]")
+	lines.append("Type the daemon IP; it becomes wss://<ip>:8787/ws")
+	lines.append("")
+	lines.append("[font_size=26][color=#ffffff]%s[/color][/font_size]" % (
+		_addr_text if not _addr_text.is_empty() else "_"
+	))
+	lines.append("[color=#6b9aa5]%s[/color]" % _addr_preview())
+	if not _status.is_empty():
+		lines.append("[color=#ffd166]%s[/color]" % _status)
+	_body.text = "\n".join(lines)
+
+
+func _addr_preview() -> String:
+	if _addr_text.strip_edges().is_empty():
+		return "wss://…:8787/ws"
+	return "wss://%s:8787/ws" % _addr_text.strip_edges()
+
+
+func _append_addr(character: String) -> void:
+	if character == "<":
+		if not _addr_text.is_empty():
+			_addr_text = _addr_text.substr(0, _addr_text.length() - 1)
+		refresh()
+		return
+	if _addr_text.length() >= 15:
+		return
+	if character == "." or character.is_valid_int():
+		_addr_text += character
+		refresh()
+
+
+func _apply_addr() -> void:
+	var address := _addr_text.strip_edges()
+	if address.is_empty():
+		_status = "Enter an address first"
+		refresh()
+		return
+	var transport = ServiceRegistry.backend_transport
+	if transport == null or not transport.has_method("set_manual_url"):
+		_status = "The active transport cannot be repointed"
+		refresh()
+		return
+	if bool(transport.call("set_manual_url", "wss://%s:8787/ws" % address)):
+		_status = "Repointed to %s" % address
+		_exit_addr()
+	else:
+		_status = "Not a usable address"
+		refresh()
+
+
+func _use_hostname() -> void:
+	var transport = ServiceRegistry.backend_transport
+	if transport != null and transport.has_method("set_manual_url"):
+		transport.call("set_manual_url", "wss://Midnight-2.local:8787/ws")
+	_status = "Using Midnight-2.local"
+	_exit_addr()
+
+
+func _build_addr_keypad() -> void:
+	var root := _viewport.get_child(0) as Control
+	if root == null:
+		return
+	var keys := ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", ".", "<"]
+	var columns := 4
+	var grid_width := viewport_size.x - 44.0
+	var key_width := (grid_width - (columns - 1) * KEY_GAP) / float(columns)
+	for index in range(keys.size()):
+		var column := index % columns
+		var row := index / columns
+		var rect := Rect2(
+			Vector2(22.0 + column * (key_width + KEY_GAP), GRID_TOP + row * (KEY_HEIGHT + KEY_GAP)),
+			Vector2(key_width, KEY_HEIGHT)
+		)
+		_add_key(root, rect, keys[index], "daemon:addr_key:%s" % keys[index])
+	var action_y := GRID_TOP + 3 * (KEY_HEIGHT + KEY_GAP)
+	_add_key(root, Rect2(Vector2(22, action_y), Vector2(220, 46)), "CLEAR", "daemon:addr_clear", COLOR_MUTED)
+	_add_key(root, Rect2(Vector2(270, action_y), Vector2(220, 46)), "APPLY", "daemon:addr_apply", COLOR_ADDED)
+	_add_key(root, Rect2(Vector2(518, action_y), Vector2(220, 46)), "USE NAME", "daemon:addr_use_name", COLOR_TITLE)
+	_add_key(root, Rect2(Vector2(22, action_y + 52), Vector2(220, 46)), "CANCEL", "daemon:addr_cancel", COLOR_REMOVED)
 
 
 func _build_keypad() -> void:
