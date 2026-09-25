@@ -36,6 +36,7 @@ const LEFT_TRACKER_PATH := &"/user/hand_tracker/left"
 const RIGHT_TRACKER_PATH := &"/user/hand_tracker/right"
 const TOUCH_CONTACT_DISTANCE := 0.025
 const TOUCH_RELEASE_DISTANCE := 0.07
+const TOUCH_DRAG_CANCEL_DISTANCE := 0.02
 # OpenXR joints drop out for single frames routinely (occlusion, edge of the
 # camera FOV). Hold the last state briefly so a blink does not cancel a touch,
 # grab, or the aim ray.
@@ -96,6 +97,9 @@ var _grab_origin_position := Vector3.ZERO
 var _touch_target_id := ""
 var _touch_area: Area3D = null
 var _touch_release_needed := false
+var _touch_candidate_id := ""
+var _touch_candidate_position := Vector3.ZERO
+var _touch_dragged := false
 var _telemetry_enabled := false
 var _telemetry_elapsed := 0.0
 var _tracking_losses := 0
@@ -296,6 +300,8 @@ func _clear_pointer() -> void:
 	_touch_target_id = ""
 	_touch_area = null
 	_touch_release_needed = false
+	_touch_candidate_id = ""
+	_touch_dragged = false
 	_crush_seconds = 0.0
 	_crush_latched = false
 	_crush_candidate = ""
@@ -675,20 +681,36 @@ func _update_touch_interaction(position: Vector3) -> void:
 	# presses a control on contact and latches until it pulls away.
 	if _touch_release_needed:
 		if _touch_area == null or _distance_to_area(_touch_area, position) > TOUCH_RELEASE_DISTANCE:
+			# Pull-away ends the touch. A control only fires if the fingertip
+			# stayed put, so dragging to scroll never clicks a button.
+			if not _touch_dragged and not _touch_candidate_id.is_empty():
+				submit_direct_touch(_touch_candidate_id, _touch_candidate_position)
 			_touch_release_needed = false
 			_touch_target_id = ""
 			_touch_area = null
+			_touch_candidate_id = ""
+			_touch_dragged = false
+		elif _touch_candidate_position.distance_to(position) > TOUCH_DRAG_CANCEL_DISTANCE:
+			_touch_dragged = true
+			return
 		else:
 			return
 	var contact := _nearest_touch_target(position)
 	if contact.is_empty():
 		return
-	_touch_target_id = str((contact as Dictionary)["target_id"])
+	var target_id := str((contact as Dictionary)["target_id"])
+	_touch_target_id = target_id
 	_touch_area = contact["area"] as Area3D
 	_touch_release_needed = true
-	if ":" in _touch_target_id:
+	if ":" in target_id:
+		# Screen controls arm a tap candidate instead of firing on contact.
 		_last_ui_touch_msec = _now_msec()
-		submit_direct_touch(_touch_target_id, position)
+		_touch_candidate_id = target_id
+		_touch_candidate_position = position
+		_touch_dragged = false
+	else:
+		_touch_candidate_id = ""
+		_touch_dragged = false
 
 
 func set_clock_override_msec(value: int) -> void:

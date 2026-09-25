@@ -2,7 +2,7 @@ class_name ApprovalPanel
 extends Node3D
 
 @export var user_rig_path: NodePath = ^"../UserRig"
-@export_range(0.4, 1.6, 0.05) var park_distance: float = 0.8
+@export_range(0.7, 2.0, 0.05) var park_distance: float = 1.0
 @export_range(-1.0, 1.0, 0.05) var park_side_offset: float = -0.12
 @export_range(0.0, 0.6, 0.01) var park_drop: float = 0.16
 @export var room_anchor_registry_path: NodePath = ^"../RoomAnchorRegistry"
