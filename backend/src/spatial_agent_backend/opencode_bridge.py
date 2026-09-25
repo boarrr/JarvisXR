@@ -58,11 +58,22 @@ class OpencodeClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self._username = username
+        self._password = password
         # The server is multi-directory: scoping every call to a directory lets
         # one server drive an isolated git worktree per run.
         self.directory = directory
         credentials = f"{username}:{password}".encode()
         self._auth_header = "Basic " + base64.b64encode(credentials).decode()
+
+    def with_directory(self, directory: str) -> "OpencodeClient":
+        return OpencodeClient(
+            self.base_url,
+            password=self._password,
+            username=self._username,
+            timeout_seconds=self.timeout_seconds,
+            directory=directory,
+        )
 
     def _scoped(self, path: str) -> str:
         if not self.directory:

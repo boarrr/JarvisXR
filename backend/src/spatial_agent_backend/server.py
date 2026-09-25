@@ -36,6 +36,7 @@ from .providers import (
     ProviderConfigurationError,
 )
 from .storage import SQLiteStore
+from .opencode_bridge import OpencodeClient
 from .thread_service import ThreadNotFoundError, ThreadService
 from .update_service import UpdateError, UpdateService
 from .tools import ToolRegistry
@@ -109,10 +110,25 @@ class SpatialAgentServer:
                 model=settings.openai_model,
                 max_output_tokens=settings.max_output_tokens,
             )
+        elif settings.provider == "opencode":
+            self.provider = FakeProvider(chunk_delay_seconds=settings.fake_chunk_delay_seconds)
         else:
             self.provider = FakeProvider(chunk_delay_seconds=settings.fake_chunk_delay_seconds)
+        opencode_client = None
+        if settings.provider == "opencode":
+            opencode_client = OpencodeClient(
+                base_url=settings.opencode_url,
+                password=settings.opencode_password,
+                username=settings.opencode_username,
+            )
         self.coordinator = AgentCoordinator(
-            self.threads, self.provider, self.tools, self.permissions, self.workspaces
+            self.threads,
+            self.provider,
+            self.tools,
+            self.permissions,
+            self.workspaces,
+            opencode=opencode_client,
+            opencode_directory=settings.opencode_directory,
         )
 
     async def initialize(self) -> None:

@@ -61,6 +61,11 @@ class Settings:
     anthropic_model: str = "claude-sonnet-5"
     openai_model: str = "gpt-6-astra"
     deepseek_model: str = "deepseek-chat"
+    opencode_url: str = "http://127.0.0.1:4096"
+    opencode_password: str = ""
+    opencode_username: str = "opencode"
+    opencode_directory: str = ""
+    opencode_model: str = ""
     max_output_tokens: int = 1024
     max_packet_bytes: int = 1_048_576
     commands_per_minute: int = 120
@@ -90,6 +95,11 @@ class Settings:
             anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5"),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-6-astra"),
             deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            opencode_url=os.getenv("SPATIAL_AGENT_OPENCODE_URL", "http://127.0.0.1:4096"),
+            opencode_password=os.getenv("SPATIAL_AGENT_OPENCODE_PASSWORD", ""),
+            opencode_username=os.getenv("SPATIAL_AGENT_OPENCODE_USERNAME", "opencode"),
+            opencode_directory=os.getenv("SPATIAL_AGENT_OPENCODE_DIR", ""),
+            opencode_model=os.getenv("SPATIAL_AGENT_OPENCODE_MODEL", ""),
             max_output_tokens=int(os.getenv("SPATIAL_AGENT_MAX_OUTPUT_TOKENS", "1024")),
             max_packet_bytes=int(os.getenv("SPATIAL_AGENT_MAX_PACKET_BYTES", "1048576")),
             commands_per_minute=int(os.getenv("SPATIAL_AGENT_COMMANDS_PER_MINUTE", "120")),
@@ -112,7 +122,7 @@ class Settings:
         )
 
     def validate(self) -> None:
-        if self.provider not in {"fake", "claude", "openai", "deepseek", "council"}:
+        if self.provider not in {"fake", "claude", "openai", "deepseek", "council", "opencode"}:
             raise ValueError(
                 "SPATIAL_AGENT_PROVIDER must be 'fake', 'claude', 'openai', "
                 "'deepseek', or 'council'"

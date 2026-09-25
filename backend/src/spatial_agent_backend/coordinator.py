@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
 from .domain import Message
 from .observability import log_record
+from .opencode_bridge import OpencodeClient, permission_from_event
 from .permissions import PermissionService, ToolDefinition
 from .protocol import new_id
 from .providers import AgentProvider
@@ -27,6 +29,9 @@ EmitEvent = Callable[[str, str, dict[str, Any]], Awaitable[None]]
 
 MAX_TOOL_ITERATIONS = 6
 
+# Permission policy for opencode-driven runs: edits proceed, shell asks.
+OPENCODE_PERMISSION = {"*": "allow", "edit": "allow", "bash": "ask"}
+
 
 @dataclass(slots=True)
 class ActiveRun:
@@ -37,6 +42,15 @@ class ActiveRun:
     cancel_event: asyncio.Event
     task: asyncio.Task[None] | None = None
     worktree: Worktree | None = None
+
+
+@dataclass(slots=True)
+class PendingOpencodePermission:
+    approval_id: str
+    session_id: str
+    thread_id: str
+    run_id: str
+    decision: asyncio.Future[str] | None = None
 
 
 @dataclass(slots=True)
@@ -62,12 +76,18 @@ class AgentCoordinator:
         tools: ToolRegistry,
         permissions: PermissionService,
         workspaces: WorkspaceManager | None = None,
+        opencode: OpencodeClient | None = None,
+        opencode_directory: str = "",
     ) -> None:
         self.threads = threads
         self.provider = provider
         self.tools = tools
         self.permissions = permissions
         self.workspaces = workspaces
+        self.opencode = opencode
+        self.opencode_directory = opencode_directory
+        self._opencode_permissions: dict[str, PendingOpencodePermission] = {}
+        self._opencode_sessions: dict[str, str] = {}
         self._runs: dict[str, ActiveRun] = {}
         self._approvals: dict[str, PendingApproval] = {}
         self._worktrees_by_run: dict[str, Worktree] = {}
@@ -132,6 +152,14 @@ class AgentCoordinator:
         return True
 
     async def respond_to_approval(self, *, session_id: str, approval_id: str, decision: str) -> bool:
+        opencode_permission = self._opencode_permissions.get(approval_id)
+        if opencode_permission is not None:
+            if opencode_permission.session_id != session_id:
+                return False
+            self._opencode_permissions.pop(approval_id, None)
+            if opencode_permission.decision is not None and not opencode_permission.decision.done():
+                opencode_permission.decision.set_result(decision)
+            return True
         approval = self._approvals.get(approval_id)
         if approval is None or approval.session_id != session_id:
             return False
@@ -240,8 +268,20 @@ class AgentCoordinator:
             approval = self._approvals.pop(approval_id, None)
             if approval is not None and approval.decision is not None and not approval.decision.done():
                 approval.decision.cancel()
+        opencode_ids = [
+            approval_id
+            for approval_id, permission in self._opencode_permissions.items()
+            if permission.session_id == session_id
+        ]
+        for approval_id in opencode_ids:
+            permission = self._opencode_permissions.pop(approval_id, None)
+            if permission is not None and permission.decision is not None and not permission.decision.done():
+                permission.decision.cancel()
 
     async def _drive_provider(self, run: ActiveRun, emit: EmitEvent) -> None:
+        if self.opencode is not None:
+            await self._drive_opencode(run, emit)
+            return
         sequence = 0
         first_delta_at: float | None = None
         loop = asyncio.get_running_loop()
@@ -324,6 +364,180 @@ class AgentCoordinator:
         except asyncio.CancelledError:
             await self._finish_cancelled(run, emit)
         except Exception as error:
+            await self.threads.complete_message(run.thread_id, run.message_id)
+            await self.threads.set_status(run.thread_id, "error")
+            await emit(
+                "agent.message.completed",
+                run.thread_id,
+                {"message_id": run.message_id, "run_id": run.run_id},
+            )
+            await emit("agent.status", run.thread_id, {"status": "error", "run_id": run.run_id})
+            await emit("run.failed", run.thread_id, {"run_id": run.run_id, "message": str(error)})
+            log_record(
+                "run_failed",
+                session_id=run.session_id,
+                thread_id=run.thread_id,
+                run_id=run.run_id,
+                error_type=type(error).__name__,
+            )
+        finally:
+            if self._runs.get(run.thread_id) is run:
+                self._runs.pop(run.thread_id, None)
+
+    async def _opencode_session_for(
+        self,
+        run: ActiveRun,
+        thread: Any,
+        client: OpencodeClient,
+    ) -> str:
+        existing = self._opencode_sessions.get(run.thread_id)
+        if existing:
+            return existing
+        session_id = await client.create_session(
+            title=str(getattr(thread, "title", run.thread_id)),
+            permission=dict(OPENCODE_PERMISSION),
+        )
+        self._opencode_sessions[run.thread_id] = session_id
+        return session_id
+
+    async def _request_opencode_permission(
+        self,
+        run: ActiveRun,
+        request: Any,
+        emit: EmitEvent,
+    ) -> str:
+        approval_id = request.approval_id
+        decision: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        self._opencode_permissions[approval_id] = PendingOpencodePermission(
+            approval_id=approval_id,
+            session_id=run.session_id,
+            thread_id=run.thread_id,
+            run_id=run.run_id,
+            decision=decision,
+        )
+        with suppress(Exception):
+            await self.threads.set_status(run.thread_id, "waiting_user")
+        await emit("agent.status", run.thread_id, {"status": "waiting_user", "run_id": run.run_id})
+        summary = f"Allow opencode {request.permission}?"
+        if request.patterns:
+            summary += " " + ", ".join(request.patterns)
+        details = str(request.metadata.get("command", "")) or ", ".join(request.patterns)
+        await emit(
+            "approval.required",
+            run.thread_id,
+            {
+                "approval_id": approval_id,
+                "run_id": run.run_id,
+                "tool_id": f"opencode.{request.permission}",
+                "tool_name": f"opencode {request.permission}",
+                "summary": summary,
+                "permission_level": "explicit approval",
+                "source": "opencode",
+                "impact_preview": {
+                    "route": ["gesture", "opencode", request.permission],
+                    "scope": details or "opencode tool call",
+                    "side_effect": "may change files or run commands",
+                    "reversibility": "depends on the command",
+                    "external": False,
+                },
+            },
+        )
+        log_record(
+            "approval_required",
+            session_id=run.session_id,
+            thread_id=run.thread_id,
+            run_id=run.run_id,
+            tool_id=f"opencode.{request.permission}",
+            source="opencode",
+        )
+        resolved = await decision
+        self._opencode_permissions.pop(approval_id, None)
+        with suppress(Exception):
+            await self.threads.set_status(run.thread_id, "working")
+        await emit("agent.status", run.thread_id, {"status": "working", "run_id": run.run_id})
+        return resolved
+
+    async def _drive_opencode(self, run: ActiveRun, emit: EmitEvent) -> None:
+        assert self.opencode is not None
+        sequence = 0
+        try:
+            thread = await self.threads.set_status(run.thread_id, "working")
+            await emit("agent.status", run.thread_id, {"status": "working", "run_id": run.run_id})
+            await self._prepare_worktree(run, thread, emit)
+            directory = str(run.worktree.path) if run.worktree is not None else self.opencode_directory
+            client = self.opencode.with_directory(directory) if directory else self.opencode
+            opencode_session = await self._opencode_session_for(run, thread, client)
+            prompt_text = ""
+            for message in reversed(thread.messages):
+                if message.role == "user" and message.content.strip():
+                    prompt_text = message.content
+                    break
+            await emit(
+                "agent.message.started",
+                run.thread_id,
+                {"message_id": run.message_id, "role": "assistant", "run_id": run.run_id},
+            )
+            await client.prompt(opencode_session, prompt_text)
+            async for event in client.events():
+                if run.cancel_event.is_set():
+                    with suppress(Exception):
+                        await client.abort(opencode_session)
+                    break
+                props = event.get("properties", {}) if isinstance(event, dict) else {}
+                session_id = str(props.get("sessionID", ""))
+                if session_id and session_id != opencode_session:
+                    continue
+                event_type = str(event.get("type", ""))
+                if event_type == "message.part.delta":
+                    if props.get("field") != "text":
+                        continue
+                    delta = str(props.get("delta", ""))
+                    if not delta:
+                        continue
+                    sequence += 1
+                    await self.threads.append_delta(run.thread_id, run.message_id, delta)
+                    await emit(
+                        "agent.message.delta",
+                        run.thread_id,
+                        {
+                            "message_id": run.message_id,
+                            "delta": delta,
+                            "sequence": sequence,
+                            "run_id": run.run_id,
+                        },
+                    )
+                elif event_type == "permission.asked":
+                    request = permission_from_event(event)
+                    if request is None:
+                        continue
+                    resolved = await self._request_opencode_permission(run, request, emit)
+                    response = "once" if resolved == "approve" else "reject"
+                    with suppress(Exception):
+                        await client.reply_permission(request.session_id, request.approval_id, response)
+                elif event_type == "file.edited":
+                    await emit(
+                        "file.edited",
+                        run.thread_id,
+                        {"path": str(props.get("file", "")), "run_id": run.run_id},
+                    )
+                elif event_type == "session.idle":
+                    break
+            if run.cancel_event.is_set():
+                await self._finish_cancelled(run, emit)
+                return
+            await self.threads.complete_message(run.thread_id, run.message_id)
+            await self.threads.set_status(run.thread_id, "complete")
+            await emit(
+                "agent.message.completed",
+                run.thread_id,
+                {"message_id": run.message_id, "run_id": run.run_id},
+            )
+            await emit("agent.status", run.thread_id, {"status": "complete", "run_id": run.run_id})
+            await emit("run.completed", run.thread_id, {"run_id": run.run_id})
+            log_record("run_completed", session_id=run.session_id, thread_id=run.thread_id, run_id=run.run_id)
+        except asyncio.CancelledError:
+            await self._finish_cancelled(run, emit)
+        except Exception as error:  # noqa: BLE001
             await self.threads.complete_message(run.thread_id, run.message_id)
             await self.threads.set_status(run.thread_id, "error")
             await emit(

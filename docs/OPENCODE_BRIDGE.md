@@ -68,6 +68,42 @@ reply. This is exactly the agreed policy.
   publishes `build/quest/updates/spatial-agent-<sha8>.apk`; `SPATIAL_CLIENT_ROOT`
   lets the export target a worktree.
 
+## Phase 1 implemented
+
+- `SPATIAL_AGENT_PROVIDER=opencode` makes the daemon drive an opencode session
+  instead of the built-in provider. `AgentCoordinator._drive_opencode` maps a
+  Spatial Agent thread to an opencode session, streams `message.part.delta` as
+  `agent.message.delta`, surfaces `file.edited`, and turns `permission.asked`
+  into the existing **spatial approval gate** (`approval.required` →
+  `approval.respond` → `POST /session/:id/permissions/:id`). Policy:
+  `{"*":"allow","edit":"allow","bash":"ask"}`.
+- Each run uses the daemon-created worktree directory when a workspace is bound
+  (via the bridge's per-request `?directory=` scoping); otherwise
+  `SPATIAL_AGENT_OPENCODE_DIR`.
+- Config: `SPATIAL_AGENT_OPENCODE_URL` (default `http://127.0.0.1:4096`),
+  `SPATIAL_AGENT_OPENCODE_PASSWORD`, `SPATIAL_AGENT_OPENCODE_USERNAME`,
+  `SPATIAL_AGENT_OPENCODE_DIR`, `SPATIAL_AGENT_OPENCODE_MODEL`.
+- Tests: `backend/tests/test_opencode_flow.py` runs a full opencode turn
+  through the coordinator against the fake opencode server (streaming, shell
+  approval round-trip, completion).
+
+### Running it
+
+```sh
+# Terminal 1: a headless opencode server scoped to this repo
+OPENCODE_SERVER_PASSWORD=your-password opencode serve --port 4096
+
+# Terminal 2: the daemon in opencode mode
+SPATIAL_AGENT_PROVIDER=opencode \
+SPATIAL_AGENT_OPENCODE_URL=http://127.0.0.1:4096 \
+SPATIAL_AGENT_OPENCODE_PASSWORD=your-password \
+SPATIAL_AGENT_OPENCODE_DIR="$PWD" \
+./scripts/run_backend.sh --lan
+```
+
+Then focus an agent in the cockpit and send a prompt. Shell commands surface as
+approval requests; edits proceed automatically.
+
 ## Next
 
 1. Wire `opencode` as a provider mode in the coordinator/server: thread ↔ session,
