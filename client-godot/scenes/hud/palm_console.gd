@@ -86,6 +86,7 @@ var _page_buttons: Dictionary = {PAGE_CHAT: [], PAGE_CODE: [], PAGE_SYSTEM: []}
 var _panel_ignored := 0.0
 var _page := PAGE_CHAT
 var _chat_offset := 0
+var _chat_follow := true
 var _code_offset := 0
 var _swipe_active := false
 var _swipe_start := Vector2.ZERO
@@ -276,7 +277,7 @@ func _build_screen() -> void:
 	_body.position = Vector2(16, HEADER_HEIGHT_PX)
 	_body.size = Vector2(VIEWPORT_SIZE.x - 32, VIEWPORT_SIZE.y - HEADER_HEIGHT_PX - FOOTER_HEIGHT_PX)
 	_body.bbcode_enabled = true
-	_body.scroll_active = false
+	_body.scroll_active = true
 	_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_body.add_theme_font_size_override("normal_font_size", 19)
 	_body.add_theme_color_override("default_color", Color(0.82, 0.94, 0.98))
@@ -458,13 +459,7 @@ func _render_chat() -> void:
 		return
 	var lines: PackedStringArray = []
 	var messages := thread.messages
-	var page_size := CHAT_MESSAGES_PER_PAGE
-	var end := clampi(messages.size() - _chat_offset, 0, messages.size())
-	var start := clampi(end - page_size, 0, messages.size())
-	if end <= start and messages.size() > 0:
-		end = messages.size()
-		start = maxi(0, end - page_size)
-	for index in range(start, end):
+	for index in range(messages.size()):
 		var message := messages[index]
 		var speaker := "AGENT"
 		var color := "#7bf58f"
@@ -479,21 +474,21 @@ func _render_chat() -> void:
 				speaker = "SYS"
 				color = "#6b9aa5"
 		var content := message.content.strip_edges().replace("[", "[lb]")
-		if content.length() > 200:
-			content = content.substr(0, 197) + "..."
+		if message.is_streaming:
+			content += " ▌"
 		lines.append("[color=%s]%s[/color] %s" % [color, speaker, content])
 	if lines.is_empty():
 		lines.append("[color=#6b9aa5]No messages yet. Use a quick action below.[/color]")
-	elif messages.size() > 0:
-		var total := int(ceil(float(messages.size()) / float(page_size)))
-		var page := int(ceil(float(end) / float(page_size)))
-		var hint := ""
-		if _chat_offset > 0:
-			hint = "   [color=#6b9aa5]swipe up = newer[/color]"
-		elif messages.size() > page_size:
-			hint = "   [color=#6b9aa5]swipe down = older[/color]"
-		lines.append("[color=#3d7d88]-- %d/%d%s --[/color]" % [page, total, hint])
 	_body.text = "\n\n".join(lines)
+	# Follow the tail while the agent works so the response streams at the
+	# reader; user swipes pause following until they scroll back to the end.
+	var working := thread.status == AgentThread.Status.WORKING
+	if not messages.is_empty() and messages.back().is_streaming:
+		working = true
+	if working:
+		_chat_follow = true
+	if _chat_follow:
+		_body.scroll_to_line(maxi(0, _body.get_line_count() - 1))
 
 
 func _render_code() -> void:
@@ -653,14 +648,22 @@ func _update_swipe() -> void:
 func _change_page(direction: int) -> void:
 	_page = posmod(_page + direction, PAGE_COUNT)
 	_chat_offset = 0
+	_chat_follow = true
 	_code_offset = 0
 	_refresh_screen()
 
 
 func _scroll_page(direction: int) -> void:
 	if _page == PAGE_CHAT:
-		_chat_offset = maxi(0, _chat_offset + direction * CHAT_MESSAGES_PER_PAGE)
-	elif _page == PAGE_CODE:
+		var step := 6
+		var last_line := maxi(0, _body.get_line_count() - 1)
+		var target := clampi(int(_body.get_v_scroll()) - direction * step, 0, last_line)
+		_body.scroll_to_line(target)
+		_chat_follow = target >= last_line
+		if _viewport != null and visible:
+			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+		return
+	if _page == PAGE_CODE:
 		_code_offset = maxi(0, _code_offset + direction)
 	_refresh_screen()
 
@@ -691,6 +694,7 @@ func _on_provider_identity_changed(_provider: String, _model: String) -> void:
 
 func _on_state_changed(_thread_id: String) -> void:
 	_chat_offset = 0
+	_chat_follow = true
 	_refresh_screen()
 
 

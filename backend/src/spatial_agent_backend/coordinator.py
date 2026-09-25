@@ -39,6 +39,20 @@ OPENCODE_PERMISSION = [
 ]
 
 
+def _tool_summary(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    for key in ("command", "filePath", "path", "pattern", "description", "query"):
+        if value.get(key):
+            return str(value[key]).replace("\n", " ")[:120]
+    return " ".join(f"{k}={str(v)[:40]}" for k, v in list(value.items())[:3])[:120]
+
+
+def _first_lines(text: str, max_lines: int, max_chars: int) -> str:
+    lines = [line for line in text.strip().splitlines() if line.strip()]
+    return "\n".join(lines[:max_lines])[:max_chars]
+
+
 @dataclass(slots=True)
 class ActiveRun:
     session_id: str
@@ -466,6 +480,44 @@ class AgentCoordinator:
         await emit("agent.status", run.thread_id, {"status": "working", "run_id": run.run_id})
         return resolved
 
+    async def _handle_opencode_tool(
+        self,
+        run: "ActiveRun",
+        part: dict[str, Any],
+        seen: set[str],
+        emit: EmitEvent,
+    ) -> None:
+        """Turn opencode tool parts into transcript lines the cockpit can read."""
+        tool = str(part.get("tool", "tool")) or "tool"
+        state = part.get("state", {}) if isinstance(part.get("state"), dict) else {}
+        status = str(state.get("status", ""))
+        key = f"{part.get('id', '')}:{status}"
+        if key in seen:
+            return
+        seen.add(key)
+        if status == "running":
+            title = str(state.get("title", "")).strip() or _tool_summary(state.get("input", {}))
+            line = f"▸ {tool}" + (f" · {title}" if title else "")
+        elif status in ("completed", "error"):
+            if status == "completed":
+                output = str(state.get("output", ""))
+                mark = "✔"
+            else:
+                output = str(state.get("error", ""))
+                mark = "✖"
+            snippet = _first_lines(output, 6, 600)
+            line = f"{mark} {tool}" + (f"\n{snippet}" if snippet else "")
+        else:
+            return
+        await self.threads.add_message(run.thread_id, "tool", line)
+        thread = await self.threads.get_thread(run.thread_id)
+        await emit("thread.updated", run.thread_id, {"thread": thread.to_wire()})
+        await emit(
+            "tool.running" if status == "running" else "tool.completed",
+            run.thread_id,
+            {"tool_id": tool, "run_id": run.run_id, "status": status},
+        )
+
     async def _drive_opencode(self, run: ActiveRun, emit: EmitEvent) -> None:
         assert self.opencode is not None
         sequence = 0
@@ -491,6 +543,7 @@ class AgentCoordinator:
             )
             await client.prompt(opencode_session, prompt_text)
             log_record("opencode_prompted", run_id=run.run_id)
+            seen_tools: set[str] = set()
             async for event in client.events():
                 if run.cancel_event.is_set():
                     with suppress(Exception):
@@ -519,6 +572,10 @@ class AgentCoordinator:
                             "run_id": run.run_id,
                         },
                     )
+                elif event_type == "message.part.updated":
+                    part = props.get("part", {}) if isinstance(props, dict) else {}
+                    if isinstance(part, dict) and str(part.get("type", "")) == "tool":
+                        await self._handle_opencode_tool(run, part, seen_tools, emit)
                 elif event_type == "permission.asked":
                     request = permission_from_event(event)
                     if request is None:

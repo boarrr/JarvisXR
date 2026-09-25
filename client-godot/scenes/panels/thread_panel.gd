@@ -22,6 +22,9 @@ var _displayed_thread_id: String = ""
 var _pages: Array[String] = []
 var _page_index := 0
 var _page_label: Label3D
+var _placed_camera_position := Vector3.ZERO
+var _placed_camera_forward := Vector3.ZERO
+var _has_placement := false
 
 
 func _ready() -> void:
@@ -68,7 +71,8 @@ func get_displayed_thread_id() -> String:
 
 
 func get_rendered_body_text() -> String:
-	return _body_label.text
+	# The whole rendered transcript, independent of which page is showing.
+	return "\n".join(_pages)
 
 
 func _place_in_reading_zone() -> void:
@@ -78,8 +82,23 @@ func _place_in_reading_zone() -> void:
 	var local_offset := Vector3(horizontal_offset, vertical_offset, -distance_from_user)
 	var panel_position := _camera.global_position + camera_basis * local_offset
 	global_transform = Transform3D(camera_basis, panel_position)
+	_placed_camera_position = _camera.global_position
+	_placed_camera_forward = -camera_basis.z
+	_has_placement = true
 	if _room_anchors != null:
 		_room_anchors.register_anchor("thread_surface", "reading_zone", global_transform)
+
+
+func _process(_delta: float) -> void:
+	# Stay in front of the user instead of being left behind in world space.
+	if not visible or _camera == null or not _has_placement:
+		return
+	var camera_forward := -_camera.global_transform.basis.z
+	if (
+		_camera.global_position.distance_to(_placed_camera_position) > 0.35
+		or camera_forward.dot(_placed_camera_forward) < 0.94
+	):
+		_place_in_reading_zone()
 
 
 func _render_thread(thread: AgentThread) -> void:
@@ -106,6 +125,11 @@ func _render_thread(thread: AgentThread) -> void:
 			content += "  ▌"
 		rendered_messages.append("%s\n%s" % [_role_label(message.role), content])
 	_paginate("\n\n".join(rendered_messages))
+	# While tokens are actively arriving, keep the newest text in view so the
+	# response streams at the reader instead of landing on an unseen page.
+	if not thread.messages.is_empty() and thread.messages.back().is_streaming:
+		_page_index = maxi(0, _pages.size() - 1)
+		_show_page()
 
 
 func turn_page(direction: int) -> void:
@@ -199,6 +223,11 @@ func _compact_code_blocks(content: String) -> String:
 			language.to_upper() if not language.is_empty() else "TEXT",
 			line_count,
 		]
+		if not code.is_empty():
+			var code_lines := code.split("\n")
+			marker += "\n" + "\n".join(code_lines.slice(0, 2))
+			if code_lines.size() > 2:
+				marker += "\n  … %d more lines" % (code_lines.size() - 2)
 		var replace_end := closing + 3 if closing >= 0 else compacted.length()
 		compacted = compacted.substr(0, opening) + marker + compacted.substr(replace_end)
 		search_from = opening + marker.length()

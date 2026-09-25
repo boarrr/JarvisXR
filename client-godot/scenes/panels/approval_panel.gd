@@ -15,6 +15,9 @@ extends Node3D
 var _camera: Camera3D = null
 var _room_anchors: RoomAnchorRegistry = null
 var _approval_id: String = ""
+var _placed_camera_position := Vector3.ZERO
+var _placed_camera_forward := Vector3.ZERO
+var _has_placement := false
 
 
 func _ready() -> void:
@@ -59,8 +62,24 @@ func _place_in_reading_zone() -> void:
 	var camera_basis := _camera.global_transform.basis.orthonormalized()
 	var offset := Vector3(horizontal_offset, vertical_offset, -distance_from_user)
 	global_transform = Transform3D(camera_basis, _camera.global_position + camera_basis * offset)
+	_placed_camera_position = _camera.global_position
+	_placed_camera_forward = -camera_basis.z
+	_has_placement = true
 	if _room_anchors != null:
 		_room_anchors.register_anchor("approval_surface", "approval_gate", global_transform)
+
+
+func _process(_delta: float) -> void:
+	# An approval gate must stay reachable: re-park in front of the user when
+	# they move or look elsewhere instead of leaving it behind in world space.
+	if not visible or _camera == null or not _has_placement:
+		return
+	var camera_forward := -_camera.global_transform.basis.z
+	if (
+		_camera.global_position.distance_to(_placed_camera_position) > 0.3
+		or camera_forward.dot(_placed_camera_forward) < 0.9
+	):
+		_place_in_reading_zone()
 
 
 func _on_approval_requested(_request: Dictionary) -> void:
