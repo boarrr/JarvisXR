@@ -548,10 +548,13 @@ class SpatialAgentServer:
                 await emit("update.applied", "", {"version": package.version})
             else:
                 log_record("update_apply_failed", session_id=session.id, code=result.get("code", ""))
+                # No usable adb link (or the install failed): hand the transfer
+                # back to the cockpit so it can download and install the APK
+                # itself via its PackageInstaller plugin - no USB required.
                 await emit(
-                    "error",
+                    "update.fallback",
                     "",
-                    {"code": result.get("code", "install_failed"), "message": result.get("message", "")},
+                    {"reason": result.get("code", "install_failed"), "message": result.get("message", "")},
                 )
         elif command.type == "update.check":
             payload = self.updates.manifest_payload()
