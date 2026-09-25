@@ -27,6 +27,7 @@ const FOOTER_HEIGHT_PX := BUTTON_HEIGHT_PX * FOOTER_ROWS + 22.0
 # buttons; older messages are reached by swiping (page by page).
 const CHAT_MESSAGES_PER_PAGE := 4
 const CHAT_RENDER_INTERVAL := 0.1
+const CHAT_SCROLL_LINES_PER_METRE := 55.0
 
 # Label, semantic target, and the existing Area3D node that carries it (empty
 # node means the panel creates its own touch target).
@@ -96,6 +97,8 @@ var _code_offset := 0
 var _swipe_active := false
 var _swipe_start := Vector2.ZERO
 var _swipe_last := Vector2.ZERO
+var _scroll_anchor_y := 0.0
+var _scroll_accumulator := 0.0
 
 
 func _ready() -> void:
@@ -644,16 +647,37 @@ func _update_swipe() -> void:
 		if not _swipe_active:
 			_swipe_active = true
 			_swipe_start = position_2d
+			_scroll_anchor_y = position_2d.y
+			_scroll_accumulator = 0.0
+		elif _page == PAGE_CHAT:
+			# Continuous drag scroll while the fingertip stays on the screen.
+			var frame_dy := position_2d.y - _scroll_anchor_y
+			_scroll_anchor_y = position_2d.y
+			_scroll_chat_lines(-frame_dy * CHAT_SCROLL_LINES_PER_METRE)
 		_swipe_last = position_2d
 		return
 	if not _swipe_active:
 		return
 	_swipe_active = false
 	var delta := _swipe_last - _swipe_start
-	if absf(delta.x) > 0.05 and absf(delta.x) > absf(delta.y):
+	if absf(delta.x) > 0.06 and absf(delta.x) > absf(delta.y):
 		_change_page(-1 if delta.x > 0.0 else 1)
-	elif absf(delta.y) > 0.05:
-		_scroll_page(1 if delta.y > 0.0 else -1)
+
+
+func _scroll_chat_lines(line_delta: float) -> void:
+	if is_zero_approx(line_delta):
+		return
+	_scroll_accumulator += line_delta
+	var whole := int(_scroll_accumulator)
+	if whole == 0:
+		return
+	_scroll_accumulator -= float(whole)
+	var last_line := maxi(0, _body.get_line_count() - 1)
+	_chat_scroll_line = clampi(_chat_scroll_line + whole, 0, last_line)
+	_body.scroll_to_line(_chat_scroll_line)
+	_chat_follow = _chat_scroll_line >= last_line
+	if _viewport != null and visible:
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 func _change_page(direction: int) -> void:
