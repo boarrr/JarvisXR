@@ -44,7 +44,10 @@ func _show_next_approval() -> void:
 		return
 	_approval_id = str(request.get("approval_id", ""))
 	_title_label.text = "APPROVAL REQUIRED  ·  %s" % request.get("tool_name", "Tool")
-	_summary_label.text = str(request.get("summary", "The agent requested an action."))
+	var summary := str(request.get("summary", "The agent requested an action."))
+	if summary.length() > 220:
+		summary = summary.substr(0, 217) + "..."
+	_summary_label.text = summary
 	_permission_label.text = "%s // EXPLICIT HAND CONFIRMATION" % str(
 		request.get("permission_level", "explicit approval")
 	).to_upper()
@@ -90,15 +93,25 @@ func _process(delta: float) -> void:
 
 func _face_user(delta: float) -> void:
 	var to_user := _camera.global_position - global_position
-	to_user.y = 0.0
 	if to_user.length_squared() < 0.0001:
 		return
-	var desired := atan2(to_user.x, to_user.z)
+	var forward := to_user.normalized()
+	# Clamp pitch so the panel tilts up/down toward the user's head (readable
+	# from any height) but never flips over.
+	forward.y = clampf(forward.y, -0.6, 0.6)
+	forward = forward.normalized()
+	var up := Vector3.UP
+	var right := up.cross(forward)
+	if right.length_squared() < 0.0001:
+		right = Vector3.RIGHT
+	right = right.normalized()
+	up = forward.cross(right).normalized()
+	var desired := Basis(right, up, forward)
 	if delta <= 0.0:
-		global_rotation = Vector3(0.0, desired, 0.0)
+		basis = desired
 	else:
-		var yaw := lerp_angle(global_rotation.y, desired, 1.0 - exp(-6.0 * delta))
-		global_rotation = Vector3(0.0, yaw, 0.0)
+		basis = basis.slerp(desired, 1.0 - exp(-8.0 * delta))
+	global_transform = Transform3D(basis.orthonormalized(), global_position)
 
 
 func _on_approval_requested(_request: Dictionary) -> void:

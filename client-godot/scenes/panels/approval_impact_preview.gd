@@ -71,8 +71,9 @@ func _add_route_node(position_value: Vector3, route_label: String, color: Color,
 	label.width = 76.0
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.text = route_label.to_upper()
+	label.max_lines_visible = 2
 	label.modulate = Color(color, 1.0)
-	label.no_depth_test = true
+	label.no_depth_test = false
 	add_child(label)
 
 
@@ -90,15 +91,16 @@ func _add_link(x: float, color: Color) -> void:
 func _add_caption(caption: String, color: Color) -> void:
 	var label := Label3D.new()
 	label.name = "ImpactCaption"
-	label.position = Vector3(0.0, -0.09, 0.008)
+	label.position = Vector3(0.0, -0.078, 0.008)
 	label.pixel_size = 0.0017
 	label.font_size = 8
 	label.outline_size = 3
-	label.width = 245.0
+	label.width = 210.0
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.max_lines_visible = 2
 	label.text = caption.to_upper()
 	label.modulate = Color(color, 0.9)
-	label.no_depth_test = true
+	label.no_depth_test = false
 	add_child(label)
 
 
@@ -110,5 +112,5 @@ func _material(color: Color) -> StandardMaterial3D:
 	material.emission_enabled = true
 	material.emission = Color(color.r, color.g, color.b, 1.0)
 	material.emission_energy_multiplier = 2.0
-	material.no_depth_test = true
+	material.no_depth_test = false
 	return material
