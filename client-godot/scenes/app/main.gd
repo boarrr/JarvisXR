@@ -470,8 +470,16 @@ func _toggle_voice_input() -> void:
 
 func _submit_quick_intent(target_id: String) -> bool:
 	var prompt := _quick_intent_panel.get_prompt(target_id)
-	if prompt.is_empty() or AppState.focused_thread_id.is_empty():
+	if prompt.is_empty():
 		return false
+	if AppState.focused_thread_id.is_empty():
+		# No agent selected: fall back to the first one so a quick intent still
+		# does something, and say so on the panel.
+		if AppState.ordered_thread_ids.is_empty():
+			AppState.set_update_banner("No agent to send to")
+			return false
+		AppState.focus_thread(AppState.ordered_thread_ids[0])
+		AppState.set_update_banner("Sending to %s" % AppState.ordered_thread_ids[0].right(6))
 	var accepted := _backend_bridge.send_command(
 		"message.send",
 		{"content": prompt},

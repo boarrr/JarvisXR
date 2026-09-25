@@ -753,23 +753,14 @@ class AgentCoordinator:
         if not workspace_id:
             return
         if self.workspaces.get(workspace_id) is None:
-            await emit(
-                "error",
-                run.thread_id,
-                {
-                    "code": "workspace_not_found",
-                    "message": f"Workspace '{workspace_id}' is not registered",
-                },
-            )
+            log_record("worktree_skipped", run_id=run.run_id, reason="workspace_not_found")
             return
         try:
             worktree = await self.workspaces.create_worktree(workspace_id, run.run_id)
         except WorkspaceError as error:
-            await emit(
-                "error",
-                run.thread_id,
-                {"code": "workspace_error", "message": str(error)},
-            )
+            # Isolation is best-effort; fall back to the plain directory so the
+            # run still works (some hosts cannot create git worktrees).
+            log_record("worktree_skipped", run_id=run.run_id, reason=str(error)[:200])
             return
         run.worktree = worktree
         self._worktrees_by_run[run.run_id] = worktree
