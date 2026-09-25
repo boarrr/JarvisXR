@@ -151,8 +151,14 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 			var error_code := str(event.payload.get("code", ""))
 			if error_code in ["no_adb", "no_adb_device", "install_failed"]:
 				update_message.emit("update.fallback", event.payload)
-			EventBus.debug_message.emit("Backend error: %s" % event.payload.get("message", "unknown error"))
-	if event.type != "agent.message.delta" and event.type != "update.chunk":
+			elif error_code == "run_active":
+				# Tapping a quick action while the agent is still answering is
+				# not a failure; just nudge the user to wait.
+				AppState.set_update_banner("Agent is working - wait for it")
+				EventBus.debug_message.emit("Agent is still working; action ignored")
+			else:
+				EventBus.debug_message.emit("Backend error: %s" % event.payload.get("message", "unknown error"))
+	if event.type != "agent.message.delta" and event.type != "update.chunk" and event.type != "error":
 		EventBus.debug_message.emit("Backend event: %s" % event.type)
 	backend_event_applied.emit(event)
 

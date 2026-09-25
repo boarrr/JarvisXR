@@ -481,6 +481,11 @@ func _submit_quick_intent(target_id: String) -> bool:
 			return false
 		AppState.focus_thread(AppState.ordered_thread_ids[0])
 		AppState.set_update_banner("Sending to %s" % AppState.ordered_thread_ids[0].right(6))
+	var focused := AppState.get_thread(AppState.focused_thread_id)
+	if focused != null and focused.status == AgentThread.Status.WORKING:
+		AppState.set_update_banner("Agent is working - wait for it")
+		EventBus.debug_message.emit("Agent is still working; quick action not sent")
+		return false
 	var accepted := _backend_bridge.send_command(
 		"message.send",
 		{"content": prompt},
