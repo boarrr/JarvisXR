@@ -389,6 +389,7 @@ class AgentCoordinator:
                 error_type=type(error).__name__,
             )
         finally:
+            log_record("opencode_run_end", run_id=run.run_id)
             if self._runs.get(run.thread_id) is run:
                 self._runs.pop(run.thread_id, None)
 
@@ -469,12 +470,15 @@ class AgentCoordinator:
         assert self.opencode is not None
         sequence = 0
         try:
+            log_record("opencode_run_start", thread_id=run.thread_id, run_id=run.run_id)
             thread = await self.threads.set_status(run.thread_id, "working")
             await emit("agent.status", run.thread_id, {"status": "working", "run_id": run.run_id})
             await self._prepare_worktree(run, thread, emit)
             directory = str(run.worktree.path) if run.worktree is not None else self.opencode_directory
+            log_record("opencode_worktree", run_id=run.run_id, directory=directory)
             client = self.opencode.with_directory(directory) if directory else self.opencode
             opencode_session = await self._opencode_session_for(run, thread, client)
+            log_record("opencode_session", run_id=run.run_id, session=opencode_session)
             prompt_text = ""
             for message in reversed(thread.messages):
                 if message.role == "user" and message.content.strip():
@@ -486,6 +490,7 @@ class AgentCoordinator:
                 {"message_id": run.message_id, "role": "assistant", "run_id": run.run_id},
             )
             await client.prompt(opencode_session, prompt_text)
+            log_record("opencode_prompted", run_id=run.run_id)
             async for event in client.events():
                 if run.cancel_event.is_set():
                     with suppress(Exception):
