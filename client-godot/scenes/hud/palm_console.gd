@@ -26,6 +26,7 @@ const FOOTER_HEIGHT_PX := BUTTON_HEIGHT_PX * FOOTER_ROWS + 22.0
 # Keep the chat page short enough that no line hides behind the quick-action
 # buttons; older messages are reached by swiping (page by page).
 const CHAT_MESSAGES_PER_PAGE := 4
+const CHAT_RENDER_INTERVAL := 0.1
 
 # Label, semantic target, and the existing Area3D node that carries it (empty
 # node means the panel creates its own touch target).
@@ -87,6 +88,8 @@ var _panel_ignored := 0.0
 var _page := PAGE_CHAT
 var _chat_offset := 0
 var _chat_follow := true
+var _chat_dirty := false
+var _chat_elapsed := 0.0
 var _code_offset := 0
 var _swipe_active := false
 var _swipe_start := Vector2.ZERO
@@ -433,6 +436,11 @@ func _prepare_system_targets() -> void:
 		for child in target.get_children():
 			if child is MeshInstance3D or child is Label3D:
 				child.visible = false
+	# The legacy CODE TRACE target overlays the screen and blocks it; the palm
+	# has its own pages now, so retire it.
+	var code_target := get_node_or_null("CodeTarget") as Area3D
+	if code_target != null:
+		code_target.visible = false
 
 
 func _refresh_screen() -> void:
@@ -698,8 +706,27 @@ func _on_state_changed(_thread_id: String) -> void:
 	_refresh_screen()
 
 
+func _process(delta: float) -> void:
+	# Coalesce stream deltas: rebuilding the transcript on every token freezes
+	# the frame budget, so repaint at a fixed low rate while content arrives.
+	if not _chat_dirty or not visible:
+		return
+	_chat_elapsed += delta
+	if _chat_elapsed < CHAT_RENDER_INTERVAL:
+		return
+	_chat_elapsed = 0.0
+	_chat_dirty = false
+	if _page == PAGE_CHAT:
+		_render_chat()
+		if _viewport != null:
+			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
 func _on_thread_updated(_thread: AgentThread) -> void:
-	_refresh_screen()
+	if _page == PAGE_CHAT and visible:
+		_chat_dirty = true
+	else:
+		_refresh_screen()
 
 
 func _on_layout_changed(_thread_id: String) -> void:

@@ -120,8 +120,10 @@ func calculate_slot_global_position(slot: int) -> Vector3:
 func _spawn_or_update_orb(thread: AgentThread) -> void:
 	var existing_orb := get_orb(thread.id)
 	if existing_orb != null:
+		# Just refresh its visuals. Re-running the whole layout on every token
+		# re-targets and re-orients the orbs constantly (they appear to drift
+		# and it burns frame budget while streaming).
 		existing_orb.bind_thread(thread)
-		_refresh_layout()
 		return
 
 	_assign_stable_slot(thread)
