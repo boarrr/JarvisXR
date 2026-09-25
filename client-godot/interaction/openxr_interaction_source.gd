@@ -36,8 +36,8 @@ const LEFT_TRACKER_PATH := &"/user/hand_tracker/left"
 const RIGHT_TRACKER_PATH := &"/user/hand_tracker/right"
 const TOUCH_CONTACT_DISTANCE := 0.025
 const TOUCH_RELEASE_DISTANCE := 0.07
-const TOUCH_TAP_RELEASE_DISTANCE := 0.04
-const TOUCH_DRAG_CANCEL_DISTANCE := 0.03
+const TOUCH_TAP_HOLD_MSEC := 90
+const TOUCH_DRAG_CANCEL_DISTANCE := 0.04
 # OpenXR joints drop out for single frames routinely (occlusion, edge of the
 # camera FOV). Hold the last state briefly so a blink does not cancel a touch,
 # grab, or the aim ray.
@@ -100,7 +100,9 @@ var _touch_area: Area3D = null
 var _touch_release_needed := false
 var _touch_candidate_id := ""
 var _touch_candidate_position := Vector3.ZERO
+var _touch_candidate_start_msec := 0
 var _touch_dragged := false
+var _touch_tap_fired := false
 var _telemetry_enabled := false
 var _telemetry_elapsed := 0.0
 var _tracking_losses := 0
@@ -303,6 +305,7 @@ func _clear_pointer() -> void:
 	_touch_release_needed = false
 	_touch_candidate_id = ""
 	_touch_dragged = false
+	_touch_tap_fired = false
 	_crush_seconds = 0.0
 	_crush_latched = false
 	_crush_candidate = ""
@@ -681,25 +684,30 @@ func _update_touch_interaction(position: Vector3) -> void:
 	# Physical touch behaves like the headset's system keyboard: the fingertip
 	# presses a control on contact and latches until it pulls away.
 	if _touch_release_needed:
-		var release_distance := (
-			TOUCH_TAP_RELEASE_DISTANCE if not _touch_candidate_id.is_empty() else TOUCH_RELEASE_DISTANCE
-		)
-		if _touch_area == null or _distance_to_area(_touch_area, position) > release_distance:
-			# Lift-off ends the touch. A screen control fires as a tap only if
-			# the fingertip stayed put, so dragging to scroll never clicks.
-			if not _touch_candidate_id.is_empty():
-				if not _touch_dragged:
-					submit_direct_touch(_touch_candidate_id, _touch_candidate_position)
-				_touch_candidate_id = ""
+		if _touch_area == null or _distance_to_area(_touch_area, position) > TOUCH_RELEASE_DISTANCE:
+			# Touch ended, but a missed release must not lose the tap: fire here
+			# if the hold never got the chance to.
+			if not _touch_candidate_id.is_empty() and not _touch_dragged and not _touch_tap_fired:
+				submit_direct_touch(_touch_candidate_id, _touch_candidate_position)
 			_touch_release_needed = false
 			_touch_target_id = ""
 			_touch_area = null
+			_touch_candidate_id = ""
 			_touch_dragged = false
-		elif (
-			not _touch_candidate_id.is_empty()
-			and _touch_candidate_position.distance_to(position) > TOUCH_DRAG_CANCEL_DISTANCE
-		):
-			_touch_dragged = true
+			_touch_tap_fired = false
+		elif not _touch_candidate_id.is_empty():
+			if _touch_candidate_position.distance_to(position) > TOUCH_DRAG_CANCEL_DISTANCE:
+				# The fingertip moved: this is a scroll, not a tap.
+				_touch_dragged = true
+			elif (
+				not _touch_dragged
+				and not _touch_tap_fired
+				and _now_msec() - _touch_candidate_start_msec >= TOUCH_TAP_HOLD_MSEC
+			):
+				# Short hold with a steady fingertip counts as a tap. Firing on
+				# contact+hold (not on release) survives hand-tracking dropouts.
+				submit_direct_touch(_touch_candidate_id, _touch_candidate_position)
+				_touch_tap_fired = true
 			return
 		else:
 			return
@@ -711,14 +719,17 @@ func _update_touch_interaction(position: Vector3) -> void:
 	_touch_area = contact["area"] as Area3D
 	_touch_release_needed = true
 	if ":" in target_id:
-		# Screen controls arm a tap candidate instead of firing on contact.
+		# Screen controls arm a tap candidate; a scroll cancels it before it fires.
 		_last_ui_touch_msec = _now_msec()
 		_touch_candidate_id = target_id
 		_touch_candidate_position = position
+		_touch_candidate_start_msec = _now_msec()
 		_touch_dragged = false
+		_touch_tap_fired = false
 	else:
 		_touch_candidate_id = ""
 		_touch_dragged = false
+		_touch_tap_fired = false
 
 
 func set_clock_override_msec(value: int) -> void:
