@@ -521,6 +521,8 @@ class AgentCoordinator:
     async def _drive_opencode(self, run: ActiveRun, emit: EmitEvent) -> None:
         assert self.opencode is not None
         sequence = 0
+        client: OpencodeClient = self.opencode
+        opencode_session = ""
         try:
             log_record("opencode_run_start", thread_id=run.thread_id, run_id=run.run_id)
             thread = await self.threads.set_status(run.thread_id, "working")
@@ -531,6 +533,11 @@ class AgentCoordinator:
             client = self.opencode.with_directory(directory) if directory else self.opencode
             opencode_session = await self._opencode_session_for(run, thread, client)
             log_record("opencode_session", run_id=run.run_id, session=opencode_session)
+            # A prior turn can be left running when its run was cancelled (e.g.
+            # the cockpit disconnected); abort it so this turn is not queued
+            # behind a stale busy session and appears to hang.
+            with suppress(Exception):
+                await client.abort(opencode_session)
             prompt_text = ""
             for message in reversed(thread.messages):
                 if message.role == "user" and message.content.strip():
@@ -618,6 +625,11 @@ class AgentCoordinator:
             await emit("run.completed", run.thread_id, {"run_id": run.run_id})
             log_record("run_completed", session_id=run.session_id, thread_id=run.thread_id, run_id=run.run_id)
         except asyncio.CancelledError:
+            # Cancelling the run must also stop the opencode turn, otherwise the
+            # session stays busy and the next prompt silently queues behind it.
+            if opencode_session:
+                with suppress(Exception):
+                    await client.abort(opencode_session)
             await self._finish_cancelled(run, emit)
         except Exception as error:  # noqa: BLE001
             await self.threads.complete_message(run.thread_id, run.message_id)
