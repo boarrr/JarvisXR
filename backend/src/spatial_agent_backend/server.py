@@ -556,6 +556,13 @@ class SpatialAgentServer:
                     "",
                     {"reason": result.get("code", "install_failed"), "message": result.get("message", "")},
                 )
+                # Also send the legacy error shape: older clients only trigger
+                # their in-app installer from this error code.
+                await emit(
+                    "error",
+                    "",
+                    {"code": result.get("code", "install_failed"), "message": result.get("message", "")},
+                )
         elif command.type == "update.check":
             payload = self.updates.manifest_payload()
             log_record(

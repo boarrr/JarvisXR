@@ -145,7 +145,7 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 			AppState.set_file_content(event.thread_id, event.payload)
 		"tool.catalog":
 			AppState.set_tool_catalog(event.payload)
-		"update.available", "update.none", "update.chunk", "update.applied", "update.progress":
+		"update.available", "update.none", "update.chunk", "update.applied", "update.progress", "update.fallback":
 			update_message.emit(event.type, event.payload)
 		"error":
 			var error_code := str(event.payload.get("code", ""))
