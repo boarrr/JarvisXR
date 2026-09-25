@@ -30,7 +30,13 @@ EmitEvent = Callable[[str, str, dict[str, Any]], Awaitable[None]]
 MAX_TOOL_ITERATIONS = 6
 
 # Permission policy for opencode-driven runs: edits proceed, shell asks.
-OPENCODE_PERMISSION = {"*": "allow", "edit": "allow", "bash": "ask"}
+# The server expects an array of rules (config files use an object; the
+# HTTP API uses PermissionRuleset = list[PermissionRule]).
+OPENCODE_PERMISSION = [
+    {"permission": "*", "pattern": "*", "action": "allow"},
+    {"permission": "edit", "pattern": "*", "action": "allow"},
+    {"permission": "bash", "pattern": "*", "action": "ask"},
+]
 
 
 @dataclass(slots=True)
@@ -395,7 +401,7 @@ class AgentCoordinator:
             return existing
         session_id = await client.create_session(
             title=str(getattr(thread, "title", run.thread_id)),
-            permission=dict(OPENCODE_PERMISSION),
+            permission=[dict(rule) for rule in OPENCODE_PERMISSION],
         )
         self._opencode_sessions[run.thread_id] = session_id
         return session_id

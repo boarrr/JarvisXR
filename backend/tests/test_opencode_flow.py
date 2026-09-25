@@ -84,6 +84,14 @@ class OpencodeFlowTests(unittest.IsolatedAsyncioTestCase):
 
         # The reply reached opencode and the run finished cleanly.
         self.assertEqual(self.server.state.permission_reply, "once")  # type: ignore[attr-defined]
+        # The session was created with an array permission ruleset (the HTTP API
+        # shape), not the config-file object.
+        permission = self.server.state.session_permission  # type: ignore[attr-defined]
+        self.assertIsInstance(permission, list)
+        self.assertIn(
+            {"permission": "bash", "pattern": "*", "action": "ask"},
+            permission,
+        )
 
 
 if __name__ == "__main__":
