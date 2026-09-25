@@ -75,9 +75,30 @@ func _place_in_reading_zone() -> void:
 		+ camera_right * park_side_offset
 		+ Vector3.DOWN * park_drop
 	)
-	look_at(camera_position, Vector3.UP, true)
+	_face_user(0.0)
 	if _room_anchors != null:
 		_room_anchors.register_anchor("approval_surface", "approval_gate", global_transform)
+
+
+func _process(delta: float) -> void:
+	# Yaw-billboard: stay put in the room but keep the face turned toward the
+	# user so the text and buttons never go edge-on and vanish.
+	if not visible or _camera == null:
+		return
+	_face_user(delta)
+
+
+func _face_user(delta: float) -> void:
+	var to_user := _camera.global_position - global_position
+	to_user.y = 0.0
+	if to_user.length_squared() < 0.0001:
+		return
+	var desired := atan2(to_user.x, to_user.z)
+	if delta <= 0.0:
+		global_rotation = Vector3(0.0, desired, 0.0)
+	else:
+		var yaw := lerp_angle(global_rotation.y, desired, 1.0 - exp(-6.0 * delta))
+		global_rotation = Vector3(0.0, yaw, 0.0)
 
 
 func _on_approval_requested(_request: Dictionary) -> void:
