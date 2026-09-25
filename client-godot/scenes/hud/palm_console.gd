@@ -41,6 +41,7 @@ const SYSTEM_BUTTONS := [
 ]
 
 const CHAT_BUTTONS := [
+	["EXPLORE", "quick:explore"],
 	["CONTINUE", "quick:continue"],
 	["SUMMARIZE", "quick:summarize"],
 	["EXPLAIN", "quick:explain_code"],

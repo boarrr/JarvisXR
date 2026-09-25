@@ -6,6 +6,7 @@ const PROMPTS := {
 	"quick:summarize": "Summarize progress, blockers, and next actions.",
 	"quick:explain_code": "Explain the latest code changes and their risks.",
 	"quick:privacy_review": "Review this thread for privacy and security concerns.",
+	"quick:explore": "Explore this repository: run `ls -la`, then `cat scripts/run_builder.sh`, one command at a time and show each result. Then give me a 3-bullet summary of what this repo is and what run_builder.sh launches.",
 }
 
 @export var user_rig_path: NodePath = ^"../UserRig"
