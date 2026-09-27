@@ -164,6 +164,7 @@ backend_mode="fake"
 backend_mode.android="websocket"
 backend_websocket_url="ws://127.0.0.1:8787/ws"
 backend_websocket_fallback="wss://192.168.0.202:8787/ws"
+baked_ca_path=""
 allow_unsafe_tls=false
 perf_probe=true
 gesture_telemetry=false

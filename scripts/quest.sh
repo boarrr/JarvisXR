@@ -240,6 +240,11 @@ inject_dev_ca() {
 	fi
 	mkdir -p "$client_root/certs"
 	cp "$project_root/backend/certs/ca.crt" "$client_root/certs/dev_ca.crt"
+	if grep -q '^baked_ca_path=' "$client_root/project.godot"; then
+		sed -i '' "s|^baked_ca_path=.*|baked_ca_path=\"res://certs/dev_ca.crt\"|" "$client_root/project.godot"
+	elif grep -q '^backend_websocket_url=' "$client_root/project.godot"; then
+		sed -i '' "s|^backend_websocket_url=.*|&\nbaked_ca_path=\"res://certs/dev_ca.crt\"|" "$client_root/project.godot"
+	fi
 	printf '%s\n' "Baked dev CA into res://certs/dev_ca.crt"
 }
 

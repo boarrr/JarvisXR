@@ -19,9 +19,11 @@ const UPDATE_DIR := "user://updates"
 const UPDATE_PATH := "user://updates/update.apk"
 const INSTALLED_SHA_PATH := "user://installed_sha"
 const PLUGIN_NAME := "AndroidUpdater"
+const FETCH_TIMEOUT_MSEC := 5000
+const MAX_CHUNK_RETRIES := 6
 
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
-@export var chunk_bytes: int = 524288
+@export var chunk_bytes: int = 262144
 @export var auto_check: bool = true
 @export var auto_install: bool = false
 
@@ -36,6 +38,8 @@ var _downloading := false
 var _check_timer: Timer = null
 var _last_progress_msec := 0
 var _next_log_bytes := 0
+var _next_offset := 0
+var _chunk_retries := 0
 
 
 func _build_version() -> String:
@@ -132,12 +136,39 @@ func begin_install() -> void:
 	_received = 0
 	_last_progress_msec = Time.get_ticks_msec()
 	_next_log_bytes = 0
+	_next_offset = 0
+	_chunk_retries = 0
+	set_process(true)
 	_request_chunk(0)
+
+
+func _process(_delta: float) -> void:
+	# If a chunk goes missing mid-transfer, re-request from the last offset
+	# instead of silently stalling.
+	if not _downloading or _file == null:
+		return
+	if Time.get_ticks_msec() - _last_progress_msec < FETCH_TIMEOUT_MSEC:
+		return
+	_chunk_retries += 1
+	if _chunk_retries > MAX_CHUNK_RETRIES:
+		_downloading = false
+		set_process(false)
+		if _file != null:
+			_file.close()
+			_file = null
+		update_failed.emit("stalled")
+		return
+	print("[UPDATER] chunk stalled at %d; re-requesting offset %d (%d)" % [
+		_received, _next_offset, _chunk_retries
+	])
+	_request_chunk(_next_offset)
+	_last_progress_msec = Time.get_ticks_msec()
 
 
 func _request_chunk(offset: int) -> void:
 	if _bridge == null:
 		return
+	_next_offset = offset
 	var length := int(_manifest.get("chunk_bytes", chunk_bytes))
 	_bridge.send_command("update.fetch", {"offset": offset, "length": length})
 
@@ -187,7 +218,7 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 				str(_manifest.get("sha256", "")),
 				int(_manifest.get("size_bytes", 0))
 			)
-			if (auto_install and not _auto_attempted) or _install_requested:
+			if ((auto_install and not _auto_attempted) or _install_requested) and not _downloading:
 				_auto_attempted = true
 				_apply_via_daemon()
 		"update.none":
@@ -206,6 +237,7 @@ func _on_update_message(event_type: String, payload: Dictionary) -> void:
 		"update.applied":
 			print("[UPDATER] daemon installed %s over adb" % str(payload.get("version", "")))
 			_downloading = false
+			set_process(false)
 			# Record the applied build so the next launch is not treated as stale.
 			_write_installed_sha(str(_manifest.get("sha256", "")))
 			AppState.set_update_banner("Updated - relaunching")
@@ -231,6 +263,7 @@ func _on_chunk(payload: Dictionary) -> void:
 	_hasher.update(data)
 	_received += data.size()
 	_last_progress_msec = Time.get_ticks_msec()
+	_chunk_retries = 0
 	if _received >= _next_log_bytes:
 		_next_log_bytes = _received + 16 * 1024 * 1024
 		print("[UPDATER] progress %d / %d" % [
@@ -240,6 +273,7 @@ func _on_chunk(payload: Dictionary) -> void:
 	if bool(payload.get("eof", false)):
 		_file.close()
 		_file = null
+		set_process(false)
 		_finish_download()
 		return
 	_request_chunk(int(payload.get("offset", 0)) + data.size())
@@ -275,6 +309,7 @@ func _launch_installer() -> void:
 
 func _on_install_result(success: bool, message: String) -> void:
 	_downloading = false
+	set_process(false)
 	print("[UPDATER] install_result success=%s message=%s" % [success, message])
 	if success and message == "installed":
 		_write_installed_sha(str(_manifest.get("sha256", "")))

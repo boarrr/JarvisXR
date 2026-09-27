@@ -217,9 +217,12 @@ func _load_certificate() -> X509Certificate:
 		if not (path.begins_with("user://") or path.begins_with("res://")):
 			path = "user://%s" % path.get_file()
 		candidates.append(path)
-	# Baked dev CA (shipped in the APK) is the no-push fallback.
+	# Baked dev CA (shipped in the APK) is the no-push fallback; only present in
+	# exported builds (gated by a setting) so headless tests stay CA-free.
 	candidates.append("user://dev_ca.crt")
-	candidates.append("res://certs/dev_ca.crt")
+	var baked := str(ProjectSettings.get_setting("spatial_agent/baked_ca_path", ""))
+	if not baked.is_empty():
+		candidates.append(baked)
 	for candidate in candidates:
 		var certificate := X509Certificate.new()
 		if certificate.load(candidate) == OK:
