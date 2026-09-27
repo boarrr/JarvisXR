@@ -10,6 +10,7 @@ const CUES := {
 	"complete": {"frequency_hz": 540.0, "end_frequency_hz": 880.0, "duration": 0.16, "gain_db": -15.0},
 	"attention": {"frequency_hz": 310.0, "end_frequency_hz": 310.0, "duration": 0.19, "gain_db": -13.0},
 	"approval": {"frequency_hz": 220.0, "end_frequency_hz": 660.0, "duration": 0.24, "gain_db": -11.0},
+	"destroy": {"frequency_hz": 360.0, "end_frequency_hz": 70.0, "duration": 0.30, "gain_db": -8.0},
 	"error": {"frequency_hz": 190.0, "end_frequency_hz": 120.0, "duration": 0.26, "gain_db": -10.0},
 	"veil_on": {"frequency_hz": 720.0, "end_frequency_hz": 180.0, "duration": 0.18, "gain_db": -14.0},
 	"veil_off": {"frequency_hz": 260.0, "end_frequency_hz": 760.0, "duration": 0.18, "gain_db": -16.0},

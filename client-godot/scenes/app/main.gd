@@ -330,9 +330,13 @@ func _crush_agent(thread_id: String) -> void:
 	var thread := AppState.get_thread(thread_id)
 	if thread == null:
 		return
+	var orb := _orb_manager.get_orb(thread_id)
+	var crush_position := orb.global_position if orb != null else Vector3.ZERO
 	AppState.push_undo(thread_id, thread.title, AppState.get_orb_offset(thread_id))
 	_orb_manager.remove_orb(thread_id)
 	_backend_bridge.send_command("thread.archive", {}, thread_id)
+	if _audio_cues != null:
+		_audio_cues.emit_cue("destroy", crush_position)
 	EventBus.debug_message.emit("Crushed %s · undo available" % thread.title)
 
 

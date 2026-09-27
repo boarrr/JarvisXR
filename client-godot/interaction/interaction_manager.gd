@@ -7,10 +7,11 @@ signal interaction_event(event: InteractionEvent)
 @export_flags_3d_physics var interaction_mask: int = 2
 # Forgiving selection for inexperienced users: if the exact ray misses, snap to
 # the nearest interactable within a small cone, and optionally select by dwell.
-@export_range(0.0, 20.0, 0.5) var snap_cone_degrees: float = 6.0
+@export_range(0.0, 20.0, 0.5) var snap_cone_degrees: float = 4.0
 @export_range(0.5, 20.0, 0.5) var snap_max_distance: float = 8.0
 @export var dwell_enabled: bool = true
-@export_range(0.2, 2.0, 0.05) var dwell_seconds: float = 0.55
+@export_range(0.2, 2.0, 0.05) var dwell_seconds: float = 0.8
+@export_range(1.0, 20.0, 0.5) var dwell_stability_degrees: float = 5.0
 @export var dwell_ui_targets: bool = false
 
 var _interaction_source: InteractionSource = null
@@ -18,6 +19,7 @@ var _hovered_target_id: String = ""
 var _was_selecting: bool = false
 var _dwell_target_id: String = ""
 var _dwell_accum: float = 0.0
+var _dwell_direction := Vector3.ZERO
 
 
 func set_interaction_source(source: InteractionSource) -> bool:
@@ -77,9 +79,20 @@ func _physics_process(delta: float) -> void:
 		and _dwell_eligible(target_id)
 	):
 		if target_id == _dwell_target_id:
-			_dwell_accum += delta
+			# Require a steady aim: wandering the ray restarts the dwell so a
+			# sweep across agents never selects one.
+			if (
+				not _dwell_direction.is_zero_approx()
+				and rad_to_deg(pointer_state.direction.angle_to(_dwell_direction))
+					> dwell_stability_degrees
+			):
+				_dwell_accum = 0.0
+				_dwell_direction = pointer_state.direction
+			else:
+				_dwell_accum += delta
 		else:
 			_dwell_target_id = target_id
+			_dwell_direction = pointer_state.direction
 			_dwell_accum = 0.0
 		if _dwell_accum >= dwell_seconds:
 			_emit_event(InteractionEvent.Type.SELECT, target_id, hit_position)
@@ -101,6 +114,7 @@ func _dwell_eligible(target_id: String) -> bool:
 func _reset_dwell() -> void:
 	_dwell_target_id = ""
 	_dwell_accum = 0.0
+	_dwell_direction = Vector3.ZERO
 
 
 func get_dwell_progress() -> float:
