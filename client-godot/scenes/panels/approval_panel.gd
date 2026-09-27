@@ -15,7 +15,7 @@ const RECT_APPROVE := Rect2(28, 322, 316, 72)
 const RECT_DENY := Rect2(376, 322, 316, 72)
 
 @export var user_rig_path: NodePath = ^"../UserRig"
-@export_range(0.5, 2.0, 0.05) var park_distance: float = 0.85
+@export_range(0.4, 1.5, 0.05) var park_distance: float = 0.72
 @export_range(-0.5, 0.5, 0.01) var park_side_offset: float = -0.04
 @export_range(0.0, 0.6, 0.01) var park_drop: float = 0.16
 @export var room_anchor_registry_path: NodePath = ^"../RoomAnchorRegistry"

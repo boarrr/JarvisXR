@@ -71,7 +71,6 @@ func _add_route_node(position_value: Vector3, route_label: String, color: Color,
 	label.width = 76.0
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.text = route_label.to_upper()
-	label.max_lines_visible = 2
 	label.modulate = Color(color, 1.0)
 	label.no_depth_test = false
 	add_child(label)
@@ -97,7 +96,6 @@ func _add_caption(caption: String, color: Color) -> void:
 	label.outline_size = 3
 	label.width = 210.0
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.max_lines_visible = 2
 	label.text = caption.to_upper()
 	label.modulate = Color(color, 0.9)
 	label.no_depth_test = false

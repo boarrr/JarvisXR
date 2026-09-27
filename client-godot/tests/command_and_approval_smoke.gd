@@ -56,6 +56,18 @@ func _run() -> void:
 	_check(not code_viewer.visible and not composer.visible, "approval mode hides lower-priority work surfaces")
 	_check(approval_panel.get_node("ApproveTarget").get_interaction_target_id() == "approval:approve", "approval exposes a world-space pinch target")
 	_check(approval_panel.get_node("DenyTarget").get_interaction_target_id() == "approval:deny", "denial exposes a world-space pinch target")
+	# The gate is modal: the ray must land on it even if an agent orb is closer.
+	var manager := main.get_node("InteractionManager") as InteractionManager
+	var camera := (main.get_node("UserRig") as UserRig).get_camera()
+	var approve_target := approval_panel.get_node("ApproveTarget") as Area3D
+	var pointer := PointerState.new()
+	pointer.origin = camera.global_position
+	pointer.direction = (approve_target.global_position - camera.global_position).normalized()
+	var manager_hit := manager._cast_pointer_ray(pointer)
+	_check(
+		manager._target_id_from_hit(manager_hit) == "approval:approve",
+		"approval target wins the ray even when an agent is closer"
+	)
 	var approval_id := approval_panel.get_approval_id()
 	main._on_interaction_event(InteractionEvent.new(
 		InteractionEvent.Type.SELECT,

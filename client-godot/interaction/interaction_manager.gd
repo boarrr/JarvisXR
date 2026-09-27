@@ -141,20 +141,25 @@ func _direct_ray(pointer_state: PointerState) -> Dictionary:
 	query.collide_with_bodies = false
 	query.hit_from_inside = true
 	var excluded: Array[RID] = []
+	var first_target: Dictionary = {}
 	# Invisible menus still have collision shapes. Skip them so closing a
-	# surface cannot leave an invisible wall between the hand and an agent.
+	# surface cannot leave an invisible wall between the hand and an agent. A
+	# pending approval gate is modal, so it wins even when something occludes it.
 	for _attempt in range(64):
 		var hit := get_world_3d().direct_space_state.intersect_ray(query)
 		if hit.is_empty():
-			return {}
-		if not _target_id_from_hit(hit).is_empty():
+			return first_target
+		var hit_target := _target_id_from_hit(hit)
+		if hit_target.begins_with("approval:"):
 			return hit
+		if not hit_target.is_empty() and first_target.is_empty():
+			first_target = hit
 		var collider := hit.get("collider") as CollisionObject3D
 		if collider == null:
-			return {}
+			return first_target
 		excluded.append(collider.get_rid())
 		query.exclude = excluded
-	return {}
+	return first_target
 
 
 func _snap_candidate(pointer_state: PointerState) -> Dictionary:
