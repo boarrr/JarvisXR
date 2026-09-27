@@ -80,6 +80,7 @@ for scene in \
 	standing_orbit_smoke \
 	updater_service_smoke \
 	daemon_config_smoke \
+	discovery_smoke \
 	perf_probe_smoke \
 	backend_client_smoke \
 	command_and_approval_smoke \

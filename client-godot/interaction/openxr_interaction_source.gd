@@ -34,6 +34,10 @@ const PALM_ACTIONS := [
 
 const LEFT_TRACKER_PATH := &"/user/hand_tracker/left"
 const RIGHT_TRACKER_PATH := &"/user/hand_tracker/right"
+# Meta's hand-interaction profile exposes a curated aim pose and pinch signal on
+# these controller paths; they are steadier than raw joint geometry.
+const LEFT_CONTROLLER_PATH := &"/user/hand/left"
+const RIGHT_CONTROLLER_PATH := &"/user/hand/right"
 const TOUCH_CONTACT_DISTANCE := 0.025
 const TOUCH_RELEASE_DISTANCE := 0.07
 const TOUCH_TAP_HOLD_MSEC := 90
@@ -272,12 +276,19 @@ func _collect_hand_samples(delta: float) -> void:
 		_latest_hand_samples[hand_name] = sample
 		var thumb_tip := sample.get("thumb_tip", Vector3.ZERO) as Vector3
 		var index_tip := sample.get("index_tip", Vector3.ZERO) as Vector3
-		_hand_pinch_states[hand_name] = evaluate_pinch(
-			thumb_tip.distance_to(index_tip),
-			bool(_hand_pinch_states.get(hand_name, false)),
-			pinch_begin_distance,
-			pinch_release_distance
-		)
+		var meta := _read_meta_hand(hand_name)
+		if not meta.is_empty():
+			sample["meta"] = meta
+		var was_pinching := bool(_hand_pinch_states.get(hand_name, false))
+		if meta.has("click"):
+			_hand_pinch_states[hand_name] = bool(meta["click"])
+		else:
+			_hand_pinch_states[hand_name] = evaluate_pinch(
+				thumb_tip.distance_to(index_tip),
+				was_pinching,
+				pinch_begin_distance,
+				pinch_release_distance
+			)
 		_track_tap(hand_name)
 	if _latest_hand_samples.is_empty():
 		_missing_seconds += delta
@@ -362,6 +373,31 @@ func _sample_for_hand(hand_name: String) -> Dictionary:
 	}
 
 
+func _read_meta_hand(hand_name: String) -> Dictionary:
+	# Reads Meta's curated aim pose and pinch signal from the hand-interaction
+	# profile action map (trigger = pinch strength, trigger_click = pinch).
+	var tracker := XRServer.get_tracker(
+		RIGHT_CONTROLLER_PATH if hand_name == "right" else LEFT_CONTROLLER_PATH
+	)
+	if tracker == null:
+		return {}
+	var result := {}
+	if tracker.has_method("get_input"):
+		var strength: Variant = tracker.call("get_input", &"trigger")
+		if strength is float or strength is int:
+			result["strength"] = float(strength)
+	if tracker.has_method("is_button_pressed"):
+		result["click"] = bool(tracker.call("is_button_pressed", &"trigger_click"))
+	if tracker.has_method("get_pose"):
+		var pose: Variant = tracker.call("get_pose", &"aim_pose")
+		if pose is Transform3D:
+			var origin_transform := (
+				_xr_origin.global_transform if _xr_origin != null else Transform3D.IDENTITY
+			)
+			result["aim"] = origin_transform * (pose as Transform3D)
+	return result
+
+
 func get_latest_hand_sample(hand_name: String) -> Dictionary:
 	var sample: Dictionary = _latest_hand_samples.get(hand_name, {})
 	return sample.duplicate(true)
@@ -415,14 +451,15 @@ func _apply_pointer_sample(sample: Dictionary, delta: float = 0.016) -> bool:
 		active_hand_changed.emit(preferred_hand)
 
 	var was_pinching := _pointer_state.is_selecting
-	var pinch_distance := thumb_tip.distance_to(index_tip)
-	var is_pinching := evaluate_pinch(
-		pinch_distance,
-		was_pinching,
-		pinch_begin_distance,
-		pinch_release_distance
-	)
+	var meta: Dictionary = sample.get("meta", {})
+	# Meta's pinch click is the commit gate when the hand-interaction profile is
+	# active; otherwise fall back to the geometric pinch in `_hand_pinch_states`.
+	var is_pinching := bool(_hand_pinch_states.get(preferred_hand, false))
+	if meta.has("click"):
+		is_pinching = bool(meta["click"])
 	var ray_direction := direction.normalized()
+	if meta.has("aim"):
+		ray_direction = (-(meta["aim"] as Transform3D).basis.z).normalized()
 	if _has_smoothed_ray:
 		_pointer_state.origin = _pointer_state.origin.lerp(index_tip, origin_smoothing)
 		_pointer_state.direction = _pointer_state.direction.lerp(ray_direction, direction_smoothing).normalized()

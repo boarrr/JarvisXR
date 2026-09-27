@@ -15,7 +15,7 @@ manifest_path="$project_root/build/quest/manifest.json"
 updates_dir="$project_root/build/quest/updates"
 
 usage() {
-	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|updater-plugin|deploy|wifi|wifi-install|deploy-wifi|manifest|export-release|deploy-release|deploy-release-wifi|adb|tune"
+	printf '%s\n' "Usage: ./scripts/quest.sh setup|doctor|export|install|tunnel|lan|dictation-plugin|updater-plugin|deploy|wifi|wifi-install|deploy-wifi|manifest|export-release|deploy-release|deploy-release-wifi|adb|tune|discover"
 }
 
 require_command() {
@@ -146,6 +146,7 @@ export_debug() {
 		fi
 	fi
 	inject_fallback_host
+	inject_dev_ca
 	apk_timestamp_before=$(stat -f %m "$apk_path" 2>/dev/null || printf '0')
 	set +e
 	JAVA_HOME="$java17_home" "$godot_bin" --headless --path "$client_root" --export-debug "Quest 3/3S" "$apk_path"
@@ -189,6 +190,7 @@ export_release() {
 		fi
 	fi
 	inject_fallback_host
+	inject_dev_ca
 	apk_timestamp_before=$(stat -f %m "$apk_path" 2>/dev/null || printf '0')
 	set +e
 	JAVA_HOME="$java17_home" "$godot_bin" --headless --path "$client_root" --export-release "Quest 3/3S" "$apk_path"
@@ -223,6 +225,36 @@ inject_fallback_host() {
 		sed -i '' "s|^backend_websocket_url=.*|&\nbackend_websocket_fallback=\"$fallback\"|" "$client_root/project.godot"
 	fi
 	printf '%s\n' "Fallback daemon URL: $fallback"
+}
+
+
+inject_dev_ca() {
+	# Ship the dev CA inside the APK so a fresh headset trusts the daemon
+	# without a separate cert push.
+	if [ ! -f "$project_root/backend/certs/ca.crt" ]; then
+		"$project_root/scripts/tls.sh" >/dev/null 2>&1 || true
+	fi
+	if [ ! -f "$project_root/backend/certs/ca.crt" ]; then
+		printf '%s\n' "No dev CA available; skipping baked CA." >&2
+		return 0
+	fi
+	mkdir -p "$client_root/certs"
+	cp "$project_root/backend/certs/ca.crt" "$client_root/certs/dev_ca.crt"
+	printf '%s\n' "Baked dev CA into res://certs/dev_ca.crt"
+}
+
+
+discover_info() {
+	"$project_root/scripts/tls.sh" >/dev/null 2>&1 || true
+	local ip name fp
+	ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)
+	name=$(scutil --get LocalHostName 2>/dev/null || hostname -s)
+	fp=$(openssl x509 -in "$project_root/backend/certs/ca.crt" -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//; s/://g' | tr 'A-Z' 'a-z')
+	printf '%s\n' "Spatial Agent daemon discovery"
+	printf '%s\n' "  websocket: wss://${ip:-<no-lan-ip>}:8787/ws"
+	printf '%s\n' "  hostname:  ${name}.local"
+	printf '%s\n' "  discovery: udp/8789 (broadcast + probe)"
+	printf '%s\n' "  ca sha256: ${fp:-<none>}"
 }
 
 
@@ -446,6 +478,9 @@ case "$action" in
 		;;
 	tune)
 		"$project_root/scripts/adb_tune.sh"
+		;;
+	discover)
+		discover_info
 		;;
 	wifi)
 		wifi_enable

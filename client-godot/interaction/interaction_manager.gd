@@ -5,10 +5,19 @@ signal interaction_event(event: InteractionEvent)
 
 @export_range(0.5, 100.0, 0.5) var ray_distance: float = 20.0
 @export_flags_3d_physics var interaction_mask: int = 2
+# Forgiving selection for inexperienced users: if the exact ray misses, snap to
+# the nearest interactable within a small cone, and optionally select by dwell.
+@export_range(0.0, 20.0, 0.5) var snap_cone_degrees: float = 6.0
+@export_range(0.5, 20.0, 0.5) var snap_max_distance: float = 8.0
+@export var dwell_enabled: bool = true
+@export_range(0.2, 2.0, 0.05) var dwell_seconds: float = 0.55
+@export var dwell_ui_targets: bool = false
 
 var _interaction_source: InteractionSource = null
 var _hovered_target_id: String = ""
 var _was_selecting: bool = false
+var _dwell_target_id: String = ""
+var _dwell_accum: float = 0.0
 
 
 func set_interaction_source(source: InteractionSource) -> bool:
@@ -29,20 +38,23 @@ func get_interaction_source() -> InteractionSource:
 	return _interaction_source
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if _interaction_source == null or not _interaction_source.is_available():
 		_update_hover_target("", null)
 		_was_selecting = false
+		_reset_dwell()
 		return
 	if _interaction_source is OpenXRInteractionSource and not _interaction_source.has_tracking_data():
 		_update_hover_target("", null)
 		_was_selecting = false
+		_reset_dwell()
 		return
 
 	var pointer_state := _interaction_source.get_pointer_state()
 	if pointer_state == null:
 		_update_hover_target("", null)
 		_was_selecting = false
+		_reset_dwell()
 		return
 
 	var hit := _cast_pointer_ray(pointer_state)
@@ -57,10 +69,54 @@ func _physics_process(_delta: float) -> void:
 		and not target_id.is_empty()
 	):
 		_emit_event(InteractionEvent.Type.SELECT, target_id, hit_position)
+		_reset_dwell()
+	elif (
+		dwell_enabled
+		and not pointer_state.is_selecting
+		and not pointer_state.is_grabbing
+		and _dwell_eligible(target_id)
+	):
+		if target_id == _dwell_target_id:
+			_dwell_accum += delta
+		else:
+			_dwell_target_id = target_id
+			_dwell_accum = 0.0
+		if _dwell_accum >= dwell_seconds:
+			_emit_event(InteractionEvent.Type.SELECT, target_id, hit_position)
+			_dwell_target_id = ""
+			_dwell_accum = 0.0
+	else:
+		_reset_dwell()
 	_was_selecting = pointer_state.is_selecting
 
 
+func _dwell_eligible(target_id: String) -> bool:
+	if target_id.is_empty():
+		return false
+	# Dwell only for world targets (agents) unless UI dwell is explicitly enabled;
+	# resting a ray on a button should not fire it.
+	return dwell_ui_targets or not ":" in target_id
+
+
+func _reset_dwell() -> void:
+	_dwell_target_id = ""
+	_dwell_accum = 0.0
+
+
+func get_dwell_progress() -> float:
+	if not dwell_enabled or _dwell_target_id.is_empty():
+		return 0.0
+	return clampf(_dwell_accum / maxf(dwell_seconds, 0.001), 0.0, 1.0)
+
+
 func _cast_pointer_ray(pointer_state: PointerState) -> Dictionary:
+	var hit := _direct_ray(pointer_state)
+	if not hit.is_empty():
+		return hit
+	return _snap_candidate(pointer_state)
+
+
+func _direct_ray(pointer_state: PointerState) -> Dictionary:
 	var ray_end := pointer_state.origin + pointer_state.direction * ray_distance
 	var query := PhysicsRayQueryParameters3D.create(
 		pointer_state.origin,
@@ -85,6 +141,34 @@ func _cast_pointer_ray(pointer_state: PointerState) -> Dictionary:
 		excluded.append(collider.get_rid())
 		query.exclude = excluded
 	return {}
+
+
+func _snap_candidate(pointer_state: PointerState) -> Dictionary:
+	if snap_cone_degrees <= 0.0:
+		return {}
+	var origin := pointer_state.origin
+	var direction := pointer_state.direction.normalized()
+	if direction.is_zero_approx():
+		return {}
+	var cos_limit := cos(deg_to_rad(snap_cone_degrees))
+	var best := {}
+	var best_angle := TAU
+	for node in get_tree().get_nodes_in_group("interactable"):
+		var area := node as Node3D
+		if area == null or not area.visible:
+			continue
+		var to_target := area.global_position - origin
+		var distance := to_target.length()
+		if distance < 0.05 or distance > snap_max_distance:
+			continue
+		var dot := (to_target / distance).dot(direction)
+		if dot < cos_limit:
+			continue
+		var angle := acos(clampf(dot, -1.0, 1.0))
+		if angle < best_angle:
+			best_angle = angle
+			best = {"collider": area, "position": area.global_position, "snapped": true}
+	return best
 
 
 func _target_id_from_hit(hit: Dictionary) -> String:

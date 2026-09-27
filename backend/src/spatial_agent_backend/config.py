@@ -81,6 +81,8 @@ class Settings:
     tls_certificate_path: Path | None = None
     tls_private_key_path: Path | None = None
     pairing_code_ttl_seconds: float = 600.0
+    discovery_enabled: bool = True
+    discovery_port: int = 8789
     shell_allowlist: tuple[str, ...] = ()
 
     @classmethod
@@ -126,6 +128,8 @@ class Settings:
             pairing_code_ttl_seconds=float(
                 os.getenv("SPATIAL_AGENT_PAIRING_TTL_SECONDS", "600")
             ),
+            discovery_enabled=_truthy(os.getenv("SPATIAL_AGENT_DISCOVERY", "1")),
+            discovery_port=int(os.getenv("SPATIAL_AGENT_DISCOVERY_PORT", "8789")),
             shell_allowlist=allowlist,
         )
 
@@ -147,6 +151,8 @@ class Settings:
             )
         if self.pairing_code_ttl_seconds < 30:
             raise ValueError("SPATIAL_AGENT_PAIRING_TTL_SECONDS must be at least 30")
+        if not 1 <= self.discovery_port <= 65535:
+            raise ValueError("SPATIAL_AGENT_DISCOVERY_PORT must be between 1 and 65535")
         if not _is_loopback(self.host):
             if not self.auth_required:
                 raise ValueError(

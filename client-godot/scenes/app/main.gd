@@ -23,6 +23,7 @@ var _speech_service: SpeechService = null
 @onready var _diff_review_panel: DiffReviewPanel = $DiffReviewPanel
 @onready var _file_viewer: FileViewer = $FileViewer
 @onready var _daemon_settings_panel: DaemonSettingsPanel = $DaemonSettingsPanel
+@onready var _audio_cues: SpatialAudioCueService = $SpatialAudioCueService
 
 var _approval_mode_active := false
 var _restore_code_viewer := false
@@ -140,6 +141,7 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 			if AppState.hovered_target_id == event.target_id:
 				AppState.hovered_target_id = ""
 		InteractionEvent.Type.SELECT:
+			_play_select_cue(event)
 			if _approval_mode_active and not event.target_id.begins_with("approval:"):
 				EventBus.debug_message.emit("Resolve the approval gate before continuing")
 			elif event.target_id == "approval:approve":
@@ -456,6 +458,16 @@ func _respond_to_next_approval(decision: String) -> bool:
 		EventBus.debug_message.emit("Approval %s: %s" % [decision, approval_id])
 	return accepted
 
+
+
+func _play_select_cue(event: InteractionEvent) -> void:
+	# Hands have no haptics: a short click confirms a selection landed.
+	if _audio_cues == null:
+		return
+	var position := Vector3.ZERO
+	if event.world_position is Vector3:
+		position = event.world_position
+	_audio_cues.emit_cue("focus", position)
 
 
 func _begin_voice_input() -> void:

@@ -10,6 +10,8 @@ const DAEMON_CONFIG_PATH := "user://daemon.cfg"
 @export var allow_unsafe_tls: bool = false
 @export_range(1024, 4_194_304, 1024) var max_packet_bytes: int = 1_048_576
 @export var auto_reconnect: bool = true
+@export var discovery_enabled: bool = true
+@export_range(1, 65535, 1) var discovery_port: int = 8789
 @export_range(0.05, 30.0, 0.05) var reconnect_initial_delay_seconds: float = 0.25
 @export_range(0.1, 60.0, 0.1) var reconnect_max_delay_seconds: float = 5.0
 @export_range(0.05, 3.0, 0.05) var candidate_retry_delay_seconds: float = 0.35
@@ -32,12 +34,16 @@ var _last_good_url: String = ""
 var _fallback_urls: PackedStringArray = []
 var _candidate_urls: PackedStringArray = []
 var _candidate_index: int = 0
+var _discovered_urls: PackedStringArray = []
+var _discovery: DiscoveryService = null
 
 
 func _ready() -> void:
 	_load_daemon_config()
 	_rebuild_candidates()
 	set_process(false)
+	if discovery_enabled:
+		_start_discovery()
 
 
 func _process(delta: float) -> void:
@@ -112,6 +118,8 @@ func _connect_socket() -> void:
 func stop() -> void:
 	_stopping = true
 	set_process(false)
+	if _discovery != null:
+		_discovery.stop()
 	if _socket != null and _socket.get_ready_state() in [WebSocketPeer.STATE_CONNECTING, WebSocketPeer.STATE_OPEN]:
 		_socket.close(1000, "Client shutdown")
 	_socket = null
@@ -203,15 +211,20 @@ func build_tls_options(url: String) -> TLSOptions:
 
 
 func _load_certificate() -> X509Certificate:
-	if ca_certificate_path.is_empty():
-		return null
-	var path := ca_certificate_path
-	if not (path.begins_with("user://") or path.begins_with("res://")):
-		path = "user://%s" % path.get_file()
-	var certificate := X509Certificate.new()
-	if certificate.load(path) != OK:
-		return null
-	return certificate
+	var candidates := PackedStringArray()
+	if not ca_certificate_path.is_empty():
+		var path := ca_certificate_path
+		if not (path.begins_with("user://") or path.begins_with("res://")):
+			path = "user://%s" % path.get_file()
+		candidates.append(path)
+	# Baked dev CA (shipped in the APK) is the no-push fallback.
+	candidates.append("user://dev_ca.crt")
+	candidates.append("res://certs/dev_ca.crt")
+	for candidate in candidates:
+		var certificate := X509Certificate.new()
+		if certificate.load(candidate) == OK:
+			return certificate
+	return null
 
 
 func _hello_payload() -> Dictionary:
@@ -393,14 +406,48 @@ func _is_valid_websocket_url(value: String) -> bool:
 
 
 func _rebuild_candidates() -> void:
-	var primary := _primal_url if not _primal_url.is_empty() else websocket_url
 	var values: Array = []
+	for url in _discovered_urls:
+		values.append(url)
+	var primary := _primal_url if not _primal_url.is_empty() else websocket_url
 	if not primary.is_empty():
 		values.append(primary)
 	values.append(_last_good_url)
 	for fallback in _fallback_urls:
 		values.append(fallback)
 	_candidate_urls = _dedupe_urls(values)
+
+
+func _start_discovery() -> void:
+	if _discovery != null:
+		return
+	var script := load("res://services/discovery_service.gd")
+	if script == null:
+		return
+	_discovery = script.new()
+	_discovery.name = "DiscoveryService"
+	_discovery.discovery_port = discovery_port
+	add_child(_discovery)
+	_discovery.daemon_found.connect(_on_daemon_found)
+	_discovery.start()
+
+
+func _on_daemon_found(payload: Dictionary) -> void:
+	if _discovery == null:
+		return
+	var urls := DiscoveryService.websocket_urls(payload)
+	if urls.is_empty() or urls == _discovered_urls:
+		return
+	_discovered_urls = urls
+	if get_connection_state() == STATE_CONNECTED:
+		return
+	# A beacon arrived (or the address changed): prefer it immediately.
+	if get_connection_state() == STATE_CONNECTING:
+		return
+	_rebuild_candidates()
+	_candidate_index = 0
+	_apply_candidate(0)
+	reconnect()
 
 
 func _dedupe_urls(values: Array) -> PackedStringArray:

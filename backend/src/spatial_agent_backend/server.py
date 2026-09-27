@@ -5,7 +5,9 @@ import asyncio
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
+import json
 from pathlib import Path
+import socket
 import ssl
 from typing import Any
 
@@ -16,6 +18,7 @@ from . import __version__
 from .auth import PairingManager
 from .config import Settings
 from .coordinator import AgentCoordinator
+from .discovery import DiscoveryAdvertiser, build_beacon, local_ipv4_addresses
 from .mcp_host import McpHost
 from .observability import configure_logging, log_record
 from .permissions import PermissionService
@@ -848,20 +851,66 @@ class SpatialAgentServer:
             tls=bool(ssl_context),
             workspaces=len(self.workspaces.list_workspaces()),
         )
-        async with serve(
-            self.handle_connection,
-            self.settings.host,
-            self.settings.port,
-            max_size=self.settings.max_packet_bytes,
-            max_queue=32,
-            ping_interval=20,
-            ping_timeout=20,
-            ssl=ssl_context,
-        ) as websocket_server:
-            try:
-                await websocket_server.serve_forever()
-            finally:
-                await self.mcp.stop()
+        advertiser = DiscoveryAdvertiser(
+            payload=build_beacon(
+                ws_port=self.settings.port,
+                discovery_port=self.settings.discovery_port,
+                host_name=_mdns_name(),
+                cert_path=_ca_certificate_path(self.settings),
+                version=_update_version(self.settings),
+            ),
+            port=self.settings.discovery_port,
+            enabled=self.settings.discovery_enabled,
+        )
+        advertiser.start()
+        if self.settings.discovery_enabled:
+            log_record(
+                "discovery_started",
+                port=self.settings.discovery_port,
+                ips=local_ipv4_addresses(),
+            )
+        try:
+            async with serve(
+                self.handle_connection,
+                self.settings.host,
+                self.settings.port,
+                max_size=self.settings.max_packet_bytes,
+                max_queue=32,
+                ping_interval=20,
+                ping_timeout=20,
+                ssl=ssl_context,
+            ) as websocket_server:
+                try:
+                    await websocket_server.serve_forever()
+                finally:
+                    await self.mcp.stop()
+        finally:
+            advertiser.stop()
+
+
+def _mdns_name() -> str:
+    name = socket.gethostname().strip()
+    if not name:
+        return ""
+    return name if name.endswith(".local") else "%s.local" % name
+
+
+def _ca_certificate_path(settings: Settings) -> Path | None:
+    cert = settings.tls_certificate_path
+    if cert is None:
+        return None
+    sibling = cert.parent / "ca.crt"
+    return sibling if sibling.is_file() else cert
+
+
+def _update_version(settings: Settings) -> str:
+    manifest = settings.update_manifest_path
+    if not manifest.is_file():
+        return ""
+    try:
+        return str(json.loads(manifest.read_text(encoding="utf-8")).get("version", ""))
+    except (OSError, ValueError):
+        return ""
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
