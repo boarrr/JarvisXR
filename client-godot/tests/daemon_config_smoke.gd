@@ -16,6 +16,10 @@ func _run() -> void:
 		_original_config = FileAccess.get_file_as_string(DAEMON_CONFIG_PATH)
 		_had_original = true
 
+	# The exported APK bakes a dev CA into project.godot; clear it so this
+	# security check tests the true "no CA configured" path.
+	ProjectSettings.set_setting("spatial_agent/baked_ca_path", "")
+
 	# A daemon.cfg URL wins over the baked project default.
 	var configured := ConfigFile.new()
 	configured.set_value("daemon", "websocket_url", "wss://192.168.0.50:8787/ws")
