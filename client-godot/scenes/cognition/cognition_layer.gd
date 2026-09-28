@@ -701,6 +701,7 @@ func _sync_visibility() -> void:
 	visible = (
 		_enabled
 		and not _blocked
+		and not AppState.palm_console_open
 		and not AppState.focused_thread_id.is_empty()
 	)
 
