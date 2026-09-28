@@ -24,6 +24,12 @@ func _run() -> void:
 		null,
 		{"gesture": "pinch"}
 	)
+	# Force the hand-only fallback deterministically: swap in an unavailable
+	# speech service so ASK/VOICE reveals the quick intent panel.
+	var unavailable := SpeechService.new()
+	unavailable.name = "UnavailableSpeechService"
+	main.add_child(unavailable)
+	main._speech_service = unavailable
 	main._on_interaction_event(palm_event)
 	_check(panel.visible, "ASK / VOICE falls back to hand-only quick intents when speech is unavailable")
 

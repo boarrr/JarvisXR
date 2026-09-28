@@ -25,6 +25,10 @@ CLIENT_COMMAND_TYPES = frozenset(
         "run.cancel",
         "approval.respond",
         "voice.transcript.final",
+        "voice.audio.start",
+        "voice.audio.chunk",
+        "voice.audio.end",
+        "voice.audio.cancel",
         "workspace.list",
         "workspace.bind",
         "file.list",
@@ -56,6 +60,10 @@ V2_COMMAND_TYPES = frozenset(
         "update.check",
         "update.fetch",
         "update.apply",
+        "voice.audio.start",
+        "voice.audio.chunk",
+        "voice.audio.end",
+        "voice.audio.cancel",
     }
 )
 
@@ -162,6 +170,10 @@ def validate_command_payload(command: Envelope) -> None:
         "run.cancel": set(),
         "approval.respond": {"approval_id", "decision"},
         "voice.transcript.final": {"transcript"},
+        "voice.audio.start": {"sample_rate", "channels"},
+        "voice.audio.chunk": {"data", "seq"},
+        "voice.audio.end": set(),
+        "voice.audio.cancel": set(),
         "workspace.list": set(),
         "workspace.bind": {"workspace_id"},
         "file.list": {"path"},

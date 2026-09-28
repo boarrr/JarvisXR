@@ -295,6 +295,14 @@ func _focus_next_thread() -> void:
 
 
 func _select_speech_service() -> SpeechService:
+	# Host-streamed whisper is the primary path (laptop always present): capture
+	# mic on the headset, transcribe on the daemon.
+	var host_speech := HostStreamSpeechService.new()
+	host_speech.name = "HostStreamSpeechService"
+	add_child(host_speech)
+	if host_speech.is_available():
+		return host_speech
+	host_speech.queue_free()
 	if OS.get_name() == "Android" and Engine.has_singleton(AndroidSpeechService.SINGLETON_NAME):
 		var android_speech := AndroidSpeechService.new()
 		android_speech.name = "AndroidSpeechService"

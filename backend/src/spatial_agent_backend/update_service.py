@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_CHUNK_BYTES = 512 * 1024
+DEFAULT_CHUNK_BYTES = 64 * 1024
 
 
 class UpdateError(RuntimeError):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
@@ -42,6 +43,7 @@ from .storage import SQLiteStore
 from .opencode_bridge import OpencodeClient
 from .thread_service import ThreadNotFoundError, ThreadService
 from .update_service import UpdateError, UpdateService
+from .voice_service import Utterance, VoiceError, WhisperTranscriber
 from .tools import ToolRegistry
 from .workspace import WorkspaceError, WorkspaceManager
 
@@ -84,6 +86,12 @@ class SpatialAgentServer:
         )
         self.mcp = McpHost(settings.mcp_config_path)
         self.updates = UpdateService(settings.update_manifest_path)
+        self.voice = (
+            WhisperTranscriber(settings.whisper_server_url)
+            if settings.voice_enabled
+            else None
+        )
+        self._utterances: dict[str, Utterance] = {}
         self.mcp.load()
         for error in self.mcp.load_errors:
             log_record("mcp_config_error", error=error)
@@ -399,6 +407,58 @@ class SpatialAgentServer:
                 content=str(command.payload["transcript"]),
                 emit=emit,
             )
+        elif command.type == "voice.audio.start":
+            if self.voice is None:
+                await emit(
+                    "voice.error",
+                    command.thread_id,
+                    {"code": "voice_disabled", "message": "Voice is not enabled on the daemon"},
+                )
+            else:
+                self._utterances[session.id] = Utterance(
+                    sample_rate=int(command.payload.get("sample_rate", 16000) or 16000),
+                    channels=int(command.payload.get("channels", 1) or 1),
+                    thread_id=command.thread_id or session.focused_thread_id,
+                )
+                await emit("voice.listening", command.thread_id, {"state": "listening"})
+        elif command.type == "voice.audio.chunk":
+            utterance = self._utterances.get(session.id)
+            if utterance is None:
+                await emit(
+                    "voice.error",
+                    command.thread_id,
+                    {"code": "no_utterance", "message": "No active voice stream"},
+                )
+            else:
+                try:
+                    utterance.append(base64.b64decode(str(command.payload.get("data", ""))))
+                except (ValueError, VoiceError) as error:
+                    self._utterances.pop(session.id, None)
+                    await emit(
+                        "voice.error",
+                        command.thread_id,
+                        {"code": "bad_audio", "message": str(error)},
+                    )
+        elif command.type == "voice.audio.end":
+            utterance = self._utterances.pop(session.id, None)
+            if utterance is not None and self.voice is not None and utterance.pcm:
+                try:
+                    text = await asyncio.to_thread(self.voice.transcribe, utterance)
+                except VoiceError as error:
+                    await emit(
+                        "voice.error",
+                        command.thread_id,
+                        {"code": error.code, "message": error.message},
+                    )
+                else:
+                    await emit(
+                        "voice.final",
+                        command.thread_id,
+                        {"transcript": text, "thread_id": utterance.thread_id},
+                    )
+        elif command.type == "voice.audio.cancel":
+            self._utterances.pop(session.id, None)
+            await emit("voice.cancelled", command.thread_id, {})
         elif command.type == "workspace.list":
             await emit(
                 "workspace.snapshot",
@@ -581,6 +641,7 @@ class SpatialAgentServer:
         elif command.type == "update.fetch":
             offset = int(command.payload.get("offset", 0))
             length = int(command.payload.get("length", self.updates.chunk_bytes))
+            log_record("update_fetch", session_id=session.id, offset=offset, length=length)
             try:
                 data, eof = self.updates.read_chunk(offset, length)
             except UpdateError as error:

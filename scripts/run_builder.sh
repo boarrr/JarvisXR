@@ -39,7 +39,21 @@ OPENCODE_SERVER_PASSWORD="$password" "$opencode_bin" serve \
 	--hostname 127.0.0.1 --port "$port" \
 	> "$project_root/build/quest/opencode.log" 2>&1 &
 serve_pid=$!
-cleanup() { kill "$serve_pid" 2>/dev/null || true; }
+
+whisper_pid=""
+whisper_model=${SPATIAL_AGENT_WHISPER_MODEL:-$project_root/build/quest/whisper-model.bin}
+whisper_port=${SPATIAL_AGENT_WHISPER_PORT:-8081}
+if [ -f "$whisper_model" ] && command -v whisper-server >/dev/null 2>&1; then
+	if ! nc -z 127.0.0.1 "$whisper_port" 2>/dev/null; then
+		whisper-server -m "$whisper_model" --host 127.0.0.1 --port "$whisper_port" \
+			> "$project_root/build/quest/whisper.log" 2>&1 &
+		whisper_pid=$!
+	fi
+	export SPATIAL_AGENT_WHISPER_URL="http://127.0.0.1:$whisper_port"
+	printf '%s\n' "whisper-server: 127.0.0.1:$whisper_port (model $(basename "$whisper_model"))"
+fi
+
+cleanup() { kill "$serve_pid" $whisper_pid 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 sleep 2
 

@@ -83,6 +83,8 @@ class Settings:
     pairing_code_ttl_seconds: float = 600.0
     discovery_enabled: bool = True
     discovery_port: int = 8789
+    voice_enabled: bool = True
+    whisper_server_url: str = "http://127.0.0.1:8081"
     shell_allowlist: tuple[str, ...] = ()
 
     @classmethod
@@ -130,6 +132,10 @@ class Settings:
             ),
             discovery_enabled=_truthy(os.getenv("SPATIAL_AGENT_DISCOVERY", "1")),
             discovery_port=int(os.getenv("SPATIAL_AGENT_DISCOVERY_PORT", "8789")),
+            voice_enabled=_truthy(os.getenv("SPATIAL_AGENT_VOICE", "1")),
+            whisper_server_url=os.getenv(
+                "SPATIAL_AGENT_WHISPER_URL", "http://127.0.0.1:8081"
+            ),
             shell_allowlist=allowlist,
         )
 
