@@ -99,14 +99,14 @@ var _bimanual_initial_vector := Vector3.RIGHT
 var _bimanual_initial_distance := 1.0
 var _grab_target_id := ""
 var _grab_origin_position := Vector3.ZERO
-var _touch_target_id := ""
-var _touch_area: Area3D = null
-var _touch_release_needed := false
-var _touch_candidate_id := ""
-var _touch_candidate_position := Vector3.ZERO
-var _touch_candidate_start_msec := 0
-var _touch_dragged := false
-var _touch_tap_fired := false
+var _touch_target_id := {"left": "", "right": ""}
+var _touch_area := {"left": null, "right": null}
+var _touch_release_needed := {"left": false, "right": false}
+var _touch_candidate_id := {"left": "", "right": ""}
+var _touch_candidate_position := {"left": Vector3.ZERO, "right": Vector3.ZERO}
+var _touch_candidate_start_msec := {"left": 0, "right": 0}
+var _touch_dragged := {"left": false, "right": false}
+var _touch_tap_fired := {"left": false, "right": false}
 var _telemetry_enabled := false
 var _telemetry_elapsed := 0.0
 var _tracking_losses := 0
@@ -208,6 +208,13 @@ func _physics_process(_delta: float) -> void:
 	else:
 		_pointer_missing_seconds = 0.0
 		_apply_pointer_sample(pointer_sample, _delta)
+	# Touch/poke is handled for BOTH hands so the left-hand palm panel works
+	# whichever hand reaches for it.
+	for hand_name in ["left", "right"]:
+		var hand_sample: Dictionary = _latest_hand_samples.get(hand_name, {})
+		if hand_sample.is_empty():
+			continue
+		_update_touch_interaction(hand_name, hand_sample.get("index_tip", Vector3.ZERO) as Vector3)
 	_update_bimanual_gesture()
 	_flush_single_taps()
 	if _telemetry_enabled:
@@ -224,7 +231,7 @@ func _emit_gesture_telemetry() -> void:
 		"right": _hand_telemetry("right"),
 		"left": _hand_telemetry("left"),
 		"tracking_losses": _tracking_losses,
-		"touch": _touch_target_id,
+		"touch": _touch_target_id[preferred_hand],
 		"grab": _grab_target_id,
 		"pinching": _pointer_state.is_selecting,
 	}
@@ -311,12 +318,12 @@ func _clear_pointer() -> void:
 	_cancel_tap("right")
 	_has_smoothed_ray = false
 	_hand_pinch_states[preferred_hand] = false
-	_touch_target_id = ""
-	_touch_area = null
-	_touch_release_needed = false
-	_touch_candidate_id = ""
-	_touch_dragged = false
-	_touch_tap_fired = false
+	_touch_target_id = {"left": "", "right": ""}
+	_touch_area = {"left": null, "right": null}
+	_touch_release_needed = {"left": false, "right": false}
+	_touch_candidate_id = {"left": "", "right": ""}
+	_touch_dragged = {"left": false, "right": false}
+	_touch_tap_fired = {"left": false, "right": false}
 	_crush_seconds = 0.0
 	_crush_latched = false
 	_crush_candidate = ""
@@ -452,9 +459,10 @@ func is_hand_pinching(hand_name: String) -> bool:
 
 func cancel_touch_taps() -> void:
 	# A surface drag (e.g. scrolling the palm) must not fire a button tap.
-	_touch_dragged = true
-	_touch_candidate_id = ""
-	_touch_tap_fired = true
+	for hand_name in ["left", "right"]:
+		_touch_dragged[hand_name] = true
+		_touch_candidate_id[hand_name] = ""
+		_touch_tap_fired[hand_name] = true
 
 
 func _tracker_is_usable(tracker: XRHandTracker) -> bool:
@@ -519,7 +527,6 @@ func _apply_pointer_sample(sample: Dictionary, delta: float = 0.016) -> bool:
 		_has_smoothed_ray = true
 	_pointer_state.is_selecting = is_pinching
 
-	_update_touch_interaction(index_tip)
 	if is_pinching and not was_pinching:
 		_begin_grab_if_touching(index_tip)
 	elif is_pinching and not _grab_target_id.is_empty():
@@ -578,7 +585,7 @@ func _hand_is_fist(hand_name: String) -> bool:
 
 func _update_fist_interaction(sample: Dictionary, index_tip: Vector3, delta: float) -> void:
 	var is_fist := _hand_is_fist(preferred_hand)
-	var touching_orb := not _touch_target_id.is_empty() and not ":" in _touch_target_id
+	var touching_orb: bool = not _touch_target_id[preferred_hand].is_empty() and not ":" in _touch_target_id[preferred_hand]
 	var palm_position := (sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D).origin
 	var hovered := _hover_target_id
 	var valid_new := not hovered.is_empty() and not ":" in hovered
@@ -586,17 +593,17 @@ func _update_fist_interaction(sample: Dictionary, index_tip: Vector3, delta: flo
 	# Crush only counts when the fist closed while already on the orb. A fist
 	# raised to summon must never archive the agent that arrives in the palm.
 	if is_fist and not _fist_prev and _attract_target.is_empty():
-		_crush_candidate = _touch_target_id if touching_orb else ""
+		_crush_candidate = _touch_target_id[preferred_hand] if touching_orb else ""
 		_crush_seconds = 0.0
 	_fist_prev = is_fist
 	if not is_fist:
 		_crush_latched = false
 		_crush_candidate = ""
 
-	var crushing := (
+	var crushing: bool = (
 		is_fist
 		and not _crush_candidate.is_empty()
-		and _touch_target_id == _crush_candidate
+		and _touch_target_id[preferred_hand] == _crush_candidate
 		and _attract_target.is_empty()
 	)
 	if crushing:
@@ -767,34 +774,38 @@ func _set_tracking_available(value: bool) -> void:
 	tracking_changed.emit(value)
 
 
-func _update_touch_interaction(position: Vector3) -> void:
+func _update_touch_interaction(hand_name: String, position: Vector3) -> void:
 	# Physical touch behaves like the headset's system keyboard: the fingertip
 	# presses a control on contact and latches until it pulls away.
-	if _touch_release_needed:
-		if _touch_area == null or _distance_to_area(_touch_area, position) > TOUCH_RELEASE_DISTANCE:
+	if _touch_release_needed[hand_name]:
+		if _touch_area[hand_name] == null or _distance_to_area(_touch_area[hand_name], position) > TOUCH_RELEASE_DISTANCE:
 			# Touch ended, but a missed release must not lose the tap: fire here
 			# if the hold never got the chance to.
-			if not _touch_candidate_id.is_empty() and not _touch_dragged and not _touch_tap_fired:
-				submit_direct_touch(_touch_candidate_id, _touch_candidate_position)
-			_touch_release_needed = false
-			_touch_target_id = ""
-			_touch_area = null
-			_touch_candidate_id = ""
-			_touch_dragged = false
-			_touch_tap_fired = false
-		elif not _touch_candidate_id.is_empty():
-			if _touch_candidate_position.distance_to(position) > TOUCH_DRAG_CANCEL_DISTANCE:
+			if (
+				not _touch_candidate_id[hand_name].is_empty()
+				and not _touch_dragged[hand_name]
+				and not _touch_tap_fired[hand_name]
+			):
+				submit_direct_touch(_touch_candidate_id[hand_name], _touch_candidate_position[hand_name])
+			_touch_release_needed[hand_name] = false
+			_touch_target_id[hand_name] = ""
+			_touch_area[hand_name] = null
+			_touch_candidate_id[hand_name] = ""
+			_touch_dragged[hand_name] = false
+			_touch_tap_fired[hand_name] = false
+		elif not _touch_candidate_id[hand_name].is_empty():
+			if _touch_candidate_position[hand_name].distance_to(position) > TOUCH_DRAG_CANCEL_DISTANCE:
 				# The fingertip moved: this is a scroll, not a tap.
-				_touch_dragged = true
+				_touch_dragged[hand_name] = true
 			elif (
-				not _touch_dragged
-				and not _touch_tap_fired
-				and _now_msec() - _touch_candidate_start_msec >= TOUCH_TAP_HOLD_MSEC
+				not _touch_dragged[hand_name]
+				and not _touch_tap_fired[hand_name]
+				and _now_msec() - _touch_candidate_start_msec[hand_name] >= TOUCH_TAP_HOLD_MSEC
 			):
 				# Short hold with a steady fingertip counts as a tap. Firing on
 				# contact+hold (not on release) survives hand-tracking dropouts.
-				submit_direct_touch(_touch_candidate_id, _touch_candidate_position)
-				_touch_tap_fired = true
+				submit_direct_touch(_touch_candidate_id[hand_name], _touch_candidate_position[hand_name])
+				_touch_tap_fired[hand_name] = true
 			return
 		else:
 			return
@@ -802,21 +813,21 @@ func _update_touch_interaction(position: Vector3) -> void:
 	if contact.is_empty():
 		return
 	var target_id := str((contact as Dictionary)["target_id"])
-	_touch_target_id = target_id
-	_touch_area = contact["area"] as Area3D
-	_touch_release_needed = true
+	_touch_target_id[hand_name] = target_id
+	_touch_area[hand_name] = contact["area"] as Area3D
+	_touch_release_needed[hand_name] = true
 	if ":" in target_id:
 		# Screen controls arm a tap candidate; a scroll cancels it before it fires.
 		_last_ui_touch_msec = _now_msec()
-		_touch_candidate_id = target_id
-		_touch_candidate_position = position
-		_touch_candidate_start_msec = _now_msec()
-		_touch_dragged = false
-		_touch_tap_fired = false
+		_touch_candidate_id[hand_name] = target_id
+		_touch_candidate_position[hand_name] = position
+		_touch_candidate_start_msec[hand_name] = _now_msec()
+		_touch_dragged[hand_name] = false
+		_touch_tap_fired[hand_name] = false
 	else:
-		_touch_candidate_id = ""
-		_touch_dragged = false
-		_touch_tap_fired = false
+		_touch_candidate_id[hand_name] = ""
+		_touch_dragged[hand_name] = false
+		_touch_tap_fired[hand_name] = false
 
 
 func set_clock_override_msec(value: int) -> void:
@@ -859,7 +870,7 @@ func _track_tap(hand_name: String) -> void:
 	_tap_prev_release_msec[hand_name] = now
 	var empty_tap := hand_name != preferred_hand
 	if hand_name == preferred_hand:
-		empty_tap = _hover_target_id.is_empty() and _touch_target_id.is_empty()
+		empty_tap = _hover_target_id.is_empty() and _touch_target_id[preferred_hand].is_empty()
 	if not empty_tap:
 		_tap_pending[hand_name] = 0
 		return
@@ -939,9 +950,9 @@ func _remembered_orb_hover() -> String:
 
 
 func _begin_grab_if_touching(position: Vector3) -> bool:
-	if _touch_target_id.is_empty() or ":" in _touch_target_id:
+	if _touch_target_id[preferred_hand].is_empty() or ":" in _touch_target_id[preferred_hand]:
 		return false
-	_grab_target_id = _touch_target_id
+	_grab_target_id = _touch_target_id[preferred_hand]
 	_grab_origin_position = position
 	interaction_event.emit(InteractionEvent.new(
 		InteractionEvent.Type.GRAB_BEGIN,

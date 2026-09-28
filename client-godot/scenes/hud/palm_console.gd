@@ -59,6 +59,7 @@ var _chat_dirty := false
 var _chat_elapsed := 0.0
 var _chat_scroll_line := 0
 var _swipe_active := false
+var _swipe_hand := ""
 var _swipe_start := Vector2.ZERO
 var _swipe_last := Vector2.ZERO
 var _scroll_anchor_y := 0.0
@@ -492,18 +493,32 @@ func _refresh_voice_label() -> void:
 
 
 func _update_swipe() -> void:
-	var sample := _hand_source.get_latest_hand_sample("right")
-	if sample.is_empty():
-		_swipe_active = false
-		return
-	var tip := sample.get("index_tip", Vector3.ZERO) as Vector3
-	var local := to_local(tip)
+	var tip := Vector3.ZERO
+	var hand := ""
 	var half := SCREEN_SIZE * 0.6
-	var on_surface := (
-		absf(local.z) < 0.08
-		and absf(local.x - SCREEN_CENTER.x) <= half.x
-		and absf(local.y - SCREEN_CENTER.y) <= half.y
-	)
+	for candidate in ["right", "left"]:
+		var sample := _hand_source.get_latest_hand_sample(candidate)
+		if sample.is_empty():
+			continue
+		var candidate_tip := sample.get("index_tip", Vector3.ZERO) as Vector3
+		var candidate_local := to_local(candidate_tip)
+		if (
+			absf(candidate_local.z) < 0.08
+			and absf(candidate_local.x - SCREEN_CENTER.x) <= half.x
+			and absf(candidate_local.y - SCREEN_CENTER.y) <= half.y
+		):
+			tip = candidate_tip
+			hand = candidate
+			break
+	if hand.is_empty():
+		_swipe_active = false
+		_swipe_hand = ""
+		return
+	if hand != _swipe_hand:
+		_swipe_hand = hand
+		_swipe_active = false
+	var local := to_local(tip)
+	var on_surface := true
 	var position_2d := Vector2(local.x, local.y)
 	# The footer is a button band: never treat touches there as scrolls, or a
 	# poke's natural finger travel would cancel the tap.
