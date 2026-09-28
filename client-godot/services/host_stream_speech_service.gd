@@ -6,9 +6,14 @@ extends SpeechService
 
 const TARGET_RATE := 16000
 const CHUNK_SAMPLES := 1600  # ~100 ms at 16 kHz
+const MAX_LISTEN_MSEC := 30000
 const MIC_BUS := "SpatialAgentMic"
 
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
+@export var auto_endpoint: bool = true
+@export_range(300, 3000, 50) var silence_ms: int = 900
+@export_range(0.005, 0.2, 0.005) var speech_rms_threshold: float = 0.02
+@export var barge_in: bool = true
 
 var _bridge: Node = null
 var _mic_player: AudioStreamPlayer = null
@@ -18,6 +23,9 @@ var _resample_pos := 0.0
 var _pending := PackedByteArray()
 var _sequence := 0
 var _mix_rate := 44100.0
+var _listen_started_msec := 0
+var _last_voice_msec := 0
+var _speech_activity := false
 
 
 func _ready() -> void:
@@ -55,8 +63,16 @@ func start_listening() -> bool:
 	_source = PackedFloat32Array()
 	_resample_pos = 0.0
 	_pending = PackedByteArray()
+	_speech_activity = false
+	_listen_started_msec = Time.get_ticks_msec()
+	_last_voice_msec = _listen_started_msec
 	if _capture != null:
 		_capture.clear_buffer()
+	# Barge-in: talking cancels the agent's current run.
+	if barge_in:
+		var thread := AppState.get_thread(AppState.focused_thread_id)
+		if thread != null and thread.status == AgentThread.Status.WORKING:
+			_bridge.send_command("run.cancel", {}, AppState.focused_thread_id)
 	_bridge.send_command(
 		"voice.audio.start",
 		{"sample_rate": TARGET_RATE, "channels": 1},
@@ -93,10 +109,20 @@ func _process(_delta: float) -> void:
 	if _state != STATE_LISTENING or _capture == null:
 		return
 	var available := _capture.get_frames_available()
-	if available <= 0:
+	if available > 0:
+		_append_frames(_capture.get_buffer(available))
+		_flush_pending(false)
+	var now := Time.get_ticks_msec()
+	if now - _listen_started_msec > MAX_LISTEN_MSEC:
+		stop_listening()
 		return
-	_append_frames(_capture.get_buffer(available))
-	_flush_pending(false)
+	if not _speech_activity and now - _listen_started_msec > 6000:
+		# Nothing said: end quietly instead of holding the mic forever.
+		stop_listening()
+		return
+	# Endpoint on silence so a single TALK tap ends the turn naturally.
+	if auto_endpoint and _speech_activity and now - _last_voice_msec > silence_ms:
+		stop_listening()
 
 
 func _setup_capture() -> void:
@@ -149,12 +175,30 @@ func _flush_pending(force: bool) -> void:
 		var take := mini(chunk_bytes, _pending.size())
 		var chunk := _pending.slice(0, take)
 		_pending = _pending.slice(take)
+		_track_activity(chunk)
 		_sequence += 1
 		_bridge.send_command(
 			"voice.audio.chunk",
 			{"data": Marshalls.raw_to_base64(chunk), "seq": _sequence},
 			AppState.focused_thread_id
 		)
+
+
+func _track_activity(chunk: PackedByteArray) -> void:
+	var count := chunk.size() / 2
+	if count <= 0:
+		return
+	var sum := 0.0
+	for index in range(count):
+		var raw := chunk[index * 2] | (chunk[index * 2 + 1] << 8)
+		if raw > 32767:
+			raw -= 65536
+		var sample := float(raw) / 32768.0
+		sum += sample * sample
+	var rms := sqrt(sum / float(count))
+	if rms >= speech_rms_threshold:
+		_speech_activity = true
+		_last_voice_msec = Time.get_ticks_msec()
 
 
 func _on_backend_event(event: BackendEvent) -> void:
