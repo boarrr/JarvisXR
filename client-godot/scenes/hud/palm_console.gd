@@ -185,8 +185,7 @@ func _build_backing_and_screen(root: Control) -> void:
 	var backing_material := StandardMaterial3D.new()
 	backing_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	backing_material.albedo_color = Color(0.015, 0.05, 0.075, 1.0)
-	backing_material.no_depth_test = true
-	backing_material.render_priority = -1
+	backing_material.no_depth_test = false
 	var backing := MeshInstance3D.new()
 	var backing_quad := QuadMesh.new()
 	backing_quad.size = SCREEN_SIZE * Vector2(1.07, 1.06)
@@ -201,8 +200,8 @@ func _build_backing_and_screen(root: Control) -> void:
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.albedo_texture = _viewport.get_texture()
-	material.no_depth_test = true
-	material.render_priority = 1
+	# Depth-tested so the user's hands render in front of the panel.
+	material.no_depth_test = false
 	_screen = MeshInstance3D.new()
 	var quad := QuadMesh.new()
 	quad.size = SCREEN_SIZE
@@ -316,6 +315,26 @@ func _physics_process(delta: float) -> void:
 				return
 	_update_grab()
 	_update_swipe()
+	_face_user(delta)
+
+
+func _face_user(delta: float) -> void:
+	# Always turn the readable face toward the user, wherever the panel ends up.
+	if _camera == null:
+		return
+	var to_user := _camera.global_position - global_position
+	to_user.y = 0.0
+	if to_user.length_squared() < 0.0001:
+		return
+	var desired := atan2(to_user.x, to_user.z)
+	if delta <= 0.0:
+		global_rotation = Vector3(0.0, desired, 0.0)
+	else:
+		global_rotation = Vector3(
+			0.0,
+			lerp_angle(global_rotation.y, desired, 1.0 - exp(-10.0 * delta)),
+			0.0
+		)
 
 
 func _update_grab() -> void:
