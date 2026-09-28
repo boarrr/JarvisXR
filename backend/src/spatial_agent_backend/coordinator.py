@@ -62,15 +62,13 @@ async def _primed_events(
 
     try:
         yield await asyncio.wait_for(first, _wait_timeout())
-    except (StopAsyncIteration, asyncio.TimeoutError, asyncio.CancelledError):
+    except (StopAsyncIteration, asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
         return
     iterator = stream.__aiter__()
     while True:
         try:
             yield await asyncio.wait_for(iterator.__anext__(), _wait_timeout())
-        except StopAsyncIteration:
-            return
-        except asyncio.TimeoutError:
+        except (StopAsyncIteration, asyncio.TimeoutError, RuntimeError):
             return
 
 
@@ -564,8 +562,10 @@ class AgentCoordinator:
             log_record("opencode_run_start", thread_id=run.thread_id, run_id=run.run_id)
             thread = await self.threads.set_status(run.thread_id, "working")
             await emit("agent.status", run.thread_id, {"status": "working", "run_id": run.run_id})
-            await self._prepare_worktree(run, thread, emit)
-            directory = str(run.worktree.path) if run.worktree is not None else self.opencode_directory
+            # opencode runs deliberately share one stable project directory so the
+            # per-thread session can be reused across turns; per-run worktrees
+            # would change `?directory=` every turn and wedge the session.
+            directory = self.opencode_directory
             log_record("opencode_worktree", run_id=run.run_id, directory=directory)
             client = self.opencode.with_directory(directory) if directory else self.opencode
             opencode_session = await self._opencode_session_for(run, thread, client)
@@ -883,11 +883,6 @@ class AgentCoordinator:
         )
 
     async def _prepare_worktree(self, run: ActiveRun, thread: Any, emit: EmitEvent) -> None:
-        # Per-run worktrees change the opencode project directory every run,
-        # which breaks session reuse (the second prompt wedges). Off by default;
-        # opt in with SPATIAL_AGENT_WORKTREES=1.
-        if os.getenv("SPATIAL_AGENT_WORKTREES", "").strip().lower() not in {"1", "true", "yes", "on"}:
-            return
         if self.workspaces is None:
             return
         workspace_id = str((thread.metadata or {}).get("workspace_id", ""))
