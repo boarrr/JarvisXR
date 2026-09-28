@@ -23,6 +23,7 @@ const SECONDARY := [
 	["NEW", "palm:new_agent", "NewTarget"],
 	["NEXT", "palm:focus_next", "NextTarget"],
 	["UNDO", "palm:undo", "UndoTarget"],
+	["UPDATE", "palm:update", "UpdateTarget"],
 	["CLOSE", "palm:dismiss", "CloseTarget"],
 ]
 
@@ -365,6 +366,9 @@ func _refresh_header() -> void:
 		]
 	var build := str(ProjectSettings.get_setting("application/config/version", "dev"))
 	_build_label.text = "BUILD %s" % build
+	var banner := AppState.update_banner.strip_edges()
+	if not banner.is_empty():
+		_subtitle_label.text += "  ·  %s" % banner.to_upper()
 
 
 func _render_conversation() -> void:
