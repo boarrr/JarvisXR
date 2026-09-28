@@ -15,21 +15,33 @@ const DISCOVER_MAGIC := "spatial-agent-discover"
 var _peer: PacketPeerUDP = null
 var _active := false
 var _probe_elapsed := 0.0
+var _network_key := ""
 
 
 func start() -> void:
 	if _active:
 		return
+	_bind_peer()
+	_active = _peer != null
+	if not _active:
+		return
+	_network_key = _current_network_key()
+	_probe_elapsed = probe_interval_seconds
+	set_process(true)
+
+
+func _bind_peer() -> void:
 	_peer = PacketPeerUDP.new()
 	_peer.set_broadcast_enabled(true)
 	var error := _peer.bind(discovery_port, "0.0.0.0")
 	if error != OK:
 		push_warning("[DISCOVERY] UDP bind failed (%d); discovery disabled" % error)
 		_peer = null
-		return
-	_active = true
-	_probe_elapsed = probe_interval_seconds
-	set_process(true)
+
+
+func probe_now() -> void:
+	if _active:
+		_probe_elapsed = probe_interval_seconds
 
 
 func stop() -> void:
@@ -45,6 +57,16 @@ func is_active() -> bool:
 
 
 func _process(delta: float) -> void:
+	# The headset roams between Wi-Fi/hotspot: rebind so discovery keeps working
+	# on the new network without a relaunch.
+	var key := _current_network_key()
+	if key != _network_key:
+		_network_key = key
+		if _peer != null:
+			_peer.close()
+		_peer = null
+		_bind_peer()
+		_probe_elapsed = probe_interval_seconds
 	if _peer == null:
 		return
 	_probe_elapsed += delta
@@ -58,6 +80,16 @@ func _process(delta: float) -> void:
 			continue
 		payload["source_ip"] = _peer.get_packet_ip()
 		daemon_found.emit(payload)
+
+
+func _current_network_key() -> String:
+	var addresses: Array[String] = []
+	for address in IP.get_local_addresses():
+		if address.contains(":") or address.begins_with("127.") or address.begins_with("169.254."):
+			continue
+		addresses.append(address)
+	addresses.sort()
+	return ",".join(addresses)
 
 
 func _send_probe() -> void:

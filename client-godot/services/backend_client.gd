@@ -110,6 +110,8 @@ func _connect_socket() -> void:
 		_socket = null
 		_set_connection_state(STATE_ERROR)
 		_emit_local_error("connect_failed", "WebSocket connect failed with code %d" % result)
+		if _discovery != null:
+			_discovery.probe_now()
 		_schedule_next_attempt()
 		return
 	set_process(true)
@@ -375,6 +377,8 @@ func _handle_socket_closed() -> void:
 	else:
 		# Never opened: most likely the hostname did not resolve or the host is
 		# unreachable. Try the next candidate (e.g. a direct IP) before backing off.
+		if _discovery != null:
+			_discovery.probe_now()
 		_schedule_next_attempt()
 
 
