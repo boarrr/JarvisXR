@@ -184,15 +184,16 @@ func _build_screen() -> void:
 func _build_backing_and_screen(root: Control) -> void:
 	var backing_material := StandardMaterial3D.new()
 	backing_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	backing_material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 	backing_material.albedo_color = Color(0.015, 0.05, 0.075, 1.0)
 	backing_material.no_depth_test = true
+	backing_material.render_priority = -1
 	var backing := MeshInstance3D.new()
 	var backing_quad := QuadMesh.new()
 	backing_quad.size = SCREEN_SIZE * Vector2(1.07, 1.06)
 	backing_quad.material = backing_material
 	backing.mesh = backing_quad
-	backing.position = Vector3(SCREEN_CENTER.x, SCREEN_CENTER.y, 0.015)
+	# Behind the screen quad (the screen faces +Z toward the user).
+	backing.position = Vector3(SCREEN_CENTER.x, SCREEN_CENTER.y, -0.012)
 	backing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(backing)
 
@@ -201,6 +202,7 @@ func _build_backing_and_screen(root: Control) -> void:
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.albedo_texture = _viewport.get_texture()
 	material.no_depth_test = true
+	material.render_priority = 1
 	_screen = MeshInstance3D.new()
 	var quad := QuadMesh.new()
 	quad.size = SCREEN_SIZE
