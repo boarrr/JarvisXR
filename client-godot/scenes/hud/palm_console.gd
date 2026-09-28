@@ -42,11 +42,11 @@ const SYSTEM_BUTTONS := [
 ]
 
 const CHAT_BUTTONS := [
+	["TALK", "palm:voice_toggle"],
 	["EXPLORE", "quick:explore"],
 	["CONTINUE", "quick:continue"],
 	["SUMMARIZE", "quick:summarize"],
 	["EXPLAIN", "quick:explain_code"],
-	["PRIVACY", "quick:privacy_review"],
 	["UPDATE", "palm:update"],
 ]
 
@@ -715,7 +715,11 @@ func _focused_label() -> String:
 func _refresh_telemetry(_unused: Variant = null) -> void:
 	var link := AppState.connection_state.to_upper()
 	var build := str(ProjectSettings.get_setting("application/config/version", "dev"))
-	if AppState.update_banner.is_empty():
+	if AppState.listening_state == SpeechService.STATE_LISTENING:
+		_status_label.text = "LISTENING  //  SPEAK, THEN TAP TALK"
+	elif AppState.listening_state == SpeechService.STATE_TRANSCRIBING:
+		_status_label.text = "TRANSCRIBING  //  BUILD %s" % build
+	elif AppState.update_banner.is_empty():
 		_status_label.text = "LINK %s  //  BUILD %s" % [link, build]
 	else:
 		_status_label.text = "%s  //  BUILD %s" % [AppState.update_banner.to_upper(), build]
