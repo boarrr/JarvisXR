@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -40,22 +41,33 @@ OPENCODE_PERMISSION = [
 
 # Safety valve so an opencode run can never hang the cockpit forever.
 OPENCODE_IDLE_TIMEOUT_SECONDS = 180.0
+OPENCODE_MAX_RUN_SECONDS = 300.0
 
 
 async def _primed_events(
     first: "asyncio.Future[dict[str, Any]]",
     stream: "AsyncIterator[dict[str, Any]]",
     timeout: float = OPENCODE_IDLE_TIMEOUT_SECONDS,
+    deadline: float | None = None,
 ) -> "AsyncIterator[dict[str, Any]]":
-    """Yield the primed first event, then the rest, with an idle timeout."""
+    """Yield the primed first event, then the rest.
+
+    Each wait is bounded by the idle timeout and, if given, an absolute
+    ``deadline`` (monotonic seconds) so a run always terminates.
+    """
+    def _wait_timeout() -> float:
+        if deadline is None:
+            return timeout
+        return max(0.1, min(timeout, deadline - asyncio.get_running_loop().time()))
+
     try:
-        yield await asyncio.wait_for(first, timeout)
+        yield await asyncio.wait_for(first, _wait_timeout())
     except (StopAsyncIteration, asyncio.TimeoutError, asyncio.CancelledError):
         return
     iterator = stream.__aiter__()
     while True:
         try:
-            yield await asyncio.wait_for(iterator.__anext__(), timeout)
+            yield await asyncio.wait_for(iterator.__anext__(), _wait_timeout())
         except StopAsyncIteration:
             return
         except asyncio.TimeoutError:
@@ -546,6 +558,8 @@ class AgentCoordinator:
         sequence = 0
         client: OpencodeClient = self.opencode
         opencode_session = ""
+        events = None
+        primed = None
         try:
             log_record("opencode_run_start", thread_id=run.thread_id, run_id=run.run_id)
             thread = await self.threads.set_status(run.thread_id, "working")
@@ -556,11 +570,13 @@ class AgentCoordinator:
             client = self.opencode.with_directory(directory) if directory else self.opencode
             opencode_session = await self._opencode_session_for(run, thread, client)
             log_record("opencode_session", run_id=run.run_id, session=opencode_session)
-            # A prior turn can be left running when its run was cancelled (e.g.
-            # the cockpit disconnected); abort it so this turn is not queued
-            # behind a stale busy session and appears to hang.
+            # Only clear a *busy* session (e.g. left running by a cancelled
+            # run). Aborting an idle session can race the prompt and strand it.
             with suppress(Exception):
-                await client.abort(opencode_session)
+                status = await client.status()
+                if isinstance(status, dict) and opencode_session in status:
+                    await client.abort(opencode_session)
+                    await asyncio.sleep(0.3)
             prompt_text = ""
             for message in reversed(thread.messages):
                 if message.role == "user" and message.content.strip():
@@ -576,10 +592,11 @@ class AgentCoordinator:
             # prompting so a fast reply is not streamed into the void.
             primed = asyncio.ensure_future(events.__anext__())
             await asyncio.sleep(0.25)
+            run_deadline = asyncio.get_running_loop().time() + OPENCODE_MAX_RUN_SECONDS
             await client.prompt(opencode_session, prompt_text)
             log_record("opencode_prompted", run_id=run.run_id)
             seen_tools: set[str] = set()
-            async for event in _primed_events(primed, events):
+            async for event in _primed_events(primed, events, deadline=run_deadline):
                 if run.cancel_event.is_set():
                     with suppress(Exception):
                         await client.abort(opencode_session)
@@ -589,6 +606,9 @@ class AgentCoordinator:
                 if session_id and session_id != opencode_session:
                     continue
                 event_type = str(event.get("type", ""))
+                if event_type in ("__stream_error__", "session.error"):
+                    log_record("opencode_stream_error", run_id=run.run_id, kind=event_type)
+                    break
                 if event_type == "message.part.delta":
                     if props.get("field") != "text":
                         continue
@@ -677,6 +697,13 @@ class AgentCoordinator:
                 error_type=type(error).__name__,
             )
         finally:
+            if primed is not None and not primed.done():
+                primed.cancel()
+            if events is not None:
+                with suppress(Exception):
+                    aclose = getattr(events, "aclose", None)
+                    if aclose is not None:
+                        await aclose()
             if self._runs.get(run.thread_id) is run:
                 self._runs.pop(run.thread_id, None)
 
@@ -856,6 +883,11 @@ class AgentCoordinator:
         )
 
     async def _prepare_worktree(self, run: ActiveRun, thread: Any, emit: EmitEvent) -> None:
+        # Per-run worktrees change the opencode project directory every run,
+        # which breaks session reuse (the second prompt wedges). Off by default;
+        # opt in with SPATIAL_AGENT_WORKTREES=1.
+        if os.getenv("SPATIAL_AGENT_WORKTREES", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            return
         if self.workspaces is None:
             return
         workspace_id = str((thread.metadata or {}).get("workspace_id", ""))
