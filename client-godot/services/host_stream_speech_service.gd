@@ -7,6 +7,7 @@ extends SpeechService
 const TARGET_RATE := 16000
 const CHUNK_SAMPLES := 1600  # ~100 ms at 16 kHz
 const MAX_LISTEN_MSEC := 30000
+const TRANSCRIBE_TIMEOUT_MSEC := 15000
 const MIC_BUS := "SpatialAgentMic"
 
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
@@ -26,6 +27,7 @@ var _mix_rate := 44100.0
 var _listen_started_msec := 0
 var _last_voice_msec := 0
 var _speech_activity := false
+var _transcribe_started_msec := 0
 
 
 func _ready() -> void:
@@ -88,10 +90,10 @@ func stop_listening() -> bool:
 	if _state != STATE_LISTENING:
 		return false
 	_flush_pending(true)
-	set_process(false)
 	_mic_player.stop()
 	if _bridge != null:
 		_bridge.send_command("voice.audio.end", {}, AppState.focused_thread_id)
+	_transcribe_started_msec = Time.get_ticks_msec()
 	_set_state(STATE_TRANSCRIBING)
 	return true
 
@@ -106,6 +108,13 @@ func cancel() -> void:
 
 
 func _process(_delta: float) -> void:
+	if _state == STATE_TRANSCRIBING:
+		# Never hang on TRANSCRIBING: fall back if the daemon is silent.
+		if Time.get_ticks_msec() - _transcribe_started_msec > TRANSCRIBE_TIMEOUT_MSEC:
+			_set_state(STATE_IDLE)
+			set_process(false)
+			failed.emit("transcribe_timeout", "No transcript came back from the daemon")
+		return
 	if _state != STATE_LISTENING or _capture == null:
 		return
 	var available := _capture.get_frames_available()
@@ -209,6 +218,7 @@ func _on_backend_event(event: BackendEvent) -> void:
 			if _state not in [STATE_LISTENING, STATE_TRANSCRIBING]:
 				return
 			_set_state(STATE_IDLE)
+			set_process(false)
 			var text := str(event.payload.get("transcript", "")).strip_edges()
 			if text.is_empty():
 				failed.emit("empty_transcript", "The recognizer returned no text")

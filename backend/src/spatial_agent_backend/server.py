@@ -194,9 +194,18 @@ class SpatialAgentServer:
                 except ProtocolError as error:
                     await emit("error", "", {"code": error.code, "message": error.message})
                     continue
-                # The chunked self-update transfer is bulk data, not commands.
+                # Bulk/streaming traffic (self-update chunks, live voice audio) is
+                # not command spam and must not be rate limited.
+                _rate_exempt = {
+                    "update.fetch",
+                    "update.check",
+                    "voice.audio.start",
+                    "voice.audio.chunk",
+                    "voice.audio.end",
+                    "voice.audio.cancel",
+                }
                 if (
-                    command.type not in {"update.fetch", "update.check"}
+                    command.type not in _rate_exempt
                     and not session.allow_command(self.settings.commands_per_minute)
                 ):
                     await emit(
