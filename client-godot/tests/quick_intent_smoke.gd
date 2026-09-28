@@ -14,7 +14,7 @@ func _run() -> void:
 	var palm_console := main.get_node("PalmConsole") as PalmConsole
 	_check(panel != null and not panel.visible, "quick intent panel starts hidden")
 	_check(palm_console != null and not palm_console.visible, "palm console stays hidden in desktop mode")
-	_check((palm_console.get_node("CognitionTarget") as SpatialActionTarget).target_id == "palm:cognition_toggle", "palm console exposes the cognition lens as a hand target")
+	_check((palm_console.get_node("TalkTarget") as SpatialActionTarget).target_id == "palm:voice_toggle", "palm console exposes TALK as its primary hand target")
 	_check(AppState.focus_thread("thread_demo"), "a thread can be focused before a hand intent")
 
 	var palm_event := InteractionEvent.new(

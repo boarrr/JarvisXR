@@ -25,8 +25,6 @@ func _run() -> void:
 	_check(topology.get_link_count() <= 12, "mission topology enforces a standalone headset geometry budget")
 	_check(topology.get_pulse_count() == topology.get_link_count(), "each link carries one animated status pulse")
 	_check(not topology.get_debug_text().contains("Give me a concise update"), "mission links remain content-blind")
-	var mission_target := main.get_node("PalmConsole/MissionTarget") as SpatialActionTarget
-	_check(mission_target.target_id == "palm:mission_toggle", "mission map is a hand-only palm action")
 	topology.set_blocked(true)
 	_check(not topology.visible, "approval safety mode suppresses the mission topology")
 	topology.set_blocked(false)

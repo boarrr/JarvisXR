@@ -224,20 +224,22 @@ func _run() -> void:
 		"a fist aimed at an agent starts attraction"
 	)
 
-	# Panel pages gate both visuals and touch targets so what is drawn is what
-	# can actually be poked.
+	# The redesigned palm is voice-first: a TALK primary plus a compact secondary
+	# row on a scrollable conversation body (no pages).
 	var palm_panel := main.get_node("PalmConsole") as PalmConsole
-	palm_panel.handle_screen_action("palm_screen:next_page")
-	_check(palm_panel._page == PalmConsole.PAGE_CODE, "panel advances to the code page")
-	var chat_buttons: Array = palm_panel._page_buttons[PalmConsole.PAGE_CHAT]
-	_check(chat_buttons.size() > 0, "chat page registers its buttons")
-	_check(not (chat_buttons[0] as Node).visible, "chat buttons hide while the code page shows")
-	var code_buttons: Array = palm_panel._page_buttons[PalmConsole.PAGE_CODE]
-	_check((code_buttons[0] as Node).visible, "code buttons show on the code page")
 	_check(
-		not palm_panel._dynamic_targets[0].visible,
-		"chat touch targets deactivate on the code page"
+		(palm_panel.get_node("TalkTarget") as SpatialActionTarget).target_id == "palm:voice_toggle",
+		"palm exposes a TALK target for the selected agent"
 	)
+	_check(
+		(palm_panel.get_node("NewTarget") as SpatialActionTarget).target_id == "palm:new_agent",
+		"palm exposes a NEW target"
+	)
+	_check(
+		(palm_panel.get_node("CloseTarget") as SpatialActionTarget).target_id == "palm:dismiss",
+		"palm exposes a CLOSE target"
+	)
+	_check(palm_panel.get_screen_viewport() != null, "palm renders through a scrollable screen viewport")
 
 	# A deliberate double-pinch summons; a fast flinch or a tracking dropout
 	# must never look like one.
