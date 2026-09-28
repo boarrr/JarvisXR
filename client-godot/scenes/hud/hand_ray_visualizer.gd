@@ -193,14 +193,16 @@ func _orient_bone(node: MeshInstance3D, a: Vector3, b: Vector3) -> void:
 		return
 	var direction := delta / length
 	var up := Vector3.UP
-	if absf(direction.dot(up)) > 0.99:
+	if absf(direction.dot(up)) > 0.95:
 		up = Vector3.RIGHT
-	# Cylinder is Y-aligned: rotate so +Y points along the bone.
-	var basis := Basis().looking_at(direction, up) * Basis(Vector3(1.0, 0.0, 0.0), -PI * 0.5)
-	node.global_transform = Transform3D(
-		basis.scaled(Vector3(BONE_RADIUS, length, BONE_RADIUS)),
-		(a + b) * 0.5
-	)
+	# Explicit orthonormal basis with local +Y along the bone so the Y-aligned
+	# cylinder capsule lies exactly between the two joints.
+	var x_axis := direction.cross(up).normalized()
+	var z_axis := x_axis.cross(direction).normalized()
+	var basis := Basis(x_axis, direction, z_axis)
+	var transform := Transform3D(basis, (a + b) * 0.5)
+	transform = transform.scaled_local(Vector3(BONE_RADIUS, length, BONE_RADIUS))
+	node.global_transform = transform
 	node.visible = true
 
 
