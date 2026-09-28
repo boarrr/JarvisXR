@@ -35,6 +35,8 @@ const SECONDARY := [
 @export_range(0.0, 1.0, 0.05) var parked_keep_gaze: float = 0.35
 @export_range(0.5, 10.0, 0.5) var parked_ignore_seconds: float = 3.0
 @export_range(0.3, 1.0, 0.01) var console_scale: float = 0.8
+@export var grab_enabled: bool = true
+@export_range(0.05, 0.35, 0.01) var grab_margin: float = 0.16
 
 var _hand_source: OpenXRInteractionSource = null
 var _user_rig: UserRig = null
@@ -48,7 +50,10 @@ var _body: RichTextLabel = null
 var _voice_label: Label = null
 var _buttons: Dictionary = {}
 var _targets: Array[Area3D] = []
+var _button_rects: Array[Rect2] = []
 var _panel_ignored := 0.0
+var _grabbing := false
+var _grab_offset := Vector3.ZERO
 var _chat_follow := true
 var _chat_dirty := false
 var _chat_elapsed := 0.0
@@ -126,17 +131,17 @@ func _build_screen() -> void:
 	var background := PanelContainer.new()
 	background.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.006, 0.03, 0.045, 0.95)
-	style.border_color = Color(0.02, 0.8, 0.98, 0.9)
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(8)
+	style.bg_color = Color(0.03, 0.09, 0.13, 1.0)
+	style.border_color = Color(0.15, 0.95, 1.0, 1.0)
+	style.set_border_width_all(5)
+	style.set_corner_radius_all(10)
 	background.add_theme_stylebox_override("panel", style)
 	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(background)
 
-	_title_label = _label(root, Vector2(20, 14), Vector2(VIEWPORT_SIZE.x - 40, 36), 26, Color(0.4, 0.97, 1.0))
-	_subtitle_label = _label(root, Vector2(20, 54), Vector2(VIEWPORT_SIZE.x - 40, 30), 15, Color(0.5, 0.75, 0.82))
-	_build_label = _label(root, Vector2(VIEWPORT_SIZE.x - 240, 16), Vector2(220, 26), 13, Color(0.35, 0.6, 0.66))
+	_title_label = _label(root, Vector2(20, 14), Vector2(VIEWPORT_SIZE.x - 40, 36), 27, Color(0.55, 0.99, 1.0))
+	_subtitle_label = _label(root, Vector2(20, 56), Vector2(VIEWPORT_SIZE.x - 40, 30), 16, Color(0.72, 0.9, 0.96))
+	_build_label = _label(root, Vector2(VIEWPORT_SIZE.x - 240, 18), Vector2(220, 26), 14, Color(0.5, 0.8, 0.86))
 	_build_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	_body = RichTextLabel.new()
@@ -148,20 +153,20 @@ func _build_screen() -> void:
 	_body.bbcode_enabled = true
 	_body.scroll_active = true
 	_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_body.add_theme_font_size_override("normal_font_size", 19)
-	_body.add_theme_color_override("default_color", Color(0.82, 0.94, 0.98))
+	_body.add_theme_font_size_override("normal_font_size", 20)
+	_body.add_theme_color_override("default_color", Color(0.93, 0.99, 1.0))
 	root.add_child(_body)
 
 	_voice_label = _label(
 		root,
-		Vector2(16, VIEWPORT_SIZE.y - FOOTER_HEIGHT_PX - 34),
-		Vector2(VIEWPORT_SIZE.x - 32, 30),
-		17,
-		Color(0.55, 1.0, 0.7)
+		Vector2(16, VIEWPORT_SIZE.y - FOOTER_HEIGHT_PX - 36),
+		Vector2(VIEWPORT_SIZE.x - 32, 32),
+		18,
+		Color(0.6, 1.0, 0.72)
 	)
 	_voice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
-	_make_button(root, RECT_TALK, "TALK", Color(0.05, 0.4, 0.28), Color(0.55, 1, 0.8), "TalkTarget", "palm:voice_toggle")
+	_make_button(root, RECT_TALK, "TALK", Color(0.05, 0.55, 0.36), Color(0.7, 1, 0.85), "TalkTarget", "palm:voice_toggle")
 	var count := SECONDARY.size()
 	var gap := 8.0
 	var width := (RECT_SECONDARY.size.x - gap * float(count - 1)) / float(count)
@@ -171,7 +176,7 @@ func _build_screen() -> void:
 			Vector2(RECT_SECONDARY.position.x + float(index) * (width + gap), RECT_SECONDARY.position.y),
 			Vector2(width, RECT_SECONDARY.size.y)
 		)
-		_make_button(root, rect, str(entry[0]), Color(0.02, 0.29, 0.35), Color(0.8, 0.98, 1.0), str(entry[2]), str(entry[1]))
+		_make_button(root, rect, str(entry[0]), Color(0.05, 0.4, 0.5), Color(0.9, 1.0, 1.0), str(entry[2]), str(entry[1]))
 
 	_build_backing_and_screen(root)
 
@@ -179,8 +184,8 @@ func _build_screen() -> void:
 func _build_backing_and_screen(root: Control) -> void:
 	var backing_material := StandardMaterial3D.new()
 	backing_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	backing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	backing_material.albedo_color = Color(0.01, 0.03, 0.05, 0.92)
+	backing_material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	backing_material.albedo_color = Color(0.015, 0.05, 0.075, 1.0)
 	backing_material.no_depth_test = true
 	var backing := MeshInstance3D.new()
 	var backing_quad := QuadMesh.new()
@@ -245,6 +250,7 @@ func _make_button(
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(label)
 	_buttons[text] = panel
+	_button_rects.append(rect)
 
 	var area := Area3D.new()
 	area.name = node_name
@@ -288,22 +294,62 @@ func _physics_process(delta: float) -> void:
 		return
 	if not visible:
 		return
-	var camera_forward := -_camera.global_transform.basis.z
-	camera_forward.y = 0.0
-	if camera_forward.length_squared() < 0.0001:
-		camera_forward = Vector3.FORWARD
-	camera_forward = camera_forward.normalized()
-	var to_panel := global_position - _camera.global_position
-	var distance_to_panel := to_panel.length()
-	var panel_gaze := to_panel.normalized().dot(camera_forward) if distance_to_panel > 0.001 else 0.0
-	if panel_gaze >= parked_keep_gaze:
-		_panel_ignored = 0.0
-	else:
-		_panel_ignored += delta
-		if _panel_ignored >= parked_ignore_seconds:
-			_hide_panel()
-			return
+	if not _grabbing:
+		var camera_forward := -_camera.global_transform.basis.z
+		camera_forward.y = 0.0
+		if camera_forward.length_squared() < 0.0001:
+			camera_forward = Vector3.FORWARD
+		camera_forward = camera_forward.normalized()
+		var to_panel := global_position - _camera.global_position
+		var distance_to_panel := to_panel.length()
+		var panel_gaze := (
+			to_panel.normalized().dot(camera_forward) if distance_to_panel > 0.001 else 0.0
+		)
+		if panel_gaze >= parked_keep_gaze:
+			_panel_ignored = 0.0
+		else:
+			_panel_ignored += delta
+			if _panel_ignored >= parked_ignore_seconds:
+				_hide_panel()
+				return
+	_update_grab()
 	_update_swipe()
+
+
+func _update_grab() -> void:
+	if not grab_enabled or _hand_source == null:
+		return
+	var sample := _hand_source.get_latest_hand_sample("right")
+	if sample.is_empty():
+		_grabbing = false
+		return
+	var tip := sample.get("index_tip", Vector3.ZERO) as Vector3
+	var pinching := _hand_source.is_hand_pinching("right")
+	if _grabbing:
+		if not pinching:
+			_grabbing = false
+			return
+		global_position = tip + _grab_offset
+		_panel_ignored = 0.0
+		return
+	if not pinching:
+		return
+	var local := to_local(tip)
+	var within := (
+		absf(local.z) < grab_margin
+		and absf(local.x) < SCREEN_SIZE.x * 0.5 + grab_margin
+		and absf(local.y) < SCREEN_SIZE.y * 0.5 + grab_margin
+	)
+	if within and not _over_footer(local):
+		_grabbing = true
+		_grab_offset = global_position - tip
+		_panel_ignored = 0.0
+
+
+func _over_footer(local: Vector3) -> bool:
+	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
+	var footer_top_local := SCREEN_SIZE.y * 0.5 - FOOTER_HEIGHT_PX * scale_y
+	return local.y <= footer_top_local
 
 
 func _process(delta: float) -> void:
@@ -441,9 +487,14 @@ func _update_swipe() -> void:
 	if on_surface:
 		if not _swipe_active:
 			_swipe_active = true
+			_swipe_start = position_2d
 			_scroll_anchor_y = position_2d.y
 			_scroll_accumulator = 0.0
 		else:
+			# Once the finger is clearly dragging, cancel any pending button tap
+			# so a scroll swipe can never trigger the footer controls.
+			if position_2d.distance_to(_swipe_start) > 0.012 and _hand_source != null:
+				_hand_source.cancel_touch_taps()
 			var frame_dy := position_2d.y - _scroll_anchor_y
 			_scroll_anchor_y = position_2d.y
 			_scroll_chat_lines(frame_dy * CHAT_SCROLL_LINES_PER_METRE)

@@ -41,7 +41,7 @@ const RIGHT_CONTROLLER_PATH := &"/user/hand/right"
 const TOUCH_CONTACT_DISTANCE := 0.025
 const TOUCH_RELEASE_DISTANCE := 0.07
 const TOUCH_TAP_HOLD_MSEC := 90
-const TOUCH_DRAG_CANCEL_DISTANCE := 0.04
+const TOUCH_DRAG_CANCEL_DISTANCE := 0.025
 # OpenXR joints drop out for single frames routinely (occlusion, edge of the
 # camera FOV). Hold the last state briefly so a blink does not cancel a touch,
 # grab, or the aim ray.
@@ -405,6 +405,13 @@ func get_latest_hand_sample(hand_name: String) -> Dictionary:
 
 func is_hand_pinching(hand_name: String) -> bool:
 	return bool(_hand_pinch_states.get(hand_name, false))
+
+
+func cancel_touch_taps() -> void:
+	# A surface drag (e.g. scrolling the palm) must not fire a button tap.
+	_touch_dragged = true
+	_touch_candidate_id = ""
+	_touch_tap_fired = true
 
 
 func _tracker_is_usable(tracker: XRHandTracker) -> bool:
