@@ -25,15 +25,23 @@ class PermissionRequest:
     approval_id: str
     session_id: str
     permission: str
+    title: str = ""
     patterns: list[str] = field(default_factory=list)
     always: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def command(self) -> str:
+        value = self.metadata.get("command") if isinstance(self.metadata, dict) else None
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return self.patterns[0] if self.patterns else ""
 
     def to_wire(self) -> dict[str, Any]:
         return {
             "approval_id": self.approval_id,
             "session_id": self.session_id,
             "permission": self.permission,
+            "title": self.title,
             "patterns": list(self.patterns),
             "always": list(self.always),
             "metadata": dict(self.metadata),
@@ -130,7 +138,7 @@ class OpencodeClient:
     async def create_session(
         self,
         title: str = "",
-        permission: dict[str, Any] | None = None,
+        permission: Any = None,
     ) -> str:
         body: dict[str, Any] = {}
         if title:
@@ -233,11 +241,19 @@ def permission_from_event(event: dict[str, Any]) -> PermissionRequest | None:
     approval_id = str(props.get("id", ""))
     if not approval_id:
         return None
+    raw_pattern = props.get("pattern")
+    if isinstance(raw_pattern, list):
+        patterns = [str(item) for item in raw_pattern]
+    elif isinstance(raw_pattern, str) and raw_pattern:
+        patterns = [raw_pattern]
+    else:
+        patterns = [str(item) for item in props.get("patterns", [])]
     return PermissionRequest(
         approval_id=approval_id,
         session_id=str(props.get("sessionID", "")),
-        permission=str(props.get("permission", "")),
-        patterns=[str(pattern) for pattern in props.get("patterns", [])],
+        permission=str(props.get("permission") or props.get("type") or ""),
+        title=str(props.get("title", "")),
+        patterns=patterns,
         always=[str(pattern) for pattern in props.get("always", [])],
         metadata=dict(props.get("metadata", {})),
     )

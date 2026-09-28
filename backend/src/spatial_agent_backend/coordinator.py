@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, AsyncIterator
 
 from .domain import Message
 from .observability import log_record
@@ -37,6 +37,29 @@ OPENCODE_PERMISSION = [
     {"permission": "edit", "pattern": "*", "action": "allow"},
     {"permission": "bash", "pattern": "*", "action": "ask"},
 ]
+
+# Safety valve so an opencode run can never hang the cockpit forever.
+OPENCODE_IDLE_TIMEOUT_SECONDS = 180.0
+
+
+async def _primed_events(
+    first: "asyncio.Future[dict[str, Any]]",
+    stream: "AsyncIterator[dict[str, Any]]",
+    timeout: float = OPENCODE_IDLE_TIMEOUT_SECONDS,
+) -> "AsyncIterator[dict[str, Any]]":
+    """Yield the primed first event, then the rest, with an idle timeout."""
+    try:
+        yield await asyncio.wait_for(first, timeout)
+    except (StopAsyncIteration, asyncio.TimeoutError, asyncio.CancelledError):
+        return
+    iterator = stream.__aiter__()
+    while True:
+        try:
+            yield await asyncio.wait_for(iterator.__anext__(), timeout)
+        except StopAsyncIteration:
+            return
+        except asyncio.TimeoutError:
+            return
 
 
 def _tool_summary(value: Any) -> str:
@@ -441,10 +464,9 @@ class AgentCoordinator:
         with suppress(Exception):
             await self.threads.set_status(run.thread_id, "waiting_user")
         await emit("agent.status", run.thread_id, {"status": "waiting_user", "run_id": run.run_id})
-        summary = f"Allow opencode {request.permission}?"
-        if request.patterns:
-            summary += " " + ", ".join(request.patterns)
-        details = str(request.metadata.get("command", "")) or ", ".join(request.patterns)
+        command = request.command()
+        tool_label = request.title.strip() or f"opencode {request.permission}"
+        summary = command or request.title.strip() or f"Allow {request.permission}?"
         await emit(
             "approval.required",
             run.thread_id,
@@ -452,13 +474,14 @@ class AgentCoordinator:
                 "approval_id": approval_id,
                 "run_id": run.run_id,
                 "tool_id": f"opencode.{request.permission}",
-                "tool_name": f"opencode {request.permission}",
+                "tool_name": tool_label,
                 "summary": summary,
+                "command": command,
                 "permission_level": "explicit approval",
                 "source": "opencode",
                 "impact_preview": {
                     "route": ["gesture", "opencode", request.permission],
-                    "scope": details or "opencode tool call",
+                    "scope": command or request.title.strip() or "opencode tool call",
                     "side_effect": "may change files or run commands",
                     "reversibility": "depends on the command",
                     "external": False,
@@ -548,10 +571,15 @@ class AgentCoordinator:
                 run.thread_id,
                 {"message_id": run.message_id, "role": "assistant", "run_id": run.run_id},
             )
+            events = client.events()
+            # Prime the SSE subscription (starts the /event stream) *before*
+            # prompting so a fast reply is not streamed into the void.
+            primed = asyncio.ensure_future(events.__anext__())
+            await asyncio.sleep(0.25)
             await client.prompt(opencode_session, prompt_text)
             log_record("opencode_prompted", run_id=run.run_id)
             seen_tools: set[str] = set()
-            async for event in client.events():
+            async for event in _primed_events(primed, events):
                 if run.cancel_event.is_set():
                     with suppress(Exception):
                         await client.abort(opencode_session)
