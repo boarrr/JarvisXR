@@ -6,16 +6,36 @@ extends Node3D
 @export_range(0.004, 0.02, 0.001) var marker_radius: float = 0.009
 
 const HANDS := ["left", "right"]
-const MARKER_JOINT_ORDER := [
-	"wrist",
-	"palm",
-	"thumb_tip",
-	"index_proximal",
-	"index_tip",
-	"middle_tip",
-	"ring_tip",
-	"pinky_tip",
+const FULL_JOINT_NAMES := [
+	"palm", "wrist",
+	"thumb_metacarpal", "thumb_proximal", "thumb_distal", "thumb_tip",
+	"index_metacarpal", "index_proximal", "index_distal", "index_tip",
+	"middle_metacarpal", "middle_proximal", "middle_distal", "middle_tip",
+	"ring_metacarpal", "ring_proximal", "ring_distal", "ring_tip",
+	"pinky_metacarpal", "pinky_proximal", "pinky_distal", "pinky_tip",
 ]
+const GLOVE_CHAINS := [
+	["wrist", "palm"],
+	["palm", "thumb_metacarpal"], ["thumb_metacarpal", "thumb_proximal"],
+	["thumb_proximal", "thumb_distal"], ["thumb_distal", "thumb_tip"],
+	["palm", "index_metacarpal"], ["index_metacarpal", "index_proximal"],
+	["index_proximal", "index_distal"], ["index_distal", "index_tip"],
+	["palm", "middle_metacarpal"], ["middle_metacarpal", "middle_proximal"],
+	["middle_proximal", "middle_distal"], ["middle_distal", "middle_tip"],
+	["palm", "ring_metacarpal"], ["ring_metacarpal", "ring_proximal"],
+	["ring_proximal", "ring_distal"], ["ring_distal", "ring_tip"],
+	["palm", "pinky_metacarpal"], ["pinky_metacarpal", "pinky_proximal"],
+	["pinky_proximal", "pinky_distal"], ["pinky_distal", "pinky_tip"],
+]
+const GLOVE_RADII := {
+	"wrist": 0.026, "palm": 0.024,
+	"thumb_metacarpal": 0.013, "thumb_proximal": 0.012, "thumb_distal": 0.011, "thumb_tip": 0.010,
+	"index_metacarpal": 0.012, "index_proximal": 0.011, "index_distal": 0.010, "index_tip": 0.009,
+	"middle_metacarpal": 0.012, "middle_proximal": 0.011, "middle_distal": 0.010, "middle_tip": 0.009,
+	"ring_metacarpal": 0.011, "ring_proximal": 0.010, "ring_distal": 0.009, "ring_tip": 0.008,
+	"pinky_metacarpal": 0.010, "pinky_proximal": 0.009, "pinky_distal": 0.008, "pinky_tip": 0.008,
+}
+const BONE_RADIUS := 0.009
 const RAY_LENGTH := 6.0
 const COLOR_IDLE := Color(0.02, 0.92, 1, 0.9)
 const COLOR_HOVER := Color(0.45, 1.0, 0.55, 0.95)
@@ -34,8 +54,9 @@ var _source: OpenXRInteractionSource = null
 var _beam_material: StandardMaterial3D = null
 var _finger_material: StandardMaterial3D = null
 var _aim_material: StandardMaterial3D = null
-var _markers: Dictionary = {"left": {}, "right": {}}
-var _marker_materials: Dictionary = {}
+var _glove_joints: Dictionary = {"left": {}, "right": {}}
+var _glove_bones: Dictionary = {"left": [], "right": []}
+var _glove_materials: Dictionary = {}
 var _hint: Label3D = null
 var _gesture_hud: Label3D = null
 var _gesture_hud_enabled := false
@@ -46,7 +67,7 @@ func _ready() -> void:
 	_beam_material = _make_unique_material(_beam)
 	_finger_material = _make_unique_material(_finger_light)
 	_aim_material = _make_unique_material(_aim_light)
-	_build_markers()
+	_build_glove()
 	_build_hint()
 	_gesture_hud_enabled = bool(ProjectSettings.get_setting("spatial_agent/gesture_hud", false))
 	if _gesture_hud_enabled:
@@ -54,12 +75,17 @@ func _ready() -> void:
 	visible = false
 
 
-func _build_markers() -> void:
+func _build_glove() -> void:
 	var sphere := SphereMesh.new()
-	sphere.radius = marker_radius
-	sphere.height = marker_radius * 2.0
-	sphere.radial_segments = 10
-	sphere.rings = 6
+	sphere.radius = 1.0
+	sphere.height = 2.0
+	sphere.radial_segments = 12
+	sphere.rings = 8
+	var cylinder := CylinderMesh.new()
+	cylinder.top_radius = 1.0
+	cylinder.bottom_radius = 1.0
+	cylinder.height = 1.0
+	cylinder.radial_segments = 8
 	for hand_name in HANDS:
 		var material := StandardMaterial3D.new()
 		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -67,17 +93,29 @@ func _build_markers() -> void:
 		material.albedo_color = COLOR_IDLE
 		material.emission_enabled = true
 		material.emission = Color(COLOR_IDLE.r, COLOR_IDLE.g, COLOR_IDLE.b, 1.0)
-		material.emission_energy_multiplier = 2.2
+		material.emission_energy_multiplier = 1.6
 		material.no_depth_test = true
-		_marker_materials[hand_name] = material
-		for joint_name in MARKER_JOINT_ORDER:
-			var marker := MeshInstance3D.new()
-			marker.mesh = sphere
-			marker.material_override = material
-			marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			marker.visible = false
-			add_child(marker)
-			(_markers[hand_name] as Dictionary)[joint_name] = marker
+		_glove_materials[hand_name] = material
+		var joint_nodes: Dictionary = {}
+		for joint_name in FULL_JOINT_NAMES:
+			var node := MeshInstance3D.new()
+			node.mesh = sphere
+			node.material_override = material
+			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			node.visible = false
+			add_child(node)
+			joint_nodes[joint_name] = node
+		_glove_joints[hand_name] = joint_nodes
+		var bone_nodes: Array = []
+		for _chain in GLOVE_CHAINS:
+			var bone := MeshInstance3D.new()
+			bone.mesh = cylinder
+			bone.material_override = material
+			bone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			bone.visible = false
+			add_child(bone)
+			bone_nodes.append(bone)
+		_glove_bones[hand_name] = bone_nodes
 
 
 func _build_hint() -> void:
@@ -100,7 +138,7 @@ func _process(_delta: float) -> void:
 		return
 
 	var any_visible := false
-	any_visible = _update_markers(any_visible)
+	any_visible = _update_glove(any_visible)
 	any_visible = _update_pointer(any_visible)
 
 	var show_hint := AppState.ui_mode == "xr_hands" and not _source.has_tracking_data()
@@ -116,27 +154,54 @@ func _process(_delta: float) -> void:
 	visible = any_visible
 
 
-func _update_markers(any_visible: bool) -> bool:
+func _update_glove(any_visible: bool) -> bool:
 	for hand_name in HANDS:
-		var sample := _source.get_latest_hand_sample(hand_name)
-		var joints: Dictionary = sample.get("joints", {})
+		var positions := _source.get_hand_joint_positions(hand_name)
 		var pinching := _source.is_hand_pinching(hand_name)
 		var color := COLOR_PINCH if pinching else COLOR_IDLE
-		var material: StandardMaterial3D = _marker_materials.get(hand_name)
+		var material: StandardMaterial3D = _glove_materials.get(hand_name)
 		if material != null:
 			material.albedo_color = color
 			material.emission = Color(color.r, color.g, color.b, 1.0)
-		for joint_name in MARKER_JOINT_ORDER:
-			var marker: MeshInstance3D = (_markers[hand_name] as Dictionary).get(joint_name)
-			if marker == null:
-				continue
-			if joints.has(joint_name):
-				marker.global_position = joints[joint_name]
-				marker.visible = true
+		var joint_nodes: Dictionary = _glove_joints[hand_name]
+		for joint_name in FULL_JOINT_NAMES:
+			var node: MeshInstance3D = joint_nodes[joint_name]
+			if positions.has(joint_name):
+				node.global_position = positions[joint_name]
+				node.scale = Vector3.ONE * float(GLOVE_RADII.get(joint_name, 0.010))
+				node.visible = true
 				any_visible = true
 			else:
-				marker.visible = false
+				node.visible = false
+		var bone_nodes: Array = _glove_bones[hand_name]
+		for index in range(GLOVE_CHAINS.size()):
+			var bone: MeshInstance3D = bone_nodes[index]
+			var chain: Array = GLOVE_CHAINS[index]
+			if positions.has(chain[0]) and positions.has(chain[1]):
+				_orient_bone(bone, positions[chain[0]], positions[chain[1]])
+				any_visible = true
+			else:
+				bone.visible = false
 	return any_visible
+
+
+func _orient_bone(node: MeshInstance3D, a: Vector3, b: Vector3) -> void:
+	var delta := b - a
+	var length := delta.length()
+	if length < 0.0005:
+		node.visible = false
+		return
+	var direction := delta / length
+	var up := Vector3.UP
+	if absf(direction.dot(up)) > 0.99:
+		up = Vector3.RIGHT
+	# Cylinder is Y-aligned: rotate so +Y points along the bone.
+	var basis := Basis().looking_at(direction, up) * Basis(Vector3(1.0, 0.0, 0.0), -PI * 0.5)
+	node.global_transform = Transform3D(
+		basis.scaled(Vector3(BONE_RADIUS, length, BONE_RADIUS)),
+		(a + b) * 0.5
+	)
+	node.visible = true
 
 
 func _update_pointer(any_visible: bool) -> bool:

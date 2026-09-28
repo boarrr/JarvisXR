@@ -373,6 +373,49 @@ func _sample_for_hand(hand_name: String) -> Dictionary:
 	}
 
 
+const FULL_HAND_JOINTS := {
+	"palm": XRHandTracker.HAND_JOINT_PALM,
+	"wrist": XRHandTracker.HAND_JOINT_WRIST,
+	"thumb_metacarpal": XRHandTracker.HAND_JOINT_THUMB_METACARPAL,
+	"thumb_proximal": XRHandTracker.HAND_JOINT_THUMB_PHALANX_PROXIMAL,
+	"thumb_distal": XRHandTracker.HAND_JOINT_THUMB_PHALANX_DISTAL,
+	"thumb_tip": XRHandTracker.HAND_JOINT_THUMB_TIP,
+	"index_metacarpal": XRHandTracker.HAND_JOINT_INDEX_FINGER_METACARPAL,
+	"index_proximal": XRHandTracker.HAND_JOINT_INDEX_FINGER_PHALANX_PROXIMAL,
+	"index_distal": XRHandTracker.HAND_JOINT_INDEX_FINGER_PHALANX_DISTAL,
+	"index_tip": XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP,
+	"middle_metacarpal": XRHandTracker.HAND_JOINT_MIDDLE_FINGER_METACARPAL,
+	"middle_proximal": XRHandTracker.HAND_JOINT_MIDDLE_FINGER_PHALANX_PROXIMAL,
+	"middle_distal": XRHandTracker.HAND_JOINT_MIDDLE_FINGER_PHALANX_DISTAL,
+	"middle_tip": XRHandTracker.HAND_JOINT_MIDDLE_FINGER_TIP,
+	"ring_metacarpal": XRHandTracker.HAND_JOINT_RING_FINGER_METACARPAL,
+	"ring_proximal": XRHandTracker.HAND_JOINT_RING_FINGER_PHALANX_PROXIMAL,
+	"ring_distal": XRHandTracker.HAND_JOINT_RING_FINGER_PHALANX_DISTAL,
+	"ring_tip": XRHandTracker.HAND_JOINT_RING_FINGER_TIP,
+	"pinky_metacarpal": XRHandTracker.HAND_JOINT_PINKY_FINGER_METACARPAL,
+	"pinky_proximal": XRHandTracker.HAND_JOINT_PINKY_FINGER_PHALANX_PROXIMAL,
+	"pinky_distal": XRHandTracker.HAND_JOINT_PINKY_FINGER_PHALANX_DISTAL,
+	"pinky_tip": XRHandTracker.HAND_JOINT_PINKY_FINGER_TIP,
+}
+
+
+func get_hand_joint_positions(hand_name: String) -> Dictionary:
+	"""World-space positions for every tracked joint, for glove rendering."""
+	var tracker_path := RIGHT_TRACKER_PATH if hand_name == "right" else LEFT_TRACKER_PATH
+	var tracker := XRServer.get_tracker(tracker_path) as XRHandTracker
+	if not _tracker_is_usable(tracker):
+		return {}
+	var origin_transform := _xr_origin.global_transform if _xr_origin != null else Transform3D.IDENTITY
+	var result: Dictionary = {}
+	for joint_name in FULL_HAND_JOINTS:
+		var joint_index: int = FULL_HAND_JOINTS[joint_name]
+		if _joint_has_tracked_position(tracker, joint_index):
+			result[joint_name] = (
+				origin_transform * tracker.get_hand_joint_transform(joint_index)
+			).origin
+	return result
+
+
 func _read_meta_hand(hand_name: String) -> Dictionary:
 	# Reads Meta's curated aim pose and pinch signal from the hand-interaction
 	# profile action map (trigger = pinch strength, trigger_click = pinch).

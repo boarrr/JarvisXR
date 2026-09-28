@@ -13,12 +13,12 @@ const VIEWPORT_SIZE := Vector2i(640, 860)
 const SCREEN_CENTER := Vector2(0.0, 0.0)
 const SCREEN_SIZE := Vector2(0.5, 0.672)
 const HEADER_HEIGHT_PX := 104.0
-const FOOTER_HEIGHT_PX := 160.0
+const FOOTER_HEIGHT_PX := 172.0
 const CHAT_RENDER_INTERVAL := 0.1
 const CHAT_SCROLL_LINES_PER_METRE := 55.0
 
-const RECT_TALK := Rect2(16, 712, 608, 72)
-const RECT_SECONDARY := Rect2(16, 800, 608, 60)
+const RECT_TALK := Rect2(16, 690, 608, 80)
+const RECT_SECONDARY := Rect2(16, 778, 608, 62)
 const SECONDARY := [
 	["NEW", "palm:new_agent", "NewTarget"],
 	["NEXT", "palm:focus_next", "NextTarget"],
@@ -29,9 +29,9 @@ const SECONDARY := [
 
 @export var hand_source_path: NodePath = ^"../XRRuntime/OpenXRInteractionSource"
 @export var user_rig_path: NodePath = ^"../UserRig"
-@export_range(-0.6, 0.6, 0.01) var parked_side_offset: float = -0.16
-@export_range(0.3, 1.2, 0.01) var parked_distance: float = 0.62
-@export_range(0.0, 0.8, 0.01) var parked_drop: float = 0.28
+@export_range(-0.6, 0.6, 0.01) var parked_side_offset: float = -0.14
+@export_range(0.3, 1.2, 0.01) var parked_distance: float = 0.55
+@export_range(0.0, 0.8, 0.01) var parked_drop: float = 0.22
 @export_range(0.0, 1.0, 0.05) var parked_keep_gaze: float = 0.35
 @export_range(0.5, 10.0, 0.5) var parked_ignore_seconds: float = 3.0
 @export_range(0.3, 1.0, 0.01) var console_scale: float = 0.8
@@ -264,7 +264,7 @@ func _make_button(
 	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
 	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.05)
+	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.08)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	area.add_child(collision)
