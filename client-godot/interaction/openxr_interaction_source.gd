@@ -38,7 +38,7 @@ const RIGHT_TRACKER_PATH := &"/user/hand_tracker/right"
 # these controller paths; they are steadier than raw joint geometry.
 const LEFT_CONTROLLER_PATH := &"/user/hand/left"
 const RIGHT_CONTROLLER_PATH := &"/user/hand/right"
-const TOUCH_CONTACT_DISTANCE := 0.025
+const TOUCH_CONTACT_DISTANCE := 0.03
 const TOUCH_RELEASE_DISTANCE := 0.07
 const TOUCH_TAP_HOLD_MSEC := 90
 const TOUCH_DRAG_CANCEL_DISTANCE := 0.025

@@ -29,12 +29,12 @@ const SECONDARY := [
 
 @export var hand_source_path: NodePath = ^"../XRRuntime/OpenXRInteractionSource"
 @export var user_rig_path: NodePath = ^"../UserRig"
-@export_range(-0.6, 0.6, 0.01) var parked_side_offset: float = -0.14
-@export_range(0.3, 1.2, 0.01) var parked_distance: float = 0.55
-@export_range(0.0, 0.8, 0.01) var parked_drop: float = 0.22
+@export_range(-0.6, 0.6, 0.01) var parked_side_offset: float = -0.12
+@export_range(0.3, 1.2, 0.01) var parked_distance: float = 0.52
+@export_range(0.0, 0.8, 0.01) var parked_drop: float = 0.14
 @export_range(0.0, 1.0, 0.05) var parked_keep_gaze: float = 0.35
 @export_range(0.5, 10.0, 0.5) var parked_ignore_seconds: float = 3.0
-@export_range(0.3, 1.0, 0.01) var console_scale: float = 0.8
+@export_range(0.3, 1.0, 0.01) var console_scale: float = 0.7
 @export var grab_enabled: bool = true
 @export_range(0.05, 0.35, 0.01) var grab_margin: float = 0.16
 
@@ -505,6 +505,11 @@ func _update_swipe() -> void:
 		and absf(local.y - SCREEN_CENTER.y) <= half.y
 	)
 	var position_2d := Vector2(local.x, local.y)
+	# The footer is a button band: never treat touches there as scrolls, or a
+	# poke's natural finger travel would cancel the tap.
+	if _over_footer(local):
+		_swipe_active = false
+		return
 	if on_surface:
 		if not _swipe_active:
 			_swipe_active = true
@@ -514,7 +519,7 @@ func _update_swipe() -> void:
 		else:
 			# Once the finger is clearly dragging, cancel any pending button tap
 			# so a scroll swipe can never trigger the footer controls.
-			if position_2d.distance_to(_swipe_start) > 0.012 and _hand_source != null:
+			if position_2d.distance_to(_swipe_start) > 0.02 and _hand_source != null:
 				_hand_source.cancel_touch_taps()
 			var frame_dy := position_2d.y - _scroll_anchor_y
 			_scroll_anchor_y = position_2d.y

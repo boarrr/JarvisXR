@@ -40,6 +40,7 @@ const RAY_LENGTH := 6.0
 const COLOR_IDLE := Color(0.02, 0.92, 1, 0.9)
 const COLOR_HOVER := Color(0.45, 1.0, 0.55, 0.95)
 const COLOR_PINCH := Color(1.0, 0.48, 0.12, 0.95)
+const GLOVE_ALPHA := 0.32
 const HINT_TEXT := (
 	"HAND TRACKING: NO DATA\n"
 	+ "Put the controllers down, or enable\n"
@@ -90,11 +91,11 @@ func _build_glove() -> void:
 		var material := StandardMaterial3D.new()
 		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		material.albedo_color = COLOR_IDLE
+		material.albedo_color = Color(COLOR_IDLE.r, COLOR_IDLE.g, COLOR_IDLE.b, GLOVE_ALPHA)
 		material.emission_enabled = true
 		material.emission = Color(COLOR_IDLE.r, COLOR_IDLE.g, COLOR_IDLE.b, 1.0)
-		material.emission_energy_multiplier = 1.6
-		material.no_depth_test = true
+		material.emission_energy_multiplier = 0.9
+		material.no_depth_test = false
 		_glove_materials[hand_name] = material
 		var joint_nodes: Dictionary = {}
 		for joint_name in FULL_JOINT_NAMES:
@@ -161,7 +162,7 @@ func _update_glove(any_visible: bool) -> bool:
 		var color := COLOR_PINCH if pinching else COLOR_IDLE
 		var material: StandardMaterial3D = _glove_materials.get(hand_name)
 		if material != null:
-			material.albedo_color = color
+			material.albedo_color = Color(color.r, color.g, color.b, GLOVE_ALPHA)
 			material.emission = Color(color.r, color.g, color.b, 1.0)
 		var joint_nodes: Dictionary = _glove_joints[hand_name]
 		for joint_name in FULL_JOINT_NAMES:
