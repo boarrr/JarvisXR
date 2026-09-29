@@ -179,7 +179,27 @@ func _build_screen() -> void:
 		)
 		_make_button(root, rect, str(entry[0]), Color(0.05, 0.4, 0.5), Color(0.9, 1.0, 1.0), str(entry[2]), str(entry[1]))
 
+	_build_surface()
 	_build_backing_and_screen(root)
+
+
+func _build_surface() -> void:
+	# A thin invisible plane over the screen used to "stop" the hand at the
+	# panel (Meta-style) so fingers land on the controls instead of passing
+	# through. It is not in "interactable" so it never emits selections.
+	var surface := Area3D.new()
+	surface.name = "SurfaceTarget"
+	surface.collision_layer = 2
+	surface.collision_mask = 0
+	surface.monitoring = false
+	surface.add_to_group("touch_surface")
+	var box := BoxShape3D.new()
+	box.size = Vector3(SCREEN_SIZE.x, SCREEN_SIZE.y, 0.03)
+	var collision := CollisionShape3D.new()
+	collision.shape = box
+	surface.add_child(collision)
+	surface.position = Vector3(SCREEN_CENTER.x, SCREEN_CENTER.y, 0.0)
+	add_child(surface)
 
 
 func _build_backing_and_screen(root: Control) -> void:
@@ -450,20 +470,31 @@ func _render_conversation() -> void:
 	for message in thread.messages:
 		var speaker := "AGENT"
 		var color := "#7bf58f"
-		match message.role:
-			AgentMessage.Role.USER:
-				speaker = "YOU"
-				color = "#55f5ff"
-			AgentMessage.Role.TOOL:
-				speaker = "TOOL"
-				color = "#ffd166"
-			AgentMessage.Role.SYSTEM:
-				speaker = "SYS"
-				color = "#6b9aa5"
+		var thinking := str(message.metadata.get("kind", "")) == "thinking"
+		if thinking:
+			speaker = "THINK"
+			color = "#7fa6bd"
+		else:
+			match message.role:
+				AgentMessage.Role.USER:
+					speaker = "YOU"
+					color = "#55f5ff"
+				AgentMessage.Role.TOOL:
+					speaker = "TOOL"
+					color = "#ffd166"
+				AgentMessage.Role.SYSTEM:
+					speaker = "SYS"
+					color = "#7b8c99"
 		var content := message.content.strip_edges().replace("[", "[lb]")
+		if thinking and content.length() > 600:
+			# Reasoning can be long; show the live tail.
+			content = "…" + content.substr(content.length() - 600)
 		if message.is_streaming:
 			content += " ▌"
-		lines.append("[color=%s][b]%s[/b][/color]  %s" % [color, speaker, content])
+		if thinking:
+			lines.append("[color=%s][i]%s[/i][/color]  [color=#9fc0d4][i]%s[/i][/color]" % [color, speaker, content])
+		else:
+			lines.append("[color=%s][b]%s[/b][/color]  %s" % [color, speaker, content])
 	if lines.is_empty():
 		lines.append("[color=#6b9aa5]No messages yet. Tap TALK and speak.[/color]")
 	_body.text = "\n\n".join(lines)

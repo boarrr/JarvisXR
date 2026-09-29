@@ -107,6 +107,7 @@ var _touch_candidate_position := {"left": Vector3.ZERO, "right": Vector3.ZERO}
 var _touch_candidate_start_msec := {"left": 0, "right": 0}
 var _touch_dragged := {"left": false, "right": false}
 var _touch_tap_fired := {"left": false, "right": false}
+var _hand_stop_offset := {"left": Vector3.ZERO, "right": Vector3.ZERO}
 var _telemetry_enabled := false
 var _telemetry_elapsed := 0.0
 var _tracking_losses := 0
@@ -200,6 +201,16 @@ func _physics_process(_delta: float) -> void:
 	if not _session_active:
 		return
 	_collect_hand_samples(_delta)
+	# Stop the hand at any touch surface (Meta-style panel collision) before
+	# computing the pointer/touch so the visual and the hit both land on it.
+	for hand_name in ["left", "right"]:
+		var stop_sample: Dictionary = _latest_hand_samples.get(hand_name, {})
+		if stop_sample.is_empty():
+			_hand_stop_offset[hand_name] = Vector3.ZERO
+		else:
+			_hand_stop_offset[hand_name] = _compute_surface_stop(
+				stop_sample.get("index_tip", Vector3.ZERO) as Vector3
+			)
 	var pointer_sample: Dictionary = _latest_hand_samples.get(preferred_hand, {})
 	if pointer_sample.is_empty():
 		_pointer_missing_seconds += _delta
@@ -214,7 +225,10 @@ func _physics_process(_delta: float) -> void:
 		var hand_sample: Dictionary = _latest_hand_samples.get(hand_name, {})
 		if hand_sample.is_empty():
 			continue
-		_update_touch_interaction(hand_name, hand_sample.get("index_tip", Vector3.ZERO) as Vector3)
+		var tip: Vector3 = (
+			hand_sample.get("index_tip", Vector3.ZERO) as Vector3
+		) + _hand_stop_offset[hand_name]
+		_update_touch_interaction(hand_name, tip)
 	_update_bimanual_gesture()
 	_flush_single_taps()
 	if _telemetry_enabled:
@@ -413,14 +427,53 @@ func get_hand_joint_positions(hand_name: String) -> Dictionary:
 	if not _tracker_is_usable(tracker):
 		return {}
 	var origin_transform := _xr_origin.global_transform if _xr_origin != null else Transform3D.IDENTITY
+	var stop_offset: Vector3 = _hand_stop_offset.get(hand_name, Vector3.ZERO)
 	var result: Dictionary = {}
 	for joint_name in FULL_HAND_JOINTS:
 		var joint_index: int = FULL_HAND_JOINTS[joint_name]
 		if _joint_has_tracked_position(tracker, joint_index):
 			result[joint_name] = (
 				origin_transform * tracker.get_hand_joint_transform(joint_index)
-			).origin
+			).origin + stop_offset
 	return result
+
+
+func _compute_surface_stop(position: Vector3) -> Vector3:
+	"""Push the hand out of a touch surface so it visually rests on the panel."""
+	var best_push := 0.0
+	var best_offset := Vector3.ZERO
+	for node in get_tree().get_nodes_in_group("touch_surface"):
+		var area := node as Area3D
+		if area == null or not area.is_visible_in_tree():
+			continue
+		var shape_node := _box_shape_node(area)
+		if shape_node == null:
+			continue
+		var box := shape_node.shape as BoxShape3D
+		if box == null:
+			continue
+		var transform := shape_node.global_transform
+		var local := transform.affine_inverse() * position
+		var half := box.size * 0.5
+		if absf(local.x) > half.x + 0.04 or absf(local.y) > half.y + 0.04:
+			continue
+		var front := half.z
+		var margin := 0.012
+		if local.z > front + margin or local.z < -half.z - 0.06:
+			continue
+		var push := clampf(front + margin - local.z, 0.0, 0.08)
+		if push > best_push:
+			best_push = push
+			best_offset = transform.basis.z.normalized() * push
+	return best_offset
+
+
+func _box_shape_node(area: Area3D) -> CollisionShape3D:
+	for child in area.get_children():
+		var shape_node := child as CollisionShape3D
+		if shape_node != null and shape_node.shape is BoxShape3D:
+			return shape_node
+	return null
 
 
 func _read_meta_hand(hand_name: String) -> Dictionary:
@@ -481,6 +534,7 @@ func _joint_has_tracked_position(tracker: XRHandTracker, joint: int) -> bool:
 
 func _apply_pointer_sample(sample: Dictionary, delta: float = 0.016) -> bool:
 	var index_tip := sample.get("index_tip", Vector3.ZERO) as Vector3
+	index_tip += _hand_stop_offset.get(preferred_hand, Vector3.ZERO)
 	var index_distal := sample.get("index_distal", Vector3.ZERO) as Vector3
 	var index_proximal := sample.get("index_proximal", Vector3.ZERO) as Vector3
 	var thumb_tip := sample.get("thumb_tip", Vector3.ZERO) as Vector3

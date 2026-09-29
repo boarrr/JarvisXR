@@ -596,6 +596,9 @@ class AgentCoordinator:
             await client.prompt(opencode_session, prompt_text)
             log_record("opencode_prompted", run_id=run.run_id)
             seen_tools: set[str] = set()
+            part_types: dict[str, str] = {}
+            thinking_message_id = ""
+            thinking_sequence = 0
             async for event in _primed_events(primed, events, deadline=run_deadline):
                 if run.cancel_event.is_set():
                     with suppress(Exception):
@@ -609,11 +612,55 @@ class AgentCoordinator:
                 if event_type in ("__stream_error__", "session.error"):
                     log_record("opencode_stream_error", run_id=run.run_id, kind=event_type)
                     break
-                if event_type == "message.part.delta":
+                if event_type == "message.part.updated":
+                    part = props.get("part", {}) if isinstance(props, dict) else {}
+                    if isinstance(part, dict):
+                        part_id = str(part.get("id", ""))
+                        part_type = str(part.get("type", ""))
+                        if part_id and part_type:
+                            part_types[part_id] = part_type
+                        if part_type == "tool":
+                            await self._handle_opencode_tool(run, part, seen_tools, emit)
+                elif event_type == "message.part.delta":
                     if props.get("field") != "text":
                         continue
                     delta = str(props.get("delta", ""))
                     if not delta:
+                        continue
+                    # Reasoning parts stream as a separate "thinking" line so the
+                    # cockpit can show thoughts distinctly from the answer.
+                    if part_types.get(str(props.get("partID", ""))) == "reasoning":
+                        if not thinking_message_id:
+                            thinking = await self.threads.add_message(
+                                run.thread_id,
+                                "system",
+                                "",
+                                streaming=True,
+                                metadata={"kind": "thinking", "run_id": run.run_id},
+                            )
+                            thinking_message_id = thinking.id
+                            await emit(
+                                "agent.thinking.started",
+                                run.thread_id,
+                                {
+                                    "message_id": thinking_message_id,
+                                    "role": "system",
+                                    "kind": "thinking",
+                                    "run_id": run.run_id,
+                                },
+                            )
+                        thinking_sequence += 1
+                        await self.threads.append_delta(run.thread_id, thinking_message_id, delta)
+                        await emit(
+                            "agent.thinking.delta",
+                            run.thread_id,
+                            {
+                                "message_id": thinking_message_id,
+                                "delta": delta,
+                                "sequence": thinking_sequence,
+                                "run_id": run.run_id,
+                            },
+                        )
                         continue
                     sequence += 1
                     await self.threads.append_delta(run.thread_id, run.message_id, delta)
@@ -627,10 +674,6 @@ class AgentCoordinator:
                             "run_id": run.run_id,
                         },
                     )
-                elif event_type == "message.part.updated":
-                    part = props.get("part", {}) if isinstance(props, dict) else {}
-                    if isinstance(part, dict) and str(part.get("type", "")) == "tool":
-                        await self._handle_opencode_tool(run, part, seen_tools, emit)
                 elif event_type == "permission.asked":
                     request = permission_from_event(event)
                     if request is None:
@@ -662,6 +705,13 @@ class AgentCoordinator:
             if run.cancel_event.is_set():
                 await self._finish_cancelled(run, emit)
                 return
+            if thinking_message_id:
+                await self.threads.complete_message(run.thread_id, thinking_message_id)
+                await emit(
+                    "agent.thinking.completed",
+                    run.thread_id,
+                    {"message_id": thinking_message_id, "run_id": run.run_id},
+                )
             await self.threads.complete_message(run.thread_id, run.message_id)
             await self.threads.set_status(run.thread_id, "complete")
             await emit(

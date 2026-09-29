@@ -105,6 +105,12 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 			_apply_message_delta(event)
 		"agent.message.completed":
 			_apply_message_completed(event)
+		"agent.thinking.started":
+			_apply_thinking_started(event)
+		"agent.thinking.delta":
+			_apply_message_delta(event)
+		"agent.thinking.completed":
+			_apply_message_completed(event)
 		"run.failed":
 			_set_thread_status(event.thread_id, AgentThread.Status.ERROR)
 		"approval.required":
@@ -257,6 +263,21 @@ func _apply_message_started(event: BackendEvent) -> void:
 		str(event.payload.get("content", ""))
 	)
 	message.is_streaming = true
+	message.metadata["last_delta_sequence"] = 0
+	thread.add_message(message)
+	AppState.update_thread(thread)
+
+
+func _apply_thinking_started(event: BackendEvent) -> void:
+	var thread := AppState.get_thread(event.thread_id)
+	if thread == null:
+		return
+	var message_id: String = str(event.payload.get("message_id", ""))
+	if message_id.is_empty() or _find_message(thread, message_id) != null:
+		return
+	var message := AgentMessage.new(message_id, event.thread_id, AgentMessage.Role.SYSTEM, "")
+	message.is_streaming = true
+	message.metadata["kind"] = "thinking"
 	message.metadata["last_delta_sequence"] = 0
 	thread.add_message(message)
 	AppState.update_thread(thread)

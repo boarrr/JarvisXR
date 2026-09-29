@@ -40,7 +40,7 @@ const RAY_LENGTH := 6.0
 const COLOR_IDLE := Color(0.02, 0.92, 1, 0.9)
 const COLOR_HOVER := Color(0.45, 1.0, 0.55, 0.95)
 const COLOR_PINCH := Color(1.0, 0.48, 0.12, 0.95)
-const GLOVE_ALPHA := 0.32
+const GLOVE_ALPHA := 0.2
 const HINT_TEXT := (
 	"HAND TRACKING: NO DATA\n"
 	+ "Put the controllers down, or enable\n"
@@ -94,7 +94,7 @@ func _build_glove() -> void:
 		material.albedo_color = Color(COLOR_IDLE.r, COLOR_IDLE.g, COLOR_IDLE.b, GLOVE_ALPHA)
 		material.emission_enabled = true
 		material.emission = Color(COLOR_IDLE.r, COLOR_IDLE.g, COLOR_IDLE.b, 1.0)
-		material.emission_energy_multiplier = 0.9
+		material.emission_energy_multiplier = 0.6
 		material.no_depth_test = false
 		_glove_materials[hand_name] = material
 		var joint_nodes: Dictionary = {}
