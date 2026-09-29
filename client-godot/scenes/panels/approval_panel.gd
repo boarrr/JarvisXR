@@ -104,6 +104,7 @@ func _build_screen() -> void:
 
 	_make_target("ApproveTarget", "approval:approve", RECT_APPROVE)
 	_make_target("DenyTarget", "approval:deny", RECT_DENY)
+	_build_surface()
 
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -172,6 +173,24 @@ func _make_target(target_name: String, target_id: String, rect: Rect2) -> void:
 	add_child(area)
 
 
+func _build_surface() -> void:
+	# Invisible touch surface so the hand stops on the gate (same as the palm),
+	# letting APPROVE / DENY be pressed without the hand passing through.
+	var surface := Area3D.new()
+	surface.name = "SurfaceTarget"
+	surface.collision_layer = 2
+	surface.collision_mask = 0
+	surface.monitoring = false
+	surface.add_to_group("touch_surface")
+	var box := BoxShape3D.new()
+	box.size = Vector3(SCREEN_SIZE.x, SCREEN_SIZE.y, 0.03)
+	var collision := CollisionShape3D.new()
+	collision.shape = box
+	surface.add_child(collision)
+	surface.position = Vector3(SCREEN_CENTER.x, SCREEN_CENTER.y, 0.0)
+	add_child(surface)
+
+
 func _rect_to_local(rect: Rect2) -> Vector3:
 	var center := rect.position + rect.size * 0.5
 	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
@@ -190,13 +209,19 @@ func _show_next_approval() -> void:
 		_approval_id = ""
 		return
 	_approval_id = str(request.get("approval_id", ""))
-	_title_label.text = str(request.get("tool_name", "Action")) + "  ·  APPROVAL REQUIRED"
-	var summary := str(request.get("summary", "The agent requested an action."))
+	var tool := str(request.get("tool_name", "action")).strip_edges()
+	_title_label.text = "APPROVAL REQUIRED"
+	var command := str(request.get("command", "")).strip_edges()
+	var summary := command if not command.is_empty() else str(
+		request.get("summary", "The agent requested an action.")
+	).strip_edges()
+	if not command.is_empty():
+		summary = "$ %s" % command
 	if summary.length() > 260:
 		summary = summary.substr(0, 257) + "..."
 	_summary_label.text = summary
-	_permission_label.text = "permission: %s" % str(
-		request.get("permission_level", "explicit approval")
+	_permission_label.text = "%s  ·  explicit hand confirmation" % (
+		tool if not tool.is_empty() else "tool"
 	)
 	_impact_preview.visible = false
 	_impact_preview.configure(request.get("impact_preview", {}) as Dictionary)

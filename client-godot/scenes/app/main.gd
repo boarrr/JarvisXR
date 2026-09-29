@@ -538,6 +538,20 @@ func _on_partial_transcript(transcript: String) -> void:
 
 func _on_final_transcript(transcript: String) -> void:
 	AppState.current_transcript = transcript
+	# Hands-free confirmation: while the approval gate is up, "approve"/"deny"
+	# resolves it instead of being sent to the agent.
+	if _approval_mode_active:
+		var normalized := transcript.to_lower().strip_edges()
+		var approve_words := ["approve", "approved", "allow", "accept", "yes", "go ahead", "do it"]
+		var deny_words := ["deny", "denied", "reject", "cancel", "no", "stop"]
+		for word in approve_words:
+			if word in normalized:
+				_respond_to_next_approval("approve")
+				return
+		for word in deny_words:
+			if word in normalized:
+				_respond_to_next_approval("deny")
+				return
 	if not _command_router.submit_text(transcript, true):
 		EventBus.debug_message.emit("Voice transcript could not be routed")
 

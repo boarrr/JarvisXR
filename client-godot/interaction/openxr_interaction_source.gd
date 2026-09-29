@@ -40,7 +40,7 @@ const LEFT_CONTROLLER_PATH := &"/user/hand/left"
 const RIGHT_CONTROLLER_PATH := &"/user/hand/right"
 const TOUCH_CONTACT_DISTANCE := 0.03
 const TOUCH_RELEASE_DISTANCE := 0.07
-const TOUCH_TAP_HOLD_MSEC := 90
+const TOUCH_TAP_HOLD_MSEC := 45
 const TOUCH_DRAG_CANCEL_DISTANCE := 0.025
 # OpenXR joints drop out for single frames routinely (occlusion, edge of the
 # camera FOV). Hold the last state briefly so a blink does not cancel a touch,
