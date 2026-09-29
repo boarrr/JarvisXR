@@ -53,6 +53,7 @@ var _targets: Array[Area3D] = []
 var _button_rects: Array[Rect2] = []
 var _panel_ignored := 0.0
 var _grabbing := false
+var _grab_hand := ""
 var _grab_offset := Vector3.ZERO
 var _chat_follow := true
 var _chat_dirty := false
@@ -64,6 +65,7 @@ var _swipe_start := Vector2.ZERO
 var _swipe_last := Vector2.ZERO
 var _scroll_anchor_y := 0.0
 var _scroll_accumulator := 0.0
+var _scroll_velocity := 0.0
 
 
 func _ready() -> void:
@@ -334,9 +336,10 @@ func _physics_process(delta: float) -> void:
 			if _panel_ignored >= parked_ignore_seconds:
 				_hide_panel()
 				return
-	_update_grab()
+	_update_grab(delta)
 	_update_swipe()
-	_face_user(delta)
+	if not _grabbing:
+		_face_user(delta)
 
 
 func _face_user(delta: float) -> void:
@@ -358,20 +361,28 @@ func _face_user(delta: float) -> void:
 		)
 
 
-func _update_grab() -> void:
+func _update_grab(delta: float) -> void:
 	if not grab_enabled or _hand_source == null:
 		return
-	var sample := _hand_source.get_latest_hand_sample("right")
-	if sample.is_empty():
-		_grabbing = false
-		return
-	var tip := sample.get("index_tip", Vector3.ZERO) as Vector3
-	var pinching := _hand_source.is_hand_pinching("right")
+	var tip := Vector3.ZERO
+	var hand := ""
+	var pinching := false
+	for candidate in ["right", "left"]:
+		var sample := _hand_source.get_latest_hand_sample(candidate)
+		if sample.is_empty():
+			continue
+		if _hand_source.is_hand_pinching(candidate):
+			tip = sample.get("index_tip", Vector3.ZERO) as Vector3
+			hand = candidate
+			pinching = true
+			break
 	if _grabbing:
-		if not pinching:
+		if not pinching or hand != _grab_hand:
 			_grabbing = false
 			return
-		global_position = tip + _grab_offset
+		# Smooth, solid follow: no rotation while held (rotation resumes on release).
+		var target := tip + _grab_offset
+		global_position = global_position.lerp(target, 1.0 - exp(-16.0 * delta))
 		_panel_ignored = 0.0
 		return
 	if not pinching:
@@ -382,10 +393,23 @@ func _update_grab() -> void:
 		and absf(local.x) < SCREEN_SIZE.x * 0.5 + grab_margin
 		and absf(local.y) < SCREEN_SIZE.y * 0.5 + grab_margin
 	)
-	if within and not _over_footer(local):
+	if within and _in_grab_zone(local):
 		_grabbing = true
+		_grab_hand = hand
 		_grab_offset = global_position - tip
 		_panel_ignored = 0.0
+
+
+func _in_grab_zone(local: Vector3) -> bool:
+	# Grab the frame: the header bar, or either side edge. The body scrolls and
+	# the footer is buttons, so neither is a grab surface.
+	var half_x := SCREEN_SIZE.x * 0.5
+	var half_y := SCREEN_SIZE.y * 0.5
+	if local.y > half_y - 0.12:
+		return true
+	if absf(local.x) > half_x - 0.06:
+		return true
+	return false
 
 
 func _over_footer(local: Vector3) -> bool:
@@ -395,7 +419,15 @@ func _over_footer(local: Vector3) -> bool:
 
 
 func _process(delta: float) -> void:
-	if not _chat_dirty or not visible:
+	if not visible:
+		return
+	# Momentum glide after a scroll flick.
+	if not is_zero_approx(_scroll_velocity):
+		_scroll_chat_lines(_scroll_velocity * delta)
+		_scroll_velocity *= exp(-5.0 * delta)
+		if absf(_scroll_velocity) < 1.0:
+			_scroll_velocity = 0.0
+	if not _chat_dirty:
 		return
 	_chat_elapsed += delta
 	if _chat_elapsed < CHAT_RENDER_INTERVAL:
@@ -499,11 +531,8 @@ func _render_conversation() -> void:
 		lines.append("[color=#6b9aa5]No messages yet. Tap TALK and speak.[/color]")
 	_body.text = "\n\n".join(lines)
 	_refresh_voice_label()
-	var working := thread.status == AgentThread.Status.WORKING
-	if not thread.messages.is_empty() and thread.messages.back().is_streaming:
-		working = true
-	if working:
-		_chat_follow = true
+	# Auto-follow only while the reader is at the tail; manual scroll is respected
+	# even while the agent keeps streaming.
 	if _chat_follow:
 		_chat_scroll_line = maxi(0, _body.get_line_count() - 1)
 		_body.scroll_to_line(_chat_scroll_line)
@@ -562,6 +591,7 @@ func _update_swipe() -> void:
 			_swipe_start = position_2d
 			_scroll_anchor_y = position_2d.y
 			_scroll_accumulator = 0.0
+			_scroll_velocity = 0.0
 		else:
 			# Once the finger is clearly dragging, cancel any pending button tap
 			# so a scroll swipe can never trigger the footer controls.
@@ -569,7 +599,10 @@ func _update_swipe() -> void:
 				_hand_source.cancel_touch_taps()
 			var frame_dy := position_2d.y - _scroll_anchor_y
 			_scroll_anchor_y = position_2d.y
-			_scroll_chat_lines(frame_dy * CHAT_SCROLL_LINES_PER_METRE)
+			var lines := frame_dy * CHAT_SCROLL_LINES_PER_METRE
+			_scroll_chat_lines(lines)
+			# Feed a velocity so a flick keeps gliding after release.
+			_scroll_velocity = lines * 60.0
 		_swipe_last = position_2d
 		return
 	_swipe_active = false
