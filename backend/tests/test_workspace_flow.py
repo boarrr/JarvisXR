@@ -194,8 +194,10 @@ class WorkspaceFlowTests(unittest.IsolatedAsyncioTestCase):
             await websocket.send(
                 command("diff.get", session_id=session_id, thread_id=thread_id)
             )
-            _, error = await receive_until(websocket, "error")
-            self.assertEqual(error["payload"]["code"], "workspace_unavailable")
+            _, proposed_again = await receive_until(websocket, "diff.proposed")
+            # With the worktree gone, the daemon falls back to diffing the bound
+            # repository's working tree directly.
+            self.assertTrue(str(proposed_again["payload"]["run_id"]).startswith("direct:"))
 
     async def test_v2_apply_commits_on_the_agent_branch_only(self) -> None:
         websocket, session_id = await self.open_session()

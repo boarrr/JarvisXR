@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -1001,12 +1002,52 @@ class AgentCoordinator:
 
     async def diff_for_thread(self, thread_id: str) -> tuple[list[FileDiff], bool, str]:
         worktree = self.latest_worktree(thread_id)
-        if worktree is None or self.workspaces is None:
-            raise WorkspaceError("No agent worktree is available for this thread")
-        files, truncated = await self.workspaces.diff(worktree)
-        return files, truncated, worktree.run_id
+        if worktree is not None and self.workspaces is not None:
+            files, truncated = await self.workspaces.diff(worktree)
+            return files, truncated, worktree.run_id
+        # Direct-repo mode: opencode edits the working tree, so diff that instead.
+        path = await self._direct_repo_path(thread_id)
+        if path is None or self.workspaces is None:
+            raise WorkspaceError("No workspace is available for this thread")
+        files, truncated = await self.workspaces.diff_directory(path)
+        return files, truncated, "direct:%s" % thread_id
+
+    async def _direct_repo_path(self, thread_id: str) -> Path | None:
+        thread = await self.threads.get_thread(thread_id)
+        if thread is not None and self.workspaces is not None:
+            workspace_id = str((thread.metadata or {}).get("workspace_id", ""))
+            if workspace_id:
+                workspace = self.workspaces.get(workspace_id)
+                if workspace is not None:
+                    return Path(workspace.path)
+        if self.opencode_directory:
+            return Path(self.opencode_directory)
+        return None
 
     async def decide_diff(self, run_id: str, decision: str) -> dict[str, Any]:
+        if run_id.startswith("direct:") and self.workspaces is not None:
+            thread_id = run_id.split(":", 1)[1]
+            path = await self._direct_repo_path(thread_id)
+            if path is None:
+                raise WorkspaceError("Unknown direct workspace")
+            if decision == "apply":
+                commit = await self.workspaces.commit_directory(
+                    path, f"spatial agent change ({thread_id})"
+                )
+                return {
+                    "run_id": run_id,
+                    "decision": "apply",
+                    "branch": "working-tree",
+                    "commit": commit,
+                    "tests": "skipped",
+                }
+            await self.workspaces.discard_directory(path)
+            return {
+                "run_id": run_id,
+                "decision": "reject",
+                "branch": "working-tree",
+                "commit": "",
+            }
         worktree = self._worktrees_by_run.get(run_id)
         if worktree is None or self.workspaces is None:
             raise WorkspaceError("Unknown diff run")

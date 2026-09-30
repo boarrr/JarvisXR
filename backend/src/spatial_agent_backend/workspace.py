@@ -267,6 +267,45 @@ class WorkspaceManager:
             raw = raw[:MAX_DIFF_BYTES]
         return raw
 
+    async def diff_directory(self, path: Path) -> tuple[list[FileDiff], bool]:
+        """Diff a plain (non-worktree) directory's working tree vs HEAD."""
+        await self._git(path, "add", "-A")
+        raw = await self._git(
+            path,
+            "diff",
+            "--cached",
+            "--no-color",
+            "--find-renames",
+            "--unified=3",
+        )
+        truncated = len(raw.encode("utf-8")) > MAX_DIFF_BYTES
+        if truncated:
+            raw = raw[:MAX_DIFF_BYTES]
+        return _parse_unified_diff(raw), truncated
+
+    async def commit_directory(self, path: Path, message: str) -> str:
+        await self._git(path, "add", "-A")
+        status = await self._git(path, "status", "--porcelain")
+        if not status.strip():
+            raise WorkspaceError("No changes to apply")
+        await self._git(
+            path,
+            "-c",
+            "user.name=Spatial Agent",
+            "-c",
+            "user.email=spatial-agent@local",
+            "commit",
+            "--no-gpg-sign",
+            "-m",
+            message.strip() or "spatial agent change",
+        )
+        return (await self._git(path, "rev-parse", "HEAD")).strip()
+
+    async def discard_directory(self, path: Path) -> None:
+        await self._git(path, "reset", "--hard")
+        # Remove files the agent created (ignored paths like .spatial are kept).
+        await self._git(path, "clean", "-fd")
+
     async def run_tests(
         self, worktree: Worktree, command: str, timeout_seconds: float = 900.0
     ) -> tuple[bool, str]:
