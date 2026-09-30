@@ -175,7 +175,7 @@ class AgentCoordinator:
             session_id=session_id,
             thread_id=thread_id,
             message_id=user_message.id,
-            provider=self.provider.name,
+            provider=("opencode" if self.opencode is not None else self.provider.name),
         )
 
         if content.strip().lower().startswith("/tool"):

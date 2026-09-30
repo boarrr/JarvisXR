@@ -176,6 +176,10 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_uncombine_agent(AppState.focused_thread_id)
 			elif event.target_id == "palm:update":
 				_updater.request_update()
+			elif event.target_id == "palm:code_toggle":
+				_code_viewer.toggle()
+			elif event.target_id == "palm:review":
+				_toggle_cockpit_review()
 			elif event.target_id == "palm:cognition_toggle":
 				_cognition_layer.toggle_enabled()
 			elif event.target_id == "palm:mission_toggle":
@@ -337,6 +341,11 @@ func _create_agent_at(position: Vector3) -> void:
 func _crush_agent(thread_id: String) -> void:
 	var thread := AppState.get_thread(thread_id)
 	if thread == null:
+		return
+	# Deleting a combined agent uncombines it: restore the originals.
+	var combined_from: Array = thread.metadata.get("combined_from", [])
+	if combined_from.size() >= 2:
+		_uncombine_agent(thread_id)
 		return
 	var orb := _orb_manager.get_orb(thread_id)
 	var crush_position := orb.global_position if orb != null else Vector3.ZERO

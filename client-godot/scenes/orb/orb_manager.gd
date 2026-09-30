@@ -16,7 +16,7 @@ const DEFAULT_ORB_SCENE := preload("res://scenes/orb/agent_orb.tscn")
 @export_range(0.2, 1.5, 0.05) var combine_distance: float = 0.6
 @export_range(0.15, 1.2, 0.05) var child_orbit_radius: float = 0.5
 
-const THROW_MIN_SPEED := 0.25
+const THROW_MIN_SPEED := 1.2
 const THROW_DAMPING := 1.7
 const KINETIC_STOP_SPEED := 0.08
 const STAGE_MAX_RADIUS := 3.2
@@ -97,6 +97,18 @@ func _update_kinetics(delta: float) -> void:
 			_velocities.erase(thread_id)
 			orb.set_kinetic(false)
 			AppState.set_orb_offset(thread_id, position)
+
+
+func _near_user(position: Vector3) -> bool:
+	# Bringing an agent in close should place it, never slingshot it.
+	if _user_rig == null:
+		return false
+	var camera := _user_rig.get_camera()
+	if camera == null:
+		return false
+	var user := camera.global_position
+	var horizontal := Vector3(position.x - user.x, 0.0, position.z - user.z)
+	return horizontal.length() < 0.85
 
 
 func get_orb(thread_id: String) -> AgentOrb:
@@ -233,10 +245,10 @@ func end_grab(thread_id: String) -> Dictionary:
 	if not nearest.is_empty() and AppState.link_orbs(thread_id, nearest):
 		result["linked_to"] = nearest
 		orb.set_kinetic(false)
-	elif _grab_velocity.length() >= THROW_MIN_SPEED:
+	elif _grab_velocity.length() >= THROW_MIN_SPEED and not _near_user(_grab_position):
 		# Release with momentum: the orb floats outward and slows to rest.
 		_kinetic_threads[thread_id] = true
-		_velocities[thread_id] = _grab_velocity
+		_velocities[thread_id] = _grab_velocity.limit_length(3.0)
 		result["thrown"] = true
 	else:
 		orb.set_kinetic(false)

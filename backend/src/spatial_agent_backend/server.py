@@ -132,6 +132,13 @@ class SpatialAgentServer:
                 password=settings.opencode_password,
                 username=settings.opencode_username,
             )
+        # The cockpit should see the real brain, not the internal fallback stub.
+        if settings.provider == "opencode":
+            self.provider_label = "opencode"
+            self.provider_model = "opencode"
+        else:
+            self.provider_label = self.provider.name
+            self.provider_model = getattr(self.provider, "model", "local-deterministic")
         self.coordinator = AgentCoordinator(
             self.threads,
             self.provider,
@@ -270,8 +277,8 @@ class SpatialAgentServer:
                 "",
                 {
                     "protocol_version": session.protocol_version,
-                    "provider": self.provider.name,
-                    "model": getattr(self.provider, "model", "local-deterministic"),
+                    "provider": self.provider_label,
+                    "model": self.provider_model,
                     "daemon_version": __version__,
                     "auth": (
                         "paired"

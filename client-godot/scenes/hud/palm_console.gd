@@ -21,8 +21,8 @@ const RECT_TALK := Rect2(16, 690, 608, 80)
 const RECT_SECONDARY := Rect2(16, 778, 608, 62)
 const SECONDARY := [
 	["NEW", "palm:new_agent", "NewTarget"],
-	["NEXT", "palm:focus_next", "NextTarget"],
-	["UNDO", "palm:undo", "UndoTarget"],
+	["CODE", "palm:code_toggle", "CodeTarget"],
+	["REVIEW", "palm:review", "ReviewTarget"],
 	["UPDATE", "palm:update", "UpdateTarget"],
 	["CLOSE", "palm:dismiss", "CloseTarget"],
 ]
