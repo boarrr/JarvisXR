@@ -40,6 +40,7 @@ var _last_progress_msec := 0
 var _next_log_bytes := 0
 var _next_offset := 0
 var _chunk_retries := 0
+var _last_banner_percent := -1
 
 
 func _build_version() -> String:
@@ -50,6 +51,7 @@ func _ready() -> void:
 	if _bridge == null:
 		_bridge = get_node_or_null(backend_bridge_path)
 	_connect_bridge()
+	download_progress.connect(_on_download_progress)
 	update_failed.connect(func(reason: String): print("[UPDATER] failed: %s" % reason))
 	update_up_to_date.connect(func(version: String): print("[UPDATER] up to date: %s" % version))
 	set_process(false)
@@ -139,7 +141,18 @@ func begin_install() -> void:
 	_next_offset = 0
 	_chunk_retries = 0
 	set_process(true)
+	AppState.set_update_banner("Updating 0%")
 	_request_chunk(0)
+
+
+func _on_download_progress(received: int, total: int) -> void:
+	if total <= 0:
+		return
+	var percent := int(clampf(float(received) / float(total) * 100.0, 0.0, 100.0))
+	if percent == _last_banner_percent:
+		return
+	_last_banner_percent = percent
+	AppState.set_update_banner("Updating %d%%" % percent)
 
 
 func _process(_delta: float) -> void:
@@ -292,6 +305,7 @@ func _finish_download() -> void:
 
 
 func _launch_installer() -> void:
+	AppState.set_update_banner("Installing update...")
 	print("[UPDATER] launching installer; singleton=%s" % Engine.has_singleton(PLUGIN_NAME))
 	if not Engine.has_singleton(PLUGIN_NAME):
 		update_failed.emit("plugin_missing")

@@ -77,7 +77,7 @@ func _ready() -> void:
 	AppState.connection_state_changed.connect(_refresh_all)
 	AppState.provider_identity_changed.connect(_on_provider_identity_changed)
 	AppState.listening_state_changed.connect(_refresh_all)
-	AppState.update_banner_changed.connect(_refresh_all)
+	AppState.update_banner_changed.connect(_on_banner_changed)
 	AppState.focused_thread_changed.connect(_on_focus_changed)
 	AppState.thread_updated.connect(_on_thread_updated)
 	scale = Vector3.ONE * console_scale
@@ -468,6 +468,14 @@ func _hide_panel() -> void:
 func _refresh_all(_unused: Variant = null) -> void:
 	_refresh_header()
 	_render_conversation()
+	if _viewport != null and visible:
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+func _on_banner_changed(_value: Variant = null) -> void:
+	# Banner-only updates (e.g. live update progress) must not rebuild the
+	# whole transcript.
+	_refresh_header()
 	if _viewport != null and visible:
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
