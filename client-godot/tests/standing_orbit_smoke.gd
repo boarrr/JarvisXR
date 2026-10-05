@@ -190,7 +190,7 @@ func _run() -> void:
 		"a created agent carries a default title"
 	)
 
-	# Fist crush needs a tracked hand with joint data.
+	# Fist summon vs crush needs a tracked hand with joint data.
 	var summon_source := OpenXRInteractionSource.new()
 	add_child(summon_source)
 	summon_source.set_hand_tracking_active(true)
@@ -198,32 +198,50 @@ func _run() -> void:
 	summon_source.interaction_event.connect(
 		func(event: InteractionEvent) -> void: summon_events.append(event)
 	)
-	var summon_palm := Transform3D(Basis.IDENTITY, Vector3(3.0, 1.4, -0.4))
-
-	# Holding a fist over a hovered agent crushes it, at any distance.
+	var summon_palm := Transform3D(Basis.IDENTITY, Vector3(9.0, 2.2, 9.0))
 	var fist_joints := {
-		"palm": Vector3(3.0, 1.4, -0.6),
-		"index_tip": Vector3(3.03, 1.42, -0.62),
-		"middle_tip": Vector3(3.01, 1.43, -0.62),
-		"ring_tip": Vector3(2.99, 1.43, -0.62),
-		"pinky_tip": Vector3(2.97, 1.42, -0.62),
+		"palm": Vector3(9.0, 2.2, 8.9),
+		"index_tip": Vector3(9.03, 2.22, 8.9),
+		"middle_tip": Vector3(9.01, 2.23, 8.9),
+		"ring_tip": Vector3(8.99, 2.23, 8.9),
+		"pinky_tip": Vector3(8.97, 2.22, 8.9),
 	}
+	# Far from any agent: a fist summons the aimed agent.
 	summon_events.clear()
 	summon_source.set_hover_target_id(victim_id)
-	for _i in range(30):
-		summon_source.submit_joint_sample(
-			"right", summon_palm,
-			Vector3(3.02, 1.42, -0.65), Vector3(3.0, 1.4, -0.6), Vector3(3.0, 1.42, -0.65),
-			fist_joints
-		)
-	var crushes := summon_events.filter(
+	summon_source.submit_joint_sample(
+		"right", summon_palm,
+		Vector3(9.02, 2.22, 8.85), Vector3(9.0, 2.2, 8.9), Vector3(9.0, 2.22, 8.9),
+		fist_joints
+	)
+	var attract_begins := summon_events.filter(
 		func(event: InteractionEvent) -> bool:
-			return event.type == InteractionEvent.Type.CRUSH
+			return event.type == InteractionEvent.Type.ATTRACT_BEGIN
 	)
 	_check(
-		crushes.size() == 1 and crushes[0].target_id == victim_id,
-		"a held fist crushes the aimed agent at a distance"
+		attract_begins.size() == 1 and attract_begins[0].target_id == victim_id,
+		"a fist aimed at a distant agent summons it"
 	)
+
+	# A fist physically inside an agent's core crushes it.
+	var core_orb := manager.get_orb(first_id) as AgentOrb
+	if core_orb != null:
+		var core := core_orb.global_position
+		summon_events.clear()
+		for _i in range(30):
+			summon_source.submit_joint_sample(
+				"right", Transform3D(Basis.IDENTITY, core),
+				core + Vector3(0.02, 0.03, -0.06), core + Vector3(0.0, 0.0, -0.06), core,
+				fist_joints
+			)
+		var core_crushes := summon_events.filter(
+			func(event: InteractionEvent) -> bool:
+				return event.type == InteractionEvent.Type.CRUSH
+		)
+		_check(
+			core_crushes.size() == 1 and core_crushes[0].target_id == first_id,
+			"a fist inside an agent's core crushes it"
+		)
 
 	# The redesigned palm is voice-first: a TALK primary plus a compact secondary
 	# row on a scrollable conversation body (no pages).
@@ -372,7 +390,7 @@ func _run() -> void:
 		"a pointed pinch leaves the agent in place"
 	)
 
-	# Closing a fist after the ray drifted off still crushes the last agent.
+	# Closing a fist after the ray drifted off still summons the last agent.
 	var attract_fist_source := OpenXRInteractionSource.new()
 	add_child(attract_fist_source)
 	attract_fist_source.set_hand_tracking_active(true)
@@ -385,8 +403,8 @@ func _run() -> void:
 	attract_fist_source.set_hover_target_id("thread_probe")
 	attract_fist_source.set_clock_override_msec(5150)
 	attract_fist_source.set_hover_target_id("")
-	var attract_fist_palm := Transform3D(Basis.IDENTITY, Vector3(8.0, 1.4, -0.4))
-	var attract_palm_joint := Vector3(8.0, 1.4, -0.4)
+	var attract_fist_palm := Transform3D(Basis.IDENTITY, Vector3(50.0, 2.5, 50.0))
+	var attract_palm_joint := Vector3(50.0, 2.5, 49.9)
 	var attract_fist_joints := {
 		"palm": attract_palm_joint,
 		"index_tip": attract_palm_joint + Vector3(0.0, 0.0, -0.05),
@@ -396,21 +414,20 @@ func _run() -> void:
 		"index_proximal": attract_palm_joint + Vector3(0.0, 0.0, -0.08),
 		"index_distal": attract_palm_joint + Vector3(0.0, 0.0, -0.06),
 	}
-	for _i in range(30):
-		attract_fist_source.submit_joint_sample(
-			"right",
-			attract_fist_palm,
-			attract_palm_joint + Vector3(0.03, 0.03, -0.06),
-			attract_palm_joint + Vector3(0.0, 0.0, -0.06),
-			attract_palm_joint + Vector3(0.0, 0.0, -0.05),
-			attract_fist_joints
-		)
-	var memory_crushes := attract_fist_events.filter(
-		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.CRUSH
+	attract_fist_source.submit_joint_sample(
+		"right",
+		attract_fist_palm,
+		attract_palm_joint + Vector3(0.03, 0.03, -0.06),
+		attract_palm_joint + Vector3(0.0, 0.0, -0.06),
+		attract_palm_joint + Vector3(0.0, 0.0, -0.05),
+		attract_fist_joints
+	)
+	var memory_attract_begins := attract_fist_events.filter(
+		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.ATTRACT_BEGIN
 	)
 	_check(
-		memory_crushes.size() == 1 and memory_crushes[0].target_id == "thread_probe",
-		"a fist still crushes the agent the ray last touched"
+		memory_attract_begins.size() == 1 and memory_attract_begins[0].target_id == "thread_probe",
+		"a fist still summons the agent the ray last touched"
 	)
 
 	var palm_console := main.get_node("PalmConsole") as PalmConsole

@@ -55,6 +55,7 @@ const TAP_GAP_MIN_MSEC := 80
 const SUMMON_COOLDOWN_MSEC := 700
 const ATTRACT_MEMORY_MSEC := 700
 const CRUSH_HOLD_SECONDS := 0.4
+const CRUSH_CORE_RADIUS := 0.24
 const FIST_JOINTS := ["index_tip", "middle_tip", "ring_tip", "pinky_tip"]
 const REQUIRED_POSITION_FLAGS := (
 	XRHandTracker.HAND_JOINT_FLAG_POSITION_VALID
@@ -639,41 +640,92 @@ func _hand_is_fist(hand_name: String) -> bool:
 
 func _update_fist_interaction(sample: Dictionary, index_tip: Vector3, delta: float) -> void:
 	var is_fist := _hand_is_fist(preferred_hand)
-	var touch_id := str(_touch_target_id[preferred_hand])
-	var touch_orb := not touch_id.is_empty() and not ":" in touch_id
-	var hovered := _hover_target_id
-	var hover_orb := not hovered.is_empty() and not ":" in hovered
+	var palm_position := (sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D).origin
 
-	# Closing the fist over an agent - physically touched or ray-hovered - arms a
-	# crush. Holding the fist for CRUSH_HOLD_SECONDS deletes it, at any distance.
-	# (No summon-on-fist: that flung orbs the user never meant to move.)
-	if is_fist and not _fist_prev:
-		_crush_candidate = touch_id if touch_orb else (hovered if hover_orb else _remembered_orb_hover())
-		_crush_seconds = 0.0
-	_fist_prev = is_fist
 	if not is_fist:
 		_crush_latched = false
 		_crush_candidate = ""
 		_crush_seconds = 0.0
+		_fist_prev = false
 		if not _attract_target.is_empty():
 			interaction_event.emit(InteractionEvent.new(
 				InteractionEvent.Type.ATTRACT_END, _attract_target, InteractionEvent.Source.HAND
 			))
 			_attract_target = ""
 		return
-	if _crush_candidate.is_empty():
-		_crush_seconds = 0.0
+	_fist_prev = true
+
+	# A fist physically inside an agent's core crushes it. Checked continuously
+	# (not only at the instant the fist closes) so closing the hand first and then
+	# reaching into an agent still deletes it, even with imprecise tracking.
+	var core_orb := _nearest_orb_core(index_tip, CRUSH_CORE_RADIUS)
+	if core_orb.is_empty():
+		core_orb = _nearest_orb_core(palm_position, CRUSH_CORE_RADIUS)
+	if not core_orb.is_empty():
+		if not _attract_target.is_empty():
+			interaction_event.emit(InteractionEvent.new(
+				InteractionEvent.Type.ATTRACT_END, _attract_target, InteractionEvent.Source.HAND
+			))
+			_attract_target = ""
+		if _crush_candidate != core_orb:
+			_crush_candidate = core_orb
+			_crush_seconds = 0.0
+		_crush_seconds += delta
+		if _crush_seconds >= CRUSH_HOLD_SECONDS and not _crush_latched:
+			_crush_latched = true
+			interaction_event.emit(InteractionEvent.new(
+				InteractionEvent.Type.CRUSH,
+				_crush_candidate,
+				InteractionEvent.Source.HAND,
+				index_tip,
+				{"gesture": "crush"}
+			))
 		return
-	_crush_seconds += delta
-	if _crush_seconds >= CRUSH_HOLD_SECONDS and not _crush_latched:
-		_crush_latched = true
+
+	# Not inside any agent: a fist summoned toward an agent pulls it to the palm.
+	_crush_candidate = ""
+	_crush_seconds = 0.0
+	var hovered := _hover_target_id
+	var valid_new := not hovered.is_empty() and not ":" in hovered
+	if _attract_target.is_empty():
+		var candidate := hovered if valid_new else _remembered_orb_hover()
+		if candidate.is_empty():
+			return
+		_attract_target = candidate
 		interaction_event.emit(InteractionEvent.new(
-			InteractionEvent.Type.CRUSH,
-			_crush_candidate,
+			InteractionEvent.Type.ATTRACT_BEGIN,
+			_attract_target,
 			InteractionEvent.Source.HAND,
-			index_tip,
-			{"gesture": "crush"}
+			palm_position,
+			{"gesture": "attract"}
 		))
+		return
+	interaction_event.emit(InteractionEvent.new(
+		InteractionEvent.Type.ATTRACT_MOVE,
+		_attract_target,
+		InteractionEvent.Source.HAND,
+		palm_position,
+		{"gesture": "attract"}
+	))
+
+
+func _nearest_orb_core(position: Vector3, radius: float) -> String:
+	var best := ""
+	var best_distance := radius
+	for node in get_tree().get_nodes_in_group("interactable"):
+		var area := node as Area3D
+		if area == null or not area.is_visible_in_tree():
+			continue
+		if not area.has_method("get_interaction_target_id"):
+			continue
+		var target: String = str(area.call("get_interaction_target_id"))
+		if target.is_empty() or ":" in target:
+			continue
+		var distance := position.distance_to(area.global_position)
+		if distance <= best_distance:
+			best_distance = distance
+			best = target
+	return best
 
 
 func submit_joint_sample(
