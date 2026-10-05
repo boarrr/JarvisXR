@@ -9,9 +9,9 @@ var _run_id: String = ""
 
 
 func _init() -> void:
-	panel_title = "COCKPIT // DIFF REVIEW"
-	horizontal_offset = 0.62
-	vertical_offset = 0.05
+	panel_title = "AGENT // CHANGES"
+	horizontal_offset = 0.0
+	vertical_offset = 0.02
 
 
 func _connect_state() -> void:
@@ -74,8 +74,9 @@ func refresh() -> void:
 
 func _render_empty() -> void:
 	_body.text = (
-		"[color=#6b9aa5]No pending diff for this thread.[/color]\n\n"
-		+ "Bind a workspace with [b]/workspace NAME[/b], send a request, then open review again."
+		"[color=#6b9aa5]No changes to review yet.[/color]\n\n"
+		+ "Ask this agent to edit a file, then tap [b]REVIEW[/b] again. Agent edits "
+		+ "stay in an isolated worktree until you APPLY or REJECT."
 	)
 
 

@@ -160,6 +160,10 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				AppState.focus_thread("")
 			elif event.target_id == "ui:code_surface":
 				EventBus.debug_message.emit("Pinch-drag the code surface to scroll")
+			elif event.target_id == "code:next_file":
+				_code_viewer.next_file()
+			elif event.target_id == "code:prev_file":
+				_code_viewer.prev_file()
 			elif event.target_id == "cognition:previous":
 				_cognition_layer.select_previous_event()
 			elif event.target_id == "cognition:next":
@@ -321,12 +325,9 @@ func _toggle_cockpit_review() -> void:
 		return
 	if _file_viewer.visible:
 		_file_viewer.close()
-		return
-	var focused_thread_id := AppState.focused_thread_id
-	if not focused_thread_id.is_empty() and not AppState.get_latest_diff_for_thread(focused_thread_id).is_empty():
-		_diff_review_panel.open_focused_thread()
-		return
-	_file_viewer.open_focused_thread()
+	# Review always shows the focused agent's working-tree diff (empty when the
+	# agent has not changed anything yet).
+	_diff_review_panel.open_focused_thread()
 
 
 func _create_agent_at(position: Vector3) -> void:

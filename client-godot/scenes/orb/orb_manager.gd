@@ -16,7 +16,7 @@ const DEFAULT_ORB_SCENE := preload("res://scenes/orb/agent_orb.tscn")
 @export_range(0.2, 1.5, 0.05) var combine_distance: float = 0.6
 @export_range(0.15, 1.2, 0.05) var child_orbit_radius: float = 0.5
 
-const THROW_MIN_SPEED := 1.2
+const THROW_MIN_SPEED := 0.55
 const THROW_DAMPING := 1.7
 const KINETIC_STOP_SPEED := 0.08
 const STAGE_MAX_RADIUS := 3.2
@@ -28,6 +28,8 @@ var _orbs_by_thread_id: Dictionary = {}
 var _last_layout_origin := Vector3.ZERO
 var _grab_position := Vector3.ZERO
 var _grab_velocity := Vector3.ZERO
+var _grab_speed_peak := 0.0
+var _grab_last_msec := 0
 var _velocities: Dictionary = {}
 var _kinetic_threads: Dictionary = {}
 var _attract_target := ""
@@ -97,18 +99,6 @@ func _update_kinetics(delta: float) -> void:
 			_velocities.erase(thread_id)
 			orb.set_kinetic(false)
 			AppState.set_orb_offset(thread_id, position)
-
-
-func _near_user(position: Vector3) -> bool:
-	# Bringing an agent in close should place it, never slingshot it.
-	if _user_rig == null:
-		return false
-	var camera := _user_rig.get_camera()
-	if camera == null:
-		return false
-	var user := camera.global_position
-	var horizontal := Vector3(position.x - user.x, 0.0, position.z - user.z)
-	return horizontal.length() < 0.85
 
 
 func get_orb(thread_id: String) -> AgentOrb:
@@ -216,6 +206,8 @@ func begin_grab(thread_id: String) -> bool:
 	_velocities.erase(thread_id)
 	_grab_position = orb.global_position
 	_grab_velocity = Vector3.ZERO
+	_grab_speed_peak = 0.0
+	_grab_last_msec = 0
 	orb.set_kinetic(true)
 	AppState.set_orb_offset(thread_id, _grab_position)
 	return true
@@ -225,9 +217,19 @@ func update_grab(thread_id: String, world_position: Vector3) -> void:
 	var orb := get_orb(thread_id)
 	if orb == null:
 		return
-	var delta := 1.0 / maxf(float(Engine.get_physics_ticks_per_second()), 1.0)
-	var instantaneous := (world_position - _grab_position) / delta
-	_grab_velocity = _grab_velocity.lerp(instantaneous, 0.35)
+	# Use real elapsed time: hand tracking and physics run at different rates, so
+	# a fixed physics delta would mis-scale the release velocity.
+	var now := Time.get_ticks_msec()
+	var dt := 0.0
+	if _grab_last_msec > 0:
+		dt = float(now - _grab_last_msec) / 1000.0
+	_grab_last_msec = now
+	dt = clampf(dt, 0.004, 0.08)
+	var instantaneous := (world_position - _grab_position) / dt
+	_grab_velocity = _grab_velocity.lerp(instantaneous, 0.5)
+	# Keep the recent peak so a quick flick registers even if the frame the user
+	# lets go happens to be a calm one.
+	_grab_speed_peak = maxf(_grab_speed_peak * 0.9, instantaneous.length())
 	_grab_position = world_position
 	orb.set_kinetic(true)
 	orb.set_target_global_position(world_position)
@@ -240,20 +242,28 @@ func end_grab(thread_id: String) -> Dictionary:
 	var orb := get_orb(thread_id)
 	if orb == null:
 		_grab_velocity = Vector3.ZERO
+		_grab_speed_peak = 0.0
 		return result
+	var release_speed := maxf(_grab_velocity.length(), _grab_speed_peak)
 	var nearest := _nearest_orb_within(thread_id, _grab_position, combine_distance)
 	if not nearest.is_empty() and AppState.link_orbs(thread_id, nearest):
 		result["linked_to"] = nearest
 		orb.set_kinetic(false)
-	elif _grab_velocity.length() >= THROW_MIN_SPEED and not _near_user(_grab_position):
+	elif release_speed >= THROW_MIN_SPEED:
 		# Release with momentum: the orb floats outward and slows to rest.
+		var direction := _grab_velocity.normalized()
+		if direction.length() < 0.01:
+			direction = _grab_position - _get_layout_origin()
+			direction.y = 0.0
+			direction = direction.normalized()
 		_kinetic_threads[thread_id] = true
-		_velocities[thread_id] = _grab_velocity.limit_length(3.0)
+		_velocities[thread_id] = (direction * release_speed).limit_length(3.0)
 		result["thrown"] = true
 	else:
 		orb.set_kinetic(false)
 		AppState.set_orb_offset(thread_id, orb.global_position)
 	_grab_velocity = Vector3.ZERO
+	_grab_speed_peak = 0.0
 	_refresh_layout()
 	return result
 
