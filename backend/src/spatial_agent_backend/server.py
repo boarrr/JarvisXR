@@ -148,6 +148,7 @@ class SpatialAgentServer:
             opencode=opencode_client,
             opencode_directory=settings.opencode_directory,
             test_command=settings.test_command,
+            fs_root=settings.fs_root,
         )
 
     async def initialize(self) -> None:
@@ -524,6 +525,36 @@ class SpatialAgentServer:
                     {"code": "workspace_unavailable", "message": str(error)},
                 )
                 return
+            await emit("file.content", command.thread_id, content)
+        elif command.type == "fs.list":
+            path = str(command.payload.get("path", ""))
+            try:
+                entries = await self.coordinator.list_host_files(path)
+            except WorkspaceError as error:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "fs_unavailable", "message": str(error)},
+                )
+                return
+            await emit(
+                "file.tree",
+                command.thread_id,
+                {"path": path, "entries": entries, "scope": "host"},
+            )
+        elif command.type == "fs.read":
+            path = str(command.payload.get("path", ""))
+            try:
+                content = await self.coordinator.read_host_file(path)
+            except WorkspaceError as error:
+                await emit(
+                    "error",
+                    command.thread_id,
+                    {"code": "fs_unavailable", "message": str(error)},
+                )
+                return
+            content = dict(content)
+            content["scope"] = "host"
             await emit("file.content", command.thread_id, content)
         elif command.type == "diff.get":
             try:

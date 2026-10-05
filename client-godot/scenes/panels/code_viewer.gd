@@ -14,6 +14,7 @@ const NAV_TARGET_SCRIPT := preload("res://interaction/spatial_action_target.gd")
 const SCREEN_SIZE := Vector2(1.445, 0.865)
 const VIEW_SIZE := Vector2(920.0, 560.0)
 const NAV_Z := 0.03
+const SCROLL_LINES_PER_METER := 22.0
 
 @onready var _viewport: SubViewport = $CodeViewport
 @onready var _screen: MeshInstance3D = $Screen
@@ -38,6 +39,9 @@ var _bimanual_active := false
 var _bimanual_base_basis := Basis.IDENTITY
 var _bimanual_base_scale := Vector3.ONE
 var _bimanual_center_offset := Vector3.ZERO
+var _scroll_active := false
+var _scroll_origin_y := 0.0
+var _scroll_start_lines := 0.0
 
 
 func _ready() -> void:
@@ -83,6 +87,7 @@ func open_focused_thread() -> bool:
 
 func close() -> void:
 	_bimanual_active = false
+	_scroll_active = false
 	visible = false
 	_displayed_thread_id = ""
 	_pending_path = ""
@@ -90,6 +95,10 @@ func close() -> void:
 
 func is_open() -> bool:
 	return visible and not _displayed_thread_id.is_empty()
+
+
+func get_surface_target_id() -> String:
+	return "ui:code_surface"
 
 
 func get_rendered_code() -> String:
@@ -142,6 +151,7 @@ func go_bottom() -> void:
 func begin_bimanual_transform(center: Vector3) -> bool:
 	if not is_open():
 		return false
+	_scroll_active = false
 	_bimanual_active = true
 	_bimanual_base_basis = global_transform.basis.orthonormalized()
 	_bimanual_base_scale = scale
@@ -168,6 +178,32 @@ func end_bimanual_transform() -> void:
 
 func is_being_manipulated() -> bool:
 	return _bimanual_active
+
+
+func begin_scroll(world_position: Vector3) -> bool:
+	if not is_open() or _bimanual_active:
+		return false
+	_scroll_active = true
+	_scroll_origin_y = world_position.y
+	_scroll_start_lines = _code_edit.scroll_vertical
+	return true
+
+
+func update_scroll(world_position: Vector3) -> bool:
+	if not _scroll_active or _bimanual_active:
+		return false
+	# Raise the hand to pull earlier lines into view (natural inverted grab).
+	var delta := world_position.y - _scroll_origin_y
+	var target := _scroll_start_lines - delta * SCROLL_LINES_PER_METER
+	_code_edit.scroll_vertical = clampf(
+		target, 0.0, maxf(0.0, float(_code_edit.get_line_count() - 1))
+	)
+	_refresh_position()
+	return true
+
+
+func end_scroll() -> void:
+	_scroll_active = false
 
 
 func _configure_screen_material() -> void:
@@ -293,6 +329,9 @@ func _request_current_file() -> void:
 
 func _on_file_content_changed(thread_id: String) -> void:
 	if not visible or thread_id != _displayed_thread_id:
+		return
+	if str(AppState.file_content.get("scope", "")) == "host":
+		# The host file browser shares the file.content event; ignore its loads.
 		return
 	if _source_mode != "files":
 		return

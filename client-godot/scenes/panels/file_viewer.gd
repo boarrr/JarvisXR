@@ -14,19 +14,18 @@ var _row_targets: Array[Area3D] = []
 
 
 func _init() -> void:
-	panel_title = "COCKPIT // FILES"
-	horizontal_offset = -0.62
-	vertical_offset = -0.4
+	panel_title = "HOST // FILES"
+	horizontal_offset = 0.0
+	vertical_offset = 0.0
 
 
 func _connect_state() -> void:
 	AppState.file_tree_changed.connect(_on_file_tree_changed)
 	AppState.file_content_changed.connect(_on_file_content_changed)
-	AppState.focused_thread_changed.connect(_on_focused_thread_changed)
 
 
 func _build_ui(root: Control) -> void:
-	make_title(root, panel_title, "read-only view of the workspace and the active worktree")
+	make_title(root, panel_title, "live view of this Mac's filesystem (root: ~)")
 	_body = make_body(root, Rect2(Vector2(22, 80), Vector2(viewport_size.x - 44, viewport_size.y - 180)))
 	make_button(root, Rect2(Vector2(22, 428), Vector2(150, 46)), "UP", "file:up", COLOR_MUTED)
 	make_button(root, Rect2(Vector2(186, 428), Vector2(150, 46)), "REFRESH", "file:refresh", COLOR_MUTED)
@@ -34,47 +33,40 @@ func _build_ui(root: Control) -> void:
 
 
 func open_focused_thread() -> bool:
-	var thread := AppState.get_thread(AppState.focused_thread_id)
-	if thread == null:
-		return false
+	return open_host()
+
+
+func open_host() -> bool:
 	_current_path = ""
 	_showing_content = false
 	var bridge := _backend_bridge()
 	if bridge != null:
-		bridge.send_command("file.list", {"path": ""}, thread.id)
+		bridge.send_command("fs.list", {"path": ""}, _thread_id())
 	return open()
 
 
 func refresh_listing() -> bool:
-	var thread := AppState.get_thread(AppState.focused_thread_id)
-	if thread == null:
-		return false
 	var bridge := _backend_bridge()
 	if bridge == null:
 		return false
 	_showing_content = false
-	return bridge.send_command("file.list", {"path": _current_path}, thread.id)
+	return bridge.send_command("fs.list", {"path": _current_path}, _thread_id())
 
 
 func activate_entry(path: String, is_directory: bool) -> bool:
-	var thread := AppState.get_thread(AppState.focused_thread_id)
-	if thread == null:
-		return false
 	var bridge := _backend_bridge()
 	if bridge == null:
 		return false
 	if is_directory:
 		_showing_content = false
 		_current_path = path
-		return bridge.send_command("file.list", {"path": path}, thread.id)
+		return bridge.send_command("fs.list", {"path": path}, _thread_id())
 	_showing_content = true
-	return bridge.send_command("file.read", {"path": path}, thread.id)
+	_current_path = path
+	return bridge.send_command("fs.read", {"path": path}, _thread_id())
 
 
 func navigate_up() -> bool:
-	var thread := AppState.get_thread(AppState.focused_thread_id)
-	if thread == null:
-		return false
 	var bridge := _backend_bridge()
 	if bridge == null:
 		return false
@@ -82,10 +74,12 @@ func navigate_up() -> bool:
 		_showing_content = false
 		refresh()
 		return true
+	if _current_path.is_empty():
+		return refresh_listing()
 	var parts := _current_path.split("/", false)
 	parts.remove_at(parts.size() - 1)
 	_current_path = "/".join(parts)
-	return bridge.send_command("file.list", {"path": _current_path}, thread.id)
+	return bridge.send_command("fs.list", {"path": _current_path}, _thread_id())
 
 
 func go_back() -> void:
@@ -116,13 +110,12 @@ func refresh() -> void:
 
 func _render_listing() -> void:
 	var lines: PackedStringArray = []
-	lines.append(
-		"[color=#55f5ff]%s[/color]" % ("/" + _current_path if not _current_path.is_empty() else "/")
-	)
+	var breadcrumb := "~/" + _current_path if not _current_path.is_empty() else "~ (home)"
+	lines.append("[color=#55f5ff]%s[/color]" % breadcrumb)
 	lines.append("[color=#6b9aa5]Pinch a row to open it. Directories navigate; files open read-only.[/color]")
 	lines.append("")
 	if _entries.is_empty():
-		lines.append("[color=#6b9aa5]No entries loaded. Open a bound thread, then press REFRESH.[/color]")
+		lines.append("[color=#6b9aa5]Empty directory (or still loading).[/color]")
 	else:
 		for entry_variant in _entries:
 			var entry: Dictionary = entry_variant
@@ -148,7 +141,7 @@ func _render_content() -> void:
 		bounded = bounded.substr(0, 8000)
 		truncated = true
 	var lines: PackedStringArray = []
-	lines.append("[color=#55f5ff]%s[/color]" % path)
+	lines.append("[color=#55f5ff]~/%s[/color]" % path)
 	if truncated:
 		lines.append("[color=#ffd166]Preview truncated to 8,000 characters.[/color]")
 	lines.append("")
@@ -215,11 +208,16 @@ func _clear_rows() -> void:
 func _size_label(entry: Dictionary) -> String:
 	if str(entry.get("type", "file")) == "dir":
 		return "dir"
-	return "%d B" % int(entry.get("size", 0))
+	var size := int(entry.get("size", 0))
+	if size >= 1_048_576:
+		return "%.1f MB" % (float(size) / 1_048_576.0)
+	if size >= 1024:
+		return "%.1f KB" % (float(size) / 1024.0)
+	return "%d B" % size
 
 
-func _on_file_tree_changed(thread_id: String) -> void:
-	if thread_id != AppState.focused_thread_id:
+func _on_file_tree_changed(_thread_id: String) -> void:
+	if AppState.file_tree_scope != "host":
 		return
 	_entries = AppState.file_tree.duplicate(true)
 	_current_path = AppState.file_tree_path
@@ -230,8 +228,8 @@ func _on_file_tree_changed(thread_id: String) -> void:
 	refresh()
 
 
-func _on_file_content_changed(thread_id: String) -> void:
-	if thread_id != AppState.focused_thread_id:
+func _on_file_content_changed(_thread_id: String) -> void:
+	if str(AppState.file_content.get("scope", "")) != "host":
 		return
 	_showing_content = true
 	if not visible:
@@ -240,12 +238,11 @@ func _on_file_content_changed(thread_id: String) -> void:
 	refresh()
 
 
-func _on_focused_thread_changed(_thread_id: String) -> void:
-	if visible:
-		_current_path = ""
-		_showing_content = false
-		refresh()
-
-
 func _backend_bridge() -> BackendBridge:
 	return get_node_or_null(backend_bridge_path) as BackendBridge
+
+
+func _thread_id() -> String:
+	# Host browsing is session-scoped; reuse the focused thread id so the
+	# daemon echoes events back on a consistent channel (empty is also fine).
+	return AppState.focused_thread_id

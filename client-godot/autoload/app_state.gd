@@ -111,6 +111,7 @@ var diffs_by_run: Dictionary = {}
 var file_tree: Array = []
 var file_tree_path: String = ""
 var file_tree_thread_id: String = ""
+var file_tree_scope: String = ""
 var file_content: Dictionary = {}
 var tool_catalog: Array = []
 var mcp_servers: Array[String] = []
@@ -251,10 +252,11 @@ func resolve_diff(run_id: String, payload: Dictionary) -> void:
 	)
 
 
-func set_file_tree(thread_id: String, path: String, entries: Array) -> void:
+func set_file_tree(thread_id: String, path: String, entries: Array, scope: String = "") -> void:
 	file_tree_thread_id = thread_id
 	file_tree_path = path
 	file_tree = entries.duplicate(true)
+	file_tree_scope = scope
 	file_tree_changed.emit(thread_id)
 
 

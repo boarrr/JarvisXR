@@ -35,6 +35,7 @@ var _combine_restore_points: Dictionary = {}
 var _pending_combine_sources: Array[String] = []
 var _pending_combine_positions: Dictionary = {}
 var _pending_bind_thread := false
+var _pane_surfaces: Dictionary = {}
 
 
 func _ready() -> void:
@@ -77,6 +78,7 @@ func _ready() -> void:
 	EventBus.debug_message.connect(_on_debug_message)
 	AppState.thread_added.connect(_on_thread_added_for_layout)
 	AppState.listening_state = _speech_service.get_state()
+	_register_pane_surfaces()
 
 	AppState.ui_mode = "xr_hands" if xr_active else ("hand_lab" if lab_active else "desktop")
 	_pointer_hud.visible = not xr_active and not lab_active
@@ -100,6 +102,12 @@ func _ready() -> void:
 	]
 	print("[APP] %s" % ready_message)
 	EventBus.debug_message.emit(ready_message)
+
+
+func _register_pane_surfaces() -> void:
+	for pane in [_code_viewer, _diff_review_panel, _file_viewer, _workspace_panel, _daemon_settings_panel]:
+		if pane != null and pane.has_method("get_surface_target_id"):
+			_pane_surfaces[str(pane.call("get_surface_target_id"))] = pane
 
 
 func _configure_backend_transport() -> bool:
@@ -246,13 +254,29 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 		InteractionEvent.Type.CODE_GO_BOTTOM:
 			_code_viewer.go_bottom()
 		InteractionEvent.Type.GRAB_BEGIN:
+			var begin_gesture := str(event.gesture_data.get("gesture", ""))
 			if event.target_id == "ui:code_surface" and event.world_position is Vector3:
-				_code_viewer.begin_bimanual_transform(event.world_position)
+				if begin_gesture == "bimanual_transform":
+					_code_viewer.begin_bimanual_transform(event.world_position)
+				else:
+					_code_viewer.begin_scroll(event.world_position)
+			elif _pane_surfaces.has(event.target_id) and event.world_position is Vector3:
+				_pane_surfaces[event.target_id].begin_bimanual_transform(event.world_position)
 			elif AppState.get_thread(event.target_id) != null:
 				_orb_manager.begin_grab(event.target_id)
 		InteractionEvent.Type.GRAB_MOVE:
+			var move_gesture := str(event.gesture_data.get("gesture", ""))
 			if event.target_id == "ui:code_surface" and event.world_position is Vector3:
-				_code_viewer.apply_bimanual_transform(
+				if move_gesture == "bimanual_transform":
+					_code_viewer.apply_bimanual_transform(
+						event.world_position,
+						float(event.gesture_data.get("scale_factor", 1.0)),
+						float(event.gesture_data.get("rotation_radians", 0.0))
+					)
+				else:
+					_code_viewer.update_scroll(event.world_position)
+			elif _pane_surfaces.has(event.target_id) and event.world_position is Vector3:
+				_pane_surfaces[event.target_id].apply_bimanual_transform(
 					event.world_position,
 					float(event.gesture_data.get("scale_factor", 1.0)),
 					float(event.gesture_data.get("rotation_radians", 0.0))
@@ -260,8 +284,14 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 			elif AppState.get_thread(event.target_id) != null and event.world_position is Vector3:
 				_orb_manager.update_grab(event.target_id, event.world_position)
 		InteractionEvent.Type.GRAB_END:
+			var end_gesture := str(event.gesture_data.get("gesture", ""))
 			if event.target_id == "ui:code_surface":
-				_code_viewer.end_bimanual_transform()
+				if end_gesture == "bimanual_transform":
+					_code_viewer.end_bimanual_transform()
+				else:
+					_code_viewer.end_scroll()
+			elif _pane_surfaces.has(event.target_id):
+				_pane_surfaces[event.target_id].end_bimanual_transform()
 			elif AppState.get_thread(event.target_id) != null:
 				var grab_result := _orb_manager.end_grab(event.target_id)
 				var linked_to := str(grab_result.get("linked_to", ""))

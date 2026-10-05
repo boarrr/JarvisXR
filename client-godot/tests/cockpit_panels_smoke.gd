@@ -52,15 +52,18 @@ func _run() -> void:
 	_check(AppState.get_diff(run_id).is_empty(), "reject clears review state")
 	_check(diff_panel.get_run_id().is_empty(), "panel resets after resolution")
 
-	_check(file_viewer.open_focused_thread(), "file viewer opens")
+	_check(file_viewer.open_focused_thread(), "host file viewer opens")
 	var rows := file_viewer.get_rows()
-	_check(rows.size() >= 3, "file viewer shows workspace entries")
-	_check(file_viewer.activate_entry("services", true), "directory navigation is accepted")
+	_check(rows.size() >= 3, "host file viewer shows filesystem entries")
+	_check(file_viewer.activate_entry("Documents", true), "host directory navigation is accepted")
 	rows = file_viewer.get_rows()
-	_check(rows.size() == 2, "directory listing updates")
-	_check(file_viewer.activate_entry("services/agent_client.gd", false), "file read is accepted")
+	_check(rows.size() == 2, "host directory listing updates")
+	_check(file_viewer.activate_entry("Documents/readme.txt", false), "host file read is accepted")
 	_check(file_viewer.is_showing_content(), "file viewer switches to content mode")
-	_check(file_viewer.get_body_text().contains("route_agent_delta"), "file content renders")
+	_check(
+		file_viewer.get_body_text().contains("hello from the host filesystem"),
+		"host file content renders"
+	)
 
 	_check(daemon_panel.toggle(), "daemon panel opens")
 	daemon_panel.refresh()

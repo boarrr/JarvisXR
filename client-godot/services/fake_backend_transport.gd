@@ -130,6 +130,10 @@ func send_command(command_type: String, payload: Dictionary = {}, thread_id: Str
 			return _emit_file_tree(thread_id, str(payload.get("path", "")))
 		"file.read":
 			return _emit_file_content(thread_id, str(payload.get("path", "")))
+		"fs.list":
+			return _emit_host_tree(thread_id, str(payload.get("path", "")))
+		"fs.read":
+			return _emit_host_content(thread_id, str(payload.get("path", "")))
 		"diff.get":
 			return _emit_diff(thread_id)
 		"diff.decision":
@@ -893,6 +897,39 @@ func _emit_file_content(thread_id: String, path: String) -> bool:
 		"binary": false,
 		"truncated": false,
 		"content": content,
+	})
+	return true
+
+
+func _emit_host_tree(thread_id: String, path: String) -> bool:
+	var entries: Array = []
+	if path.is_empty():
+		entries = [
+			{"name": "Documents", "path": "Documents", "type": "dir", "size": 0},
+			{"name": "Projects", "path": "Projects", "type": "dir", "size": 0},
+			{"name": "notes.txt", "path": "notes.txt", "type": "file", "size": 24},
+		]
+	elif path == "Documents":
+		entries = [
+			{"name": "readme.txt", "path": "Documents/readme.txt", "type": "file", "size": 40},
+			{"name": "todo.md", "path": "Documents/todo.md", "type": "file", "size": 30},
+		]
+	_emit_event("file.tree", thread_id, {"path": path, "entries": entries, "scope": "host"})
+	return true
+
+
+func _emit_host_content(thread_id: String, path: String) -> bool:
+	if path.is_empty():
+		_emit_error("invalid_path", "A file path is required", thread_id)
+		return false
+	var content := "host file: %s\nhello from the host filesystem\n" % path
+	_emit_event("file.content", thread_id, {
+		"path": path,
+		"size": content.length(),
+		"binary": false,
+		"truncated": false,
+		"content": content,
+		"scope": "host",
 	})
 	return true
 

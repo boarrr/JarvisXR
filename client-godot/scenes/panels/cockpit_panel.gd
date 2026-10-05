@@ -28,6 +28,10 @@ var _screen: MeshInstance3D = null
 var _ui_root: Control = null
 var _primary_body: RichTextLabel = null
 var _action_targets: Array[Area3D] = []
+var _manipulating := false
+var _manipulate_base_basis := Basis.IDENTITY
+var _manipulate_base_scale := Vector3.ONE
+var _manipulate_center_offset := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -217,7 +221,46 @@ func _build_surface() -> void:
 	_screen.mesh = quad
 	_screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_screen)
-	add_screen_target("ui:%s_surface" % name.to_lower(), Rect2(Vector2.ZERO, Vector2(viewport_size)))
+	var surface := add_screen_target(
+		"ui:%s_surface" % name.to_lower(), Rect2(Vector2.ZERO, Vector2(viewport_size))
+	)
+	# Grabbable surfaces can be two-hand resized like any floating pane.
+	surface.add_to_group("grabbable")
+
+
+func get_surface_target_id() -> String:
+	return "ui:%s_surface" % name.to_lower()
+
+
+func begin_bimanual_transform(center: Vector3) -> bool:
+	if not visible:
+		return false
+	_manipulating = true
+	_manipulate_base_basis = global_transform.basis.orthonormalized()
+	_manipulate_base_scale = scale
+	_manipulate_center_offset = global_position - center
+	return true
+
+
+func apply_bimanual_transform(center: Vector3, scale_factor: float, rotation_radians: float) -> bool:
+	if not _manipulating:
+		return false
+	var safe_scale := clampf(scale_factor, 0.45, 2.4)
+	var rotation_basis := Basis(Vector3.UP, rotation_radians)
+	global_transform = Transform3D(
+		rotation_basis * _manipulate_base_basis,
+		center + rotation_basis * _manipulate_center_offset * safe_scale
+	)
+	scale = _manipulate_base_scale * safe_scale
+	return true
+
+
+func end_bimanual_transform() -> void:
+	_manipulating = false
+
+
+func is_being_manipulated() -> bool:
+	return _manipulating
 
 
 func _place_in_reading_zone() -> void:

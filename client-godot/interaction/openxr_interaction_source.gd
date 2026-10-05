@@ -798,10 +798,11 @@ func _update_bimanual_gesture() -> void:
 		return
 
 	if not _bimanual_active:
-		if _hover_target_id != "ui:code_surface":
+		var surface := _bimanual_surface_target()
+		if surface.is_empty():
 			return
 		_bimanual_active = true
-		_bimanual_target_id = _hover_target_id
+		_bimanual_target_id = surface
 		_bimanual_initial_center = center
 		_bimanual_initial_vector = hand_vector
 		_bimanual_initial_distance = hand_distance
@@ -817,6 +818,21 @@ func _update_bimanual_gesture() -> void:
 		rotation_radians,
 		"move"
 	)
+
+
+func _bimanual_surface_target() -> String:
+	# Prefer whatever surface the active ray hovers; else use whichever hand is
+	# touching a grabbable pane surface. Any pane surface (id ends in _surface)
+	# can be two-hand moved/scaled.
+	if _hover_target_id.ends_with("_surface"):
+		return _hover_target_id
+	for hand_name in ["left", "right"]:
+		var area: Area3D = _touch_area.get(hand_name, null)
+		if area != null and area.is_in_group("grabbable") and area.has_method("get_interaction_target_id"):
+			var target: String = str(area.call("get_interaction_target_id"))
+			if target.ends_with("_surface"):
+				return target
+	return ""
 
 
 func _set_tracking_available(value: bool) -> void:
@@ -1004,9 +1020,16 @@ func _remembered_orb_hover() -> String:
 
 
 func _begin_grab_if_touching(position: Vector3) -> bool:
-	if _touch_target_id[preferred_hand].is_empty() or ":" in _touch_target_id[preferred_hand]:
+	var target: String = str(_touch_target_id[preferred_hand])
+	if target.is_empty():
 		return false
-	_grab_target_id = _touch_target_id[preferred_hand]
+	var area: Area3D = _touch_area[preferred_hand]
+	var grabbable := area != null and area.is_in_group("grabbable")
+	# Namespaced ids (ui:…) are normally tap-only, but marked grabbable surfaces
+	# (floating panes) can be directly grabbed.
+	if ":" in target and not grabbable:
+		return false
+	_grab_target_id = target
 	_grab_origin_position = position
 	interaction_event.emit(InteractionEvent.new(
 		InteractionEvent.Type.GRAB_BEGIN,

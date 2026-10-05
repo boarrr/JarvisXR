@@ -70,6 +70,7 @@ class Settings:
     workspace_path: str = ""
     workspace_name: str = ""
     workspace_branch: str = "main"
+    fs_root: Path = Path.home()
     max_output_tokens: int = 1024
     max_packet_bytes: int = 1_048_576
     commands_per_minute: int = 120
@@ -112,6 +113,7 @@ class Settings:
             workspace_path=os.getenv("SPATIAL_AGENT_WORKSPACE_PATH", ""),
             workspace_name=os.getenv("SPATIAL_AGENT_WORKSPACE_NAME", ""),
             workspace_branch=os.getenv("SPATIAL_AGENT_WORKSPACE_BRANCH", "main"),
+            fs_root=_optional_path(os.getenv("SPATIAL_AGENT_FS_ROOT", "")) or Path.home(),
             max_output_tokens=int(os.getenv("SPATIAL_AGENT_MAX_OUTPUT_TOKENS", "1024")),
             max_packet_bytes=int(os.getenv("SPATIAL_AGENT_MAX_PACKET_BYTES", "1048576")),
             commands_per_minute=int(os.getenv("SPATIAL_AGENT_COMMANDS_PER_MINUTE", "120")),

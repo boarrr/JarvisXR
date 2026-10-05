@@ -133,6 +133,7 @@ class AgentCoordinator:
         opencode: OpencodeClient | None = None,
         opencode_directory: str = "",
         test_command: str = "",
+        fs_root: Path | None = None,
     ) -> None:
         self.threads = threads
         self.provider = provider
@@ -142,6 +143,7 @@ class AgentCoordinator:
         self.opencode = opencode
         self.opencode_directory = opencode_directory
         self.test_command = test_command
+        self.fs_root = fs_root
         self._opencode_permissions: dict[str, PendingOpencodePermission] = {}
         self._opencode_sessions: dict[str, str] = {}
         self._runs: dict[str, ActiveRun] = {}
@@ -1021,6 +1023,14 @@ class AgentCoordinator:
 
     async def read_thread_file(self, thread_id: str, relative_path: str) -> dict[str, Any]:
         root = await self._thread_root(thread_id)
+        return await asyncio.to_thread(read_file_bounded, root, relative_path)
+
+    async def list_host_files(self, relative_path: str = "") -> list[dict[str, Any]]:
+        root = self.fs_root or Path.home()
+        return await asyncio.to_thread(list_directory, root, relative_path)
+
+    async def read_host_file(self, relative_path: str) -> dict[str, Any]:
+        root = self.fs_root or Path.home()
         return await asyncio.to_thread(read_file_bounded, root, relative_path)
 
     async def diff_for_thread(self, thread_id: str) -> tuple[list[FileDiff], bool, str]:

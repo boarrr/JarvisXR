@@ -145,7 +145,8 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 			AppState.set_file_tree(
 				event.thread_id,
 				str(event.payload.get("path", "")),
-				event.payload.get("entries", [])
+				event.payload.get("entries", []),
+				str(event.payload.get("scope", ""))
 			)
 		"file.content":
 			AppState.set_file_content(event.thread_id, event.payload)
