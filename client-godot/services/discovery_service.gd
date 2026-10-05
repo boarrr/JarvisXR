@@ -117,7 +117,12 @@ func _subnet_broadcast() -> String:
 
 
 static func _parse(packet: PackedByteArray) -> Dictionary:
-	var parsed: Variant = JSON.parse_string(packet.get_string_from_utf8())
+	var text := packet.get_string_from_utf8()
+	if not text.begins_with("{"):
+		# Discovery probes (and other chatter) are not JSON; skip them without
+		# letting JSON.parse_string log a parse error every second.
+		return {}
+	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {}
 	var payload: Dictionary = parsed
