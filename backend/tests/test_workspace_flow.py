@@ -189,15 +189,18 @@ class WorkspaceFlowTests(unittest.IsolatedAsyncioTestCase):
             )
             _, rejected = await receive_until(websocket, "diff.rejected")
             self.assertEqual(rejected["payload"]["run_id"], run_id)
-            self.assertFalse(worktree_path.exists())
+            # The worktree is kept for reuse; only the pending change is
+            # discarded, and the operator's checkout is never touched.
+            self.assertTrue(worktree_path.exists())
+            self.assertFalse((worktree_path / "notes.txt").exists())
+            self.assertFalse((self.repo / "notes.txt").exists())
 
             await websocket.send(
                 command("diff.get", session_id=session_id, thread_id=thread_id)
             )
             _, proposed_again = await receive_until(websocket, "diff.proposed")
-            # With the worktree gone, the daemon falls back to diffing the bound
-            # repository's working tree directly.
-            self.assertTrue(str(proposed_again["payload"]["run_id"]).startswith("direct:"))
+            self.assertEqual(proposed_again["payload"]["run_id"], run_id)
+            self.assertEqual(proposed_again["payload"]["files"], [])
 
     async def test_v2_apply_commits_on_the_agent_branch_only(self) -> None:
         websocket, session_id = await self.open_session()
@@ -241,7 +244,9 @@ class WorkspaceFlowTests(unittest.IsolatedAsyncioTestCase):
             applied = await receive_event(websocket)
             self.assertEqual(applied["type"], "diff.applied")
             self.assertEqual(len(applied["payload"]["commit"]), 40)
-            self.assertFalse(worktree_path.exists())
+            # The worktree is kept (thread continues on the committed change).
+            self.assertTrue(worktree_path.exists())
+            self.assertIn("agent edit", (worktree_path / "app.py").read_text(encoding="utf-8"))
 
             # The user's checkout is untouched; the change lives on the agent branch.
             self.assertEqual(
@@ -251,6 +256,54 @@ class WorkspaceFlowTests(unittest.IsolatedAsyncioTestCase):
                 ["git", "branch", "--list"], cwd=self.repo, capture_output=True, text=True
             ).stdout
             self.assertIn(f"spatial/agent-{run_id}", branches)
+
+    async def test_second_run_reuses_the_thread_worktree(self) -> None:
+        websocket, session_id = await self.open_session()
+        async with websocket:
+            thread_id = await self.first_thread_id(websocket, session_id)
+            await websocket.send(
+                command(
+                    "workspace.bind",
+                    session_id=session_id,
+                    thread_id=thread_id,
+                    payload={"workspace_id": self.workspace.id},
+                )
+            )
+            await receive_event(websocket)
+
+            await websocket.send(
+                command(
+                    "message.send",
+                    session_id=session_id,
+                    thread_id=thread_id,
+                    payload={"content": "first"},
+                )
+            )
+            first_events, _ = await receive_until(websocket, "run.completed")
+            first_run_id = next(
+                event for event in first_events if event["type"] == "run.workspace"
+            )["payload"]["run_id"]
+            first_path = self.repo / ".spatial" / "worktrees" / first_run_id
+            self.assertTrue(first_path.is_dir())
+
+            await websocket.send(
+                command(
+                    "message.send",
+                    session_id=session_id,
+                    thread_id=thread_id,
+                    payload={"content": "second"},
+                )
+            )
+            second_events, _ = await receive_until(websocket, "run.completed")
+            # A reused worktree emits no new run.workspace event.
+            self.assertFalse(any(event["type"] == "run.workspace" for event in second_events))
+
+            await websocket.send(
+                command("file.list", session_id=session_id, thread_id=thread_id)
+            )
+            tree = await receive_event(websocket)
+            self.assertEqual(tree["type"], "file.tree")
+            self.assertIn("app.py", [entry["name"] for entry in tree["payload"]["entries"]])
 
     async def test_v1_session_rejects_v2_commands(self) -> None:
         websocket, session_id = await self.open_session(protocol_version=1)

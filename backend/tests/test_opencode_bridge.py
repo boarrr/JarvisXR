@@ -269,5 +269,46 @@ class OpencodeBridgeTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class PermissionParsingTests(unittest.TestCase):
+    def test_reads_pattern_title_and_command(self) -> None:
+        event = {
+            "type": "permission.asked",
+            "properties": {
+                "id": "perm_1",
+                "sessionID": "ses_1",
+                "permission": "bash",
+                "title": "Run the tests",
+                "pattern": "pytest -q",
+                "metadata": {"command": "pytest -q"},
+            },
+        }
+        request = permission_from_event(event)
+        assert request is not None
+        self.assertEqual(request.permission, "bash")
+        self.assertEqual(request.title, "Run the tests")
+        self.assertEqual(request.patterns, ["pytest -q"])
+        self.assertEqual(request.command(), "pytest -q")
+
+    def test_falls_back_to_legacy_shapes(self) -> None:
+        event = {
+            "type": "permission.asked",
+            "properties": {
+                "id": "perm_2",
+                "sessionID": "ses_1",
+                "type": "bash",
+                "patterns": ["git status", "git diff"],
+                "metadata": {},
+            },
+        }
+        request = permission_from_event(event)
+        assert request is not None
+        self.assertEqual(request.permission, "bash")
+        self.assertEqual(request.patterns, ["git status", "git diff"])
+        self.assertEqual(request.command(), "git status")
+
+    def test_ignores_non_permission_events(self) -> None:
+        self.assertIsNone(permission_from_event({"type": "message.part.updated"}))
+
+
 if __name__ == "__main__":
     unittest.main()

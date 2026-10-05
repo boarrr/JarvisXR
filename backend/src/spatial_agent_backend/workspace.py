@@ -238,6 +238,15 @@ class WorkspaceManager:
                 workspace.path, "worktree", "remove", "--force", str(worktree.path)
             )
 
+    async def discard_worktree_changes(self, worktree: Worktree) -> None:
+        """Drop uncommitted changes inside an agent worktree.
+
+        This is destructive only inside the isolated agent sandbox; the
+        operator's checkout is never touched.
+        """
+        await self._git(worktree.path, "reset", "--hard", "--quiet")
+        await self._git(worktree.path, "clean", "-fdq")
+
     async def diff(self, worktree: Worktree) -> tuple[list[FileDiff], bool]:
         await self._git(worktree.path, "add", "-A")
         raw = await self._git(
@@ -302,9 +311,12 @@ class WorkspaceManager:
         return (await self._git(path, "rev-parse", "HEAD")).strip()
 
     async def discard_directory(self, path: Path) -> None:
-        await self._git(path, "reset", "--hard")
-        # Remove files the agent created (ignored paths like .spatial are kept).
-        await self._git(path, "clean", "-fd")
+        """Non-destructive fallback: revert tracked edits, keep untracked files.
+
+        Direct mode has no isolation, so we must never run ``reset --hard`` or
+        ``clean`` against the operator's repository.
+        """
+        await self._git(path, "restore", "--staged", "--worktree", ".")
 
     async def run_tests(
         self, worktree: Worktree, command: str, timeout_seconds: float = 900.0

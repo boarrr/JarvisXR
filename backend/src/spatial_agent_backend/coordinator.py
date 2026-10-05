@@ -147,7 +147,9 @@ class AgentCoordinator:
         self._runs: dict[str, ActiveRun] = {}
         self._approvals: dict[str, PendingApproval] = {}
         self._worktrees_by_run: dict[str, Worktree] = {}
+        self._worktrees_by_thread: dict[str, Worktree] = {}
         self._latest_run_by_thread: dict[str, str] = {}
+        self._decided_runs: set[str] = set()
 
     async def submit_message(
         self,
@@ -563,10 +565,13 @@ class AgentCoordinator:
             log_record("opencode_run_start", thread_id=run.thread_id, run_id=run.run_id)
             thread = await self.threads.set_status(run.thread_id, "working")
             await emit("agent.status", run.thread_id, {"status": "working", "run_id": run.run_id})
-            # opencode runs deliberately share one stable project directory so the
-            # per-thread session can be reused across turns; per-run worktrees
-            # would change `?directory=` every turn and wedge the session.
-            directory = self.opencode_directory
+            # Each thread gets one stable worktree, reused across turns, so the
+            # opencode `?directory=` stays constant (session reuse holds) while
+            # the agent's edits stay isolated from the operator's checkout.
+            await self._prepare_worktree(run, thread, emit)
+            directory = (
+                str(run.worktree.path) if run.worktree is not None else self.opencode_directory
+            )
             log_record("opencode_worktree", run_id=run.run_id, directory=directory)
             client = self.opencode.with_directory(directory) if directory else self.opencode
             opencode_session = await self._opencode_session_for(run, thread, client)
@@ -942,13 +947,25 @@ class AgentCoordinator:
         if self.workspaces.get(workspace_id) is None:
             log_record("worktree_skipped", run_id=run.run_id, reason="workspace_not_found")
             return
-        try:
-            worktree = await self.workspaces.create_worktree(workspace_id, run.run_id)
-        except WorkspaceError as error:
-            # Isolation is best-effort; fall back to the plain directory so the
-            # run still works (some hosts cannot create git worktrees).
-            log_record("worktree_skipped", run_id=run.run_id, reason=str(error)[:200])
-            return
+        # One worktree per thread, reused across turns: the opencode directory
+        # (and therefore the per-thread session) stays stable, while the agent's
+        # edits never touch the operator's checkout.
+        created = False
+        worktree = self._worktrees_by_thread.get(run.thread_id)
+        if worktree is not None and not worktree.path.exists():
+            self._worktrees_by_thread.pop(run.thread_id, None)
+            self._worktrees_by_run.pop(worktree.run_id, None)
+            worktree = None
+        if worktree is None:
+            try:
+                worktree = await self.workspaces.create_worktree(workspace_id, run.run_id)
+            except WorkspaceError as error:
+                # Isolation is best-effort; fall back to the plain directory so
+                # the run still works (some hosts cannot create git worktrees).
+                log_record("worktree_skipped", run_id=run.run_id, reason=str(error)[:200])
+                return
+            self._worktrees_by_thread[run.thread_id] = worktree
+            created = True
         run.worktree = worktree
         self._worktrees_by_run[run.run_id] = worktree
         self._latest_run_by_thread[run.thread_id] = run.run_id
@@ -965,12 +982,18 @@ class AgentCoordinator:
                 base_commit=worktree.base_commit,
                 status="active",
             )
-        self._audit("worktree_created", run, workspace_id=workspace_id, branch=worktree.branch)
-        await emit(
-            "run.workspace",
-            run.thread_id,
-            {"run_id": run.run_id, **worktree.to_wire()},
+        self._audit(
+            "worktree_created" if created else "worktree_reused",
+            run,
+            workspace_id=workspace_id,
+            branch=worktree.branch,
         )
+        if created:
+            await emit(
+                "run.workspace",
+                run.thread_id,
+                {"run_id": run.run_id, **worktree.to_wire()},
+            )
 
     def worktree_for_run(self, run_id: str) -> Worktree | None:
         return self._worktrees_by_run.get(run_id)
@@ -1025,7 +1048,10 @@ class AgentCoordinator:
         return None
 
     async def decide_diff(self, run_id: str, decision: str) -> dict[str, Any]:
+        if run_id in self._decided_runs:
+            raise WorkspaceError("Diff already decided")
         if run_id.startswith("direct:") and self.workspaces is not None:
+            self._decided_runs.add(run_id)
             thread_id = run_id.split(":", 1)[1]
             path = await self._direct_repo_path(thread_id)
             if path is None:
@@ -1051,6 +1077,7 @@ class AgentCoordinator:
         worktree = self._worktrees_by_run.get(run_id)
         if worktree is None or self.workspaces is None:
             raise WorkspaceError("Unknown diff run")
+        self._decided_runs.add(run_id)
         if decision == "apply":
             tests_result = "skipped"
             if self.test_command.strip():
@@ -1063,7 +1090,8 @@ class AgentCoordinator:
             commit = await self.workspaces.commit(
                 worktree, f"spatial agent run {run_id}"
             )
-            await self.workspaces.remove_worktree_directory(worktree)
+            # Keep the worktree alive so the thread continues on the committed
+            # change (and later turns reuse the same stable directory).
             result: dict[str, Any] = {
                 "run_id": run_id,
                 "decision": "apply",
@@ -1072,16 +1100,12 @@ class AgentCoordinator:
                 "tests": tests_result,
             }
         else:
-            await self.workspaces.remove_worktree(worktree)
+            await self.workspaces.discard_worktree_changes(worktree)
             result = {
                 "run_id": run_id,
                 "decision": "reject",
                 "branch": worktree.branch,
             }
-        self._worktrees_by_run.pop(run_id, None)
-        for thread_id, latest_run_id in list(self._latest_run_by_thread.items()):
-            if latest_run_id == run_id:
-                self._latest_run_by_thread.pop(thread_id, None)
         store = getattr(self.threads, "store", None)
         update = getattr(store, "update_run_status", None)
         if update is not None:
