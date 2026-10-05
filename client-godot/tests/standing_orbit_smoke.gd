@@ -190,7 +190,7 @@ func _run() -> void:
 		"a created agent carries a default title"
 	)
 
-	# Fist attraction needs a tracked hand with joint data.
+	# Fist crush needs a tracked hand with joint data.
 	var summon_source := OpenXRInteractionSource.new()
 	add_child(summon_source)
 	summon_source.set_hand_tracking_active(true)
@@ -200,7 +200,7 @@ func _run() -> void:
 	)
 	var summon_palm := Transform3D(Basis.IDENTITY, Vector3(3.0, 1.4, -0.4))
 
-	# A fist aimed at a hovered agent requests attraction.
+	# Holding a fist over a hovered agent crushes it, at any distance.
 	var fist_joints := {
 		"palm": Vector3(3.0, 1.4, -0.6),
 		"index_tip": Vector3(3.03, 1.42, -0.62),
@@ -210,18 +210,19 @@ func _run() -> void:
 	}
 	summon_events.clear()
 	summon_source.set_hover_target_id(victim_id)
-	summon_source.submit_joint_sample(
-		"right", summon_palm,
-		Vector3(3.02, 1.42, -0.65), Vector3(3.0, 1.4, -0.6), Vector3(3.0, 1.42, -0.65),
-		fist_joints
-	)
-	var attract_begins := summon_events.filter(
+	for _i in range(30):
+		summon_source.submit_joint_sample(
+			"right", summon_palm,
+			Vector3(3.02, 1.42, -0.65), Vector3(3.0, 1.4, -0.6), Vector3(3.0, 1.42, -0.65),
+			fist_joints
+		)
+	var crushes := summon_events.filter(
 		func(event: InteractionEvent) -> bool:
-			return event.type == InteractionEvent.Type.ATTRACT_BEGIN
+			return event.type == InteractionEvent.Type.CRUSH
 	)
 	_check(
-		attract_begins.size() == 1 and attract_begins[0].target_id == victim_id,
-		"a fist aimed at an agent starts attraction"
+		crushes.size() == 1 and crushes[0].target_id == victim_id,
+		"a held fist crushes the aimed agent at a distance"
 	)
 
 	# The redesigned palm is voice-first: a TALK primary plus a compact secondary
@@ -371,7 +372,7 @@ func _run() -> void:
 		"a pointed pinch leaves the agent in place"
 	)
 
-	# Closing a fist after the ray drifted off still pulls the last agent.
+	# Closing a fist after the ray drifted off still crushes the last agent.
 	var attract_fist_source := OpenXRInteractionSource.new()
 	add_child(attract_fist_source)
 	attract_fist_source.set_hand_tracking_active(true)
@@ -395,20 +396,21 @@ func _run() -> void:
 		"index_proximal": attract_palm_joint + Vector3(0.0, 0.0, -0.08),
 		"index_distal": attract_palm_joint + Vector3(0.0, 0.0, -0.06),
 	}
-	attract_fist_source.submit_joint_sample(
-		"right",
-		attract_fist_palm,
-		attract_palm_joint + Vector3(0.03, 0.03, -0.06),
-		attract_palm_joint + Vector3(0.0, 0.0, -0.06),
-		attract_palm_joint + Vector3(0.0, 0.0, -0.05),
-		attract_fist_joints
-	)
-	var memory_attract_begins := attract_fist_events.filter(
-		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.ATTRACT_BEGIN
+	for _i in range(30):
+		attract_fist_source.submit_joint_sample(
+			"right",
+			attract_fist_palm,
+			attract_palm_joint + Vector3(0.03, 0.03, -0.06),
+			attract_palm_joint + Vector3(0.0, 0.0, -0.06),
+			attract_palm_joint + Vector3(0.0, 0.0, -0.05),
+			attract_fist_joints
+		)
+	var memory_crushes := attract_fist_events.filter(
+		func(event: InteractionEvent) -> bool: return event.type == InteractionEvent.Type.CRUSH
 	)
 	_check(
-		memory_attract_begins.size() == 1 and memory_attract_begins[0].target_id == "thread_probe",
-		"a fist still pulls the agent the ray last touched"
+		memory_crushes.size() == 1 and memory_crushes[0].target_id == "thread_probe",
+		"a fist still crushes the agent the ray last touched"
 	)
 
 	var palm_console := main.get_node("PalmConsole") as PalmConsole

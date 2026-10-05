@@ -192,6 +192,11 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_code_viewer.toggle()
 			elif event.target_id == "palm:review":
 				_toggle_cockpit_review()
+			elif event.target_id == "palm:files":
+				if _file_viewer.visible:
+					_file_viewer.close()
+				else:
+					_file_viewer.open_host()
 			elif event.target_id == "palm:cognition_toggle":
 				_cognition_layer.toggle_enabled()
 			elif event.target_id == "palm:mission_toggle":

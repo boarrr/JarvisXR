@@ -13,16 +13,17 @@ const VIEWPORT_SIZE := Vector2i(640, 860)
 const SCREEN_CENTER := Vector2(0.0, 0.0)
 const SCREEN_SIZE := Vector2(0.5, 0.672)
 const HEADER_HEIGHT_PX := 104.0
-const FOOTER_HEIGHT_PX := 172.0
+const FOOTER_HEIGHT_PX := 196.0
 const CHAT_RENDER_INTERVAL := 0.1
 const CHAT_SCROLL_LINES_PER_METRE := 55.0
 
-const RECT_TALK := Rect2(16, 690, 608, 80)
-const RECT_SECONDARY := Rect2(16, 778, 608, 62)
+const RECT_TALK := Rect2(16, 664, 608, 74)
+const RECT_SECONDARY := Rect2(16, 754, 608, 62)
 const SECONDARY := [
 	["NEW", "palm:new_agent", "NewTarget"],
 	["CODE", "palm:code_toggle", "CodeTarget"],
 	["REVIEW", "palm:review", "ReviewTarget"],
+	["FILES", "palm:files", "FilesTarget"],
 	["UPDATE", "palm:update", "UpdateTarget"],
 	["CLOSE", "palm:dismiss", "CloseTarget"],
 ]
@@ -179,7 +180,7 @@ func _build_screen() -> void:
 			Vector2(RECT_SECONDARY.position.x + float(index) * (width + gap), RECT_SECONDARY.position.y),
 			Vector2(width, RECT_SECONDARY.size.y)
 		)
-		_make_button(root, rect, str(entry[0]), Color(0.05, 0.4, 0.5), Color(0.9, 1.0, 1.0), str(entry[2]), str(entry[1]))
+		_make_button(root, rect, str(entry[0]), Color(0.05, 0.4, 0.5), Color(0.9, 1.0, 1.0), str(entry[2]), str(entry[1]), 18)
 
 	_build_surface()
 	_build_backing_and_screen(root)
@@ -252,7 +253,8 @@ func _make_button(
 	fill: Color,
 	ink: Color,
 	node_name: String,
-	target_id: String
+	target_id: String,
+	font_size: int = 22
 ) -> void:
 	var panel := PanelContainer.new()
 	panel.position = rect.position
@@ -269,7 +271,7 @@ func _make_button(
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 22)
+	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", ink)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(label)

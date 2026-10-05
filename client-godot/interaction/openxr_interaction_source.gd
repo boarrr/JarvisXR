@@ -639,70 +639,41 @@ func _hand_is_fist(hand_name: String) -> bool:
 
 func _update_fist_interaction(sample: Dictionary, index_tip: Vector3, delta: float) -> void:
 	var is_fist := _hand_is_fist(preferred_hand)
-	var touching_orb: bool = not _touch_target_id[preferred_hand].is_empty() and not ":" in _touch_target_id[preferred_hand]
-	var palm_position := (sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D).origin
+	var touch_id := str(_touch_target_id[preferred_hand])
+	var touch_orb := not touch_id.is_empty() and not ":" in touch_id
 	var hovered := _hover_target_id
-	var valid_new := not hovered.is_empty() and not ":" in hovered
+	var hover_orb := not hovered.is_empty() and not ":" in hovered
 
-	# Crush only counts when the fist closed while already on the orb. A fist
-	# raised to summon must never archive the agent that arrives in the palm.
-	if is_fist and not _fist_prev and _attract_target.is_empty():
-		_crush_candidate = _touch_target_id[preferred_hand] if touching_orb else ""
+	# Closing the fist over an agent - physically touched or ray-hovered - arms a
+	# crush. Holding the fist for CRUSH_HOLD_SECONDS deletes it, at any distance.
+	# (No summon-on-fist: that flung orbs the user never meant to move.)
+	if is_fist and not _fist_prev:
+		_crush_candidate = touch_id if touch_orb else (hovered if hover_orb else _remembered_orb_hover())
 		_crush_seconds = 0.0
 	_fist_prev = is_fist
 	if not is_fist:
 		_crush_latched = false
 		_crush_candidate = ""
-
-	var crushing: bool = (
-		is_fist
-		and not _crush_candidate.is_empty()
-		and _touch_target_id[preferred_hand] == _crush_candidate
-		and _attract_target.is_empty()
-	)
-	if crushing:
-		_crush_seconds += delta
-		if _crush_seconds >= CRUSH_HOLD_SECONDS and not _crush_latched:
-			_crush_latched = true
-			interaction_event.emit(InteractionEvent.new(
-				InteractionEvent.Type.CRUSH,
-				_crush_candidate,
-				InteractionEvent.Source.HAND,
-				index_tip,
-				{"gesture": "crush"}
-			))
-		return
-	_crush_seconds = 0.0
-
-	# A fist raised while the ray is over an agent summons it slowly. The
-	# target is latched, because closing the fist swings the index-derived ray.
-	if not is_fist:
+		_crush_seconds = 0.0
 		if not _attract_target.is_empty():
 			interaction_event.emit(InteractionEvent.new(
 				InteractionEvent.Type.ATTRACT_END, _attract_target, InteractionEvent.Source.HAND
 			))
 			_attract_target = ""
 		return
-	if _attract_target.is_empty():
-		var candidate := hovered if valid_new else _remembered_orb_hover()
-		if candidate.is_empty():
-			return
-		_attract_target = candidate
-		interaction_event.emit(InteractionEvent.new(
-			InteractionEvent.Type.ATTRACT_BEGIN,
-			_attract_target,
-			InteractionEvent.Source.HAND,
-			palm_position,
-			{"gesture": "attract"}
-		))
+	if _crush_candidate.is_empty():
+		_crush_seconds = 0.0
 		return
-	interaction_event.emit(InteractionEvent.new(
-		InteractionEvent.Type.ATTRACT_MOVE,
-		_attract_target,
-		InteractionEvent.Source.HAND,
-		palm_position,
-		{"gesture": "attract"}
-	))
+	_crush_seconds += delta
+	if _crush_seconds >= CRUSH_HOLD_SECONDS and not _crush_latched:
+		_crush_latched = true
+		interaction_event.emit(InteractionEvent.new(
+			InteractionEvent.Type.CRUSH,
+			_crush_candidate,
+			InteractionEvent.Source.HAND,
+			index_tip,
+			{"gesture": "crush"}
+		))
 
 
 func submit_joint_sample(
