@@ -3,7 +3,7 @@
 #
 # Starts a headless opencode server, then the Spatial Agent daemon configured
 # to route agent runs through opencode, with this repository registered and all
-# threads bound to it. Edits happen in per-run git worktrees; shell commands
+# threads bound to it. Edits happen in a per-thread git worktree; shell commands
 # surface as spatial approvals. Apply is gated by SPATIAL_AGENT_TEST_COMMAND.
 #
 # Usage: ./scripts/run_builder.sh
@@ -17,7 +17,7 @@ set -eu
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 opencode_bin=${OPENCODE_BIN:-opencode}
 port=${OPENCODE_PORT:-4096}
-password=${SPATIAL_AGENT_OPENCODE_PASSWORD:-builder-$(id -u)}
+password=${SPATIAL_AGENT_OPENCODE_PASSWORD:-$(openssl rand -hex 16 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(16))')}
 test_command=${SPATIAL_AGENT_TEST_COMMAND:-}
 
 if ! command -v "$opencode_bin" >/dev/null 2>&1; then

@@ -323,6 +323,11 @@ func focus_thread(thread_id: String) -> bool:
 		push_warning("[STATE] Cannot focus unknown thread: %s" % thread_id)
 		return false
 	focused_thread_id = thread_id
+	if not thread_id.is_empty():
+		var thread := threads_by_id.get(thread_id) as AgentThread
+		if thread != null and thread.unread_count > 0:
+			thread.unread_count = 0
+			update_thread(thread)
 	return true
 
 

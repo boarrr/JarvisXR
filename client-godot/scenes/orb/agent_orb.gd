@@ -200,16 +200,26 @@ func _refresh_visuals() -> void:
 	if not is_node_ready():
 		return
 
+	var working := _thread != null and _thread.status == AgentThread.Status.WORKING
+	var unread := (
+		_thread != null
+		and _thread.unread_count > 0
+		and AppState.focused_thread_id != _thread.id
+	)
 	var color := _status_color()
 	if _is_selected:
 		color = color.lerp(Color.WHITE, 0.18)
 	elif _is_hovered:
 		color = color.lerp(Color.WHITE, 0.10)
+	if unread:
+		# Attention cue: a fresh completion on a non-focused agent warms the orb.
+		var pulse := 0.5 + 0.5 * sin(_activity_time * 4.0)
+		color = color.lerp(Color(1.0, 0.84, 0.38), 0.30 + 0.25 * pulse)
 
 	_shell_material.set_shader_parameter("tint", color)
 	_shell_material.set_shader_parameter("surface_opacity", 0.65 if _is_selected else 0.4)
 	_core_material.set_shader_parameter("tint", color)
-	_core_material.set_shader_parameter("activity", 1.0 if _thread != null and _thread.status == AgentThread.Status.WORKING else 0.2)
+	_core_material.set_shader_parameter("activity", 1.0 if working else (0.85 if unread else 0.2))
 	_set_material_color(_detail_material, color, 0.92)
 	_set_material_color(_line_material, color, 0.78 if _is_hovered or _is_selected else 0.48)
 	_set_material_color(_selection_material, Color(0.46, 0.96, 1.0), 0.95)

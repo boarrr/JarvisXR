@@ -164,6 +164,10 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 				EventBus.debug_message.emit("Agent is still working; action ignored")
 			else:
 				EventBus.debug_message.emit("Backend error: %s" % event.payload.get("message", "unknown error"))
+				_append_system_note(
+					event.thread_id,
+					"[daemon] %s" % str(event.payload.get("message", error_code))
+				)
 	if event.type != "agent.message.delta" and event.type != "update.chunk" and event.type != "error":
 		EventBus.debug_message.emit("Backend event: %s" % event.type)
 	backend_event_applied.emit(event)
@@ -314,6 +318,23 @@ func _apply_message_completed(event: BackendEvent) -> void:
 		thread.unread_count = int(event.payload["unread_count"])
 	elif AppState.focused_thread_id != event.thread_id:
 		thread.unread_count += 1
+	AppState.update_thread(thread)
+
+
+func _append_system_note(thread_id: String, text: String) -> void:
+	if thread_id.is_empty():
+		return
+	var thread := AppState.get_thread(thread_id)
+	if thread == null:
+		return
+	var message := AgentMessage.new(
+		"sys_%d" % Time.get_ticks_usec(),
+		thread_id,
+		AgentMessage.Role.SYSTEM,
+		text
+	)
+	message.metadata["kind"] = "notice"
+	thread.add_message(message)
 	AppState.update_thread(thread)
 
 
