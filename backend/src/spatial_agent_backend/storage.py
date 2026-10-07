@@ -89,6 +89,20 @@ class SQLiteStore:
                     event_type TEXT NOT NULL,
                     detail_json TEXT NOT NULL DEFAULT '{}'
                 );
+
+                CREATE TABLE IF NOT EXISTS missions (
+                    mission_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL DEFAULT '',
+                    workspace_id TEXT NOT NULL DEFAULT '',
+                    goal TEXT NOT NULL DEFAULT '',
+                    harness TEXT NOT NULL DEFAULT '',
+                    agent_count INTEGER NOT NULL DEFAULT 0,
+                    budget_seconds INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'running',
+                    agents_json TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -295,6 +309,75 @@ class SQLiteStore:
                 "UPDATE runs SET status = ?, updated_at = ? WHERE run_id = ?",
                 (status, utc_now(), run_id),
             )
+
+    def save_mission(
+        self,
+        mission_id: str,
+        *,
+        session_id: str = "",
+        workspace_id: str = "",
+        goal: str = "",
+        harness: str = "",
+        agent_count: int = 0,
+        budget_seconds: int = 0,
+        status: str = "running",
+        agents: list[str] | None = None,
+    ) -> None:
+        timestamp = utc_now()
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """
+                INSERT INTO missions (
+                    mission_id, session_id, workspace_id, goal, harness,
+                    agent_count, budget_seconds, status, agents_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(mission_id) DO UPDATE SET
+                    status = excluded.status,
+                    agents_json = excluded.agents_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    mission_id,
+                    session_id,
+                    workspace_id,
+                    goal,
+                    harness,
+                    agent_count,
+                    budget_seconds,
+                    status,
+                    json.dumps(agents or []),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+
+    def list_missions(self) -> list[dict[str, Any]]:
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                "SELECT * FROM missions ORDER BY created_at, rowid"
+            ).fetchall()
+            return [self._mission_from_row(row) for row in rows]
+
+    def get_mission(self, mission_id: str) -> dict[str, Any] | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT * FROM missions WHERE mission_id = ?", (mission_id,)
+            ).fetchone()
+            return self._mission_from_row(row) if row is not None else None
+
+    @staticmethod
+    def _mission_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["mission_id"],
+            "session_id": row["session_id"],
+            "workspace_id": row["workspace_id"],
+            "goal": row["goal"],
+            "harness": row["harness"],
+            "agent_count": row["agent_count"],
+            "budget_seconds": row["budget_seconds"],
+            "status": row["status"],
+            "agents": json.loads(row["agents_json"] or "[]"),
+        }
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with closing(self._connect()) as connection, connection:

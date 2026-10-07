@@ -136,6 +136,13 @@ class MissionFlowTests(unittest.IsolatedAsyncioTestCase):
         final = await self._await_mission_status(mission_id, "merged")
         self.assertEqual(final["status"], "merged")
 
+        # Durable: the merged mission is persisted with its agents.
+        store = getattr(self.application.threads, "store", None)
+        stored = store.get_mission(mission_id) if store is not None else None
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored["status"], "merged")
+        self.assertEqual(len(stored["agents"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

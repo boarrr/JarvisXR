@@ -22,6 +22,45 @@ class MissionService:
         self._missions: dict[str, Mission] = {}
         self._watchdogs: dict[str, asyncio.Task] = {}
         self._emits: dict[str, Callable[..., Awaitable[Any]]] = {}
+        self.store = getattr(threads, "store", None)
+
+    def load(self) -> None:
+        """Load persisted missions after the store has been initialized."""
+        store = self.store
+        if store is None or not hasattr(store, "list_missions"):
+            return
+        try:
+            rows = store.list_missions()
+        except Exception:  # noqa: BLE001 - table may not exist yet
+            return
+        for row in rows:
+            self._missions[row["id"]] = Mission(
+                id=row["id"],
+                session_id=row["session_id"],
+                workspace_id=row["workspace_id"],
+                goal=row["goal"],
+                harness=row["harness"],
+                agent_count=int(row["agent_count"]),
+                budget_seconds=int(row["budget_seconds"]),
+                status=row["status"],
+                agent_thread_ids=list(row["agents"]),
+            )
+
+    def _persist(self, mission: Mission) -> None:
+        store = self.store
+        if store is None or not hasattr(store, "save_mission"):
+            return
+        store.save_mission(
+            mission.id,
+            session_id=mission.session_id,
+            workspace_id=mission.workspace_id,
+            goal=mission.goal,
+            harness=mission.harness,
+            agent_count=mission.agent_count,
+            budget_seconds=mission.budget_seconds,
+            status=mission.status,
+            agents=list(mission.agent_thread_ids),
+        )
 
     def get(self, mission_id: str) -> Mission | None:
         return self._missions.get(mission_id)
@@ -50,6 +89,7 @@ class MissionService:
             budget_seconds=max(0, int(budget_seconds)),
         )
         self._missions[mission.id] = mission
+        self._persist(mission)
         return self._wire(mission)
 
     async def spawn(self, mission_id: str, emit) -> bool:
@@ -79,6 +119,7 @@ class MissionService:
                 emit=emit,
             )
         await emit("mission.status", "", self._wire(mission))
+        self._persist(mission)
         self._emits[mission.id] = emit
         if mission.budget_seconds > 0:
             self._watchdogs[mission.id] = asyncio.create_task(self._budget_guard(mission))
@@ -94,6 +135,7 @@ class MissionService:
         for thread_id in list(mission.agent_thread_ids):
             await self.coordinator.cancel(session_id=mission.session_id, thread_id=thread_id)
         mission.status = "error"
+        self._persist(mission)
         emit = self._emits.get(mission.id)
         if emit is not None:
             await emit(
@@ -119,6 +161,7 @@ class MissionService:
         if mission.status == "running" and statuses and all(s in _TERMINAL for s in statuses):
             mission.status = "awaiting_merge"
             self._stop_watchdog(mission.id)
+            self._persist(mission)
         return self._wire(mission)
 
     async def cancel(self, mission_id: str, agent_id: str = "") -> bool:
@@ -131,6 +174,7 @@ class MissionService:
         if not agent_id:
             mission.status = "cancelled"
             self._stop_watchdog(mission.id)
+            self._persist(mission)
         return True
 
     async def compare(self, mission_id: str) -> list[dict]:
@@ -168,6 +212,7 @@ class MissionService:
         except WorkspaceError as error:
             mission.status = "error"
             self._stop_watchdog(mission.id)
+            self._persist(mission)
             return {"merged": False, "error": str(error)}
         # Discard the losing agents.
         for thread_id in mission.agent_thread_ids:
@@ -180,6 +225,7 @@ class MissionService:
                     pass
         mission.status = "merged"
         self._stop_watchdog(mission.id)
+        self._persist(mission)
         return {"merged": True, "commit": commit, "run_id": run_id}
 
     @staticmethod

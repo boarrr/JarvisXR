@@ -171,6 +171,7 @@ class SpatialAgentServer:
 
     async def initialize(self) -> None:
         await self.threads.initialize()
+        self.missions.load()
         await self._configure_workspace_binding()
         if self.settings.auth_required:
             code = await asyncio.to_thread(self.pairing.issue_code)
