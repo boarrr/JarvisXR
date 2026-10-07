@@ -576,12 +576,74 @@
           }
         }
       }
+    },
+    {
+      "if": {"properties": {"type": {"const": "mission.create"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionCommandPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "mission.status"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionCommandPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "mission.cancel"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionCommandPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "mission.merge"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionCommandPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "agent.spawn"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionCommandPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "agent.status"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionCommandPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "agent.compare"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionCommandPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "mission.created"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionEventPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "mission.planned"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionEventPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "mission.compare"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionEventPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "mission.merged"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionEventPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "mission.budget_exceeded"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionEventPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "agent.spawned"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionEventPayload"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "agent.usage"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/missionEventPayload"}}}
     }
   ],
   "$defs": {
     "emptyPayload": {
       "type": "object",
       "additionalProperties": false
+    },
+    "missionCommandPayload": {
+      "type": "object"
+    },
+    "missionEventPayload": {
+      "type": "object"
     },
     "sessionHelloPayload": {
       "type": "object",
