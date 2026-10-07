@@ -245,3 +245,31 @@
 - **Context:** The desktop simulator was retired once the OpenXR hand boundary was mature enough to carry interaction work.
 - **Decision:** The Godot client targets OpenXR hand-tracking only. Device-free CI feeds simulated joint samples through `OpenXRInteractionSource.submit_joint_sample`, so the real interaction pipeline is exercised without a headset.
 - **Consequences:** There is no desktop product surface and hand ergonomics are verified on device, while automated tests remain headless and require no hardware.
+
+## ADR-036: Normalized AgentHarness seam
+
+- **Status:** Accepted (rev 3)
+- **Context:** The daemon should front any coding agent, but raw streams from different harnesses (opencode events, Codex CLI JSONL or plain text) would otherwise leak into the coordinator and the client.
+- **Decision:** Define one `AgentHarness` protocol in `agent_harness.py` with `AgentEvent` kinds (`delta`, `thinking_delta`, `tool`, `permission`, `status`, `file_edited`, `idle`, `error`, `usage`) and explicit `HarnessCapabilities`. Keep `opencode` as the native path and add `CodexCliHarness` selected by `SPATIAL_AGENT_HARNESS=codex`; `SPATIAL_AGENT_CODEX_COMMAND` overrides the binary and leading arguments.
+- **Consequences:** The coordinator and UI see one event contract and a new agent is an adapter rather than a rewrite. The Codex CLI runs non-interactive, so its capabilities advertise `permission_requests=False` and it cannot pause for per-call consent.
+
+## ADR-037: Missions use pick-one merge
+
+- **Status:** Accepted (rev 3)
+- **Context:** Fanning a goal out to several agents only helps if their results can be compared and one chosen without attempting to reconcile incompatible branches.
+- **Decision:** A mission creates 1–8 agent threads, each in its own git worktree. `agent.compare` returns per-agent diffs and `mission.merge` merges exactly one run: the chosen branch is merged to the base branch through a temporary worktree, and every other worktree is discarded.
+- **Consequences:** There is no automatic or multi-branch synthesis; the user is the decision-maker. Merge is deliberate and audited, and losing worktrees are not recoverable afterward.
+
+## ADR-038: Missions have wall-clock and cost budgets
+
+- **Status:** Accepted (rev 3)
+- **Context:** A fleet multiplies provider spend and wall-clock time, and a headset user cannot supervise every worker.
+- **Decision:** Accept optional `budget_seconds` and `budget_cost` at `mission.create`. A watchdog polls the coordinator's accumulated cost and cancels every agent when either budget is reached, then emits `mission.budget_exceeded` with the reason.
+- **Consequences:** Budgets are opt-in and best-effort: cost enforcement depends on harnesses reporting `agent.usage`. Exceeding a budget ends the fleet rather than completing it, and the mission is marked `error`.
+
+## ADR-039: pywebview daemon app hosts the daemon, window-only
+
+- **Status:** Accepted (rev 3)
+- **Context:** A developer needs to start the daemon, watch agents, and pair a headset without a separate terminal, but macOS requires the GUI on the main thread while a long-lived asyncio server wants its own event loop.
+- **Decision:** Ship `desktop/` as a pywebview app that runs `SpatialAgentServer` on a background asyncio loop and exposes a synchronous JS API. The window shows the agent office, chat, link info, pairing, paired devices, pause/resume, and fleet controls.
+- **Consequences:** pywebview owns the main thread and the runtime owns a daemon thread, so v1 is a window only; a menu-bar tray is deferred rather than competing for the main thread. Config and the database default to `~/Library/Application Support/SpatialAgent/`.

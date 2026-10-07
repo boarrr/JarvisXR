@@ -39,8 +39,9 @@ These are tunable defaults. Physical Quest comfort and reach still need hardware
 
 ## Message and command entry
 
-- The left-palm console exposes Ask / Voice after a thread is focused. If speech is unavailable, it opens four explicit quick intents: Continue, Summarize, Explain Code, and Privacy Review.
-- Commands use an explicit slash form so destructive and workspace operations are not confused with ordinary messages.
+- The left-palm console is text-first: an input row pairs a text field with **SPEAK**. Selecting the field (`palm:input_focus`) enters typing mode; a hardware keyboard types, Enter sends, and Esc cancels.
+- When no hardware keyboard has been used, the client auto-shows a spatial qwerty keyboard so the composer still works with hands alone. SPEAK starts host-streamed voice; if speech is unavailable it falls back to the four explicit quick intents: Continue, Summarize, Explain Code, and Privacy Review.
+- Commands use an explicit slash form so destructive and workspace operations are not confused with ordinary messages. `/mission GOAL` launches a fleet; `/fleet` toggles the fleet constellation view.
 - Archive is explicit; dismiss never deletes a thread.
 
 ## Approval
@@ -51,11 +52,11 @@ These are tunable defaults. Physical Quest comfort and reach still need hardware
 
 ## Voice
 
-- Ask / Voice starts push-to-talk where the speech service is available.
+- SPEAK starts push-to-talk where the speech service is available.
 - Listening and transcribing are visually distinct states. The UI states that transcription is local.
 - The speech service emits text only; `CommandRouter` applies the same focused-thread/global-command routing used by protocol commands.
 - A 20-second default recording ceiling limits accidental capture. Audio retention is off by default.
-- The shipped `whisper-cli` adapter runs only in headless tests. Quest uses quick intents until a mobile-native speech implementation can preserve the same text-only protocol boundary.
+- The shipped `whisper-cli` adapter runs only in headless tests. In XR, SPEAK prefers host-streamed voice (capture on the headset, transcribe on the daemon), then the Android dictation adapter, then the hand-only quick intents, so only text crosses the protocol.
 
 ## Hand-only acceptance rule
 
@@ -65,11 +66,13 @@ These are tunable defaults. Physical Quest comfort and reach still need hardware
 ## Palm command console
 
 - The console follows the tracked left palm with smoothing and faces the user's head for legibility; it hides when that hand is lost or outside a practical near-field range.
-- The right index ray selects Next Agent, Code Trace, Ask / Voice, Cognition, Mission Map, Privacy Veil, or Dismiss. Live rows expose provider/model, backend link, and microphone state without opening a flat dashboard.
+- The input row pairs the text field with SPEAK; the secondary row selects NEW, CODE, REVIEW, FILES, UPDATE, or CLOSE. Live header rows expose provider/model, backend link, and typing state without opening a flat dashboard.
+- With no hardware keyboard detected, opening the composer also raises a spatial qwerty pane (number and letter rows, SPACE, backspace, ENTER, HIDE) in the forward reading zone.
 - The ray is cyan while aiming and amber while pinching. Loss of optical tracking immediately clears the selection state.
 
 ## Mission topology and privacy veil
 
 - Mission Map overlays animated, status-coloured pulses between explicit parent relationships and focused-to-active correlations. Its legend says which edges are inferred and explicitly warns that the visualization is not task authority.
+- Agents that share a mission also form a fleet constellation: one star per mission with hub-to-agent links, counted in the header (`NN LINKS · NN MISSIONS // CONTENT-BLIND`). `/fleet` toggles this view.
 - Privacy Veil is a single deliberate palm pinch. It replaces sensitive holograms with one calm, content-free notice; the same target remains available to restore the prior workspace. The notice states that background runs continue.
 - Procedural 3D tones make focus, completion, attention, approval, faults, and veil transitions distinguishable without looking away. They are quiet, short, and contain no speech.

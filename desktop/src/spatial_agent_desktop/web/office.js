@@ -232,7 +232,12 @@ function initEvents() {
     const a = api();
     if (!a) return;
     const code = await a.issue_pairing_code();
-    openDialog(`<p>Type this on the headset (or <code>/pair</code>):</p><p><code>${code}</code></p>`);
+    const qr = await a.qr_data_uri(code);
+    openDialog(
+      `<p>Type this on the headset (or <code>/pair</code>):</p>` +
+        `<p><code>${code}</code></p>` +
+        (qr ? `<img src="${qr}" width="180" height="180" alt="pairing QR" />` : "")
+    );
   });
 
   $("btn-devices").addEventListener("click", async () => {

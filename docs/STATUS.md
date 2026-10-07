@@ -39,7 +39,7 @@ The desktop Hand Lab simulator has been removed; the client targets OpenXR hand 
 | Spatial audio cues | Complete in code; hardware loudness pending | Non-verbal WAVs are synthesized locally, placed in 3D, and tested without prompt content |
 | Privacy-safe room anchor boundary | Complete in code | Session-only semantic transform registry rejects raw room mesh; Meta Scene API remains deliberately disabled |
 
-Automated verification currently includes 28 Python tests (26 passed; two optional installed-provider-SDK checks skipped in the minimal environment) plus 19 headless client scenes. `scripts/test_all.sh` runs the entire suite, including Council separation/failure cancellation, impact minimization, joint/pinch interpretation, quick intents, cognition privacy/history behavior, mission topology, Privacy Veil, procedural spatial audio, semantic anchors, code-viewer/diff geometry, fixture sockets, reconnect, and the real full-stack path. Simulated-joint coverage adds ray selection, buffered clicks, scrolling, two-hand movement/scale, tracking loss, privacy/approval gates, transcript pagination and adaptive-quality behavior without a device.
+Automated verification at rev 1 included 28 Python tests (26 passed; two optional installed-provider-SDK checks skipped in the minimal environment) plus 19 headless client scenes. `scripts/test_all.sh` runs the entire suite, including Council separation/failure cancellation, impact minimization, joint/pinch interpretation, quick intents, cognition privacy/history behavior, mission topology, Privacy Veil, procedural spatial audio, semantic anchors, code-viewer/diff geometry, fixture sockets, reconnect, and the real full-stack path. Simulated-joint coverage adds ray selection, buffered clicks, scrolling, two-hand movement/scale, tracking loss, privacy/approval gates, transcript pagination and adaptive-quality behavior without a device.
 
 ## Rev 2: spatial dev cockpit
 
@@ -54,7 +54,22 @@ Automated verification currently includes 28 Python tests (26 passed; two option
 | Android dictation adapter boundary | Complete in code; plugin build user-gated | Adapter state machine tested with an injected bridge; Kotlin plugin source and build helper included |
 | Portable Android XR export preset | Complete in project; toolchain-dependent | Vendor-neutral Khronos preset alongside the pinned Meta preset |
 
-Automated verification for rev 2 currently includes 64 Python tests (62 passed; the same two optional provider-SDK checks skipped) plus 22 headless client scenes, with `scripts/test_all.sh` refreshing Godot's class cache and running the complete original suite plus cockpit transport, cockpit panel, and Android dictation boundary coverage.
+Automated verification for rev 2 included 64 Python tests (62 passed; the same two optional provider-SDK checks skipped) plus 22 headless client scenes, with `scripts/test_all.sh` refreshing Godot's class cache and running the complete original suite plus cockpit transport, cockpit panel, and Android dictation boundary coverage.
+
+## Rev 3: fleet and daemon desktop app
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| Mission fan-out to N isolated agents | Complete | `test_mission_flow` fans a goal out, compares, and pick-one merges |
+| Pick-one merge | Complete | The chosen branch is merged to the base branch through a temporary worktree; losing worktrees are discarded |
+| Time and cost budgets | Complete in code | `test_mission_budget` and `test_mission_cost_budget` cancel the fleet and assert `mission.budget_exceeded` |
+| Mission persistence | Complete | The `missions` table is saved by `MissionService` and reloaded by `MissionService.load()` |
+| Normalized AgentHarness seam | Complete | `test_agent_harness` and `test_harness_run` drive `CodexCliHarness` without network access |
+| Text-first composer + spatial keyboard | Complete in headless scene tests | `palm_composer_smoke` covers typing, Enter/Esc, and the qwerty fallback; hardware ergonomics pending |
+| Fleet constellation (`/fleet`) | Complete in code; hardware comfort pending | `mission_topology_smoke` asserts per-mission stars and the hub-to-agent link |
+| Daemon desktop app hosts the daemon | Complete in code; GUI run user-gated | `desktop/tests/test_runtime.py` exercises status, pause, chat, and mission fan-out without a window |
+
+Automated verification now includes ~102 backend tests, 26 headless client scenes, and 4 desktop-runtime tests, all invoked by `scripts/test_all.sh`.
 
 ## Deliberate hardware/service gates
 

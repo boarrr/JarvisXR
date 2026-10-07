@@ -95,6 +95,22 @@ class DaemonRuntime:
             return ""
         return self._server.pairing.issue_code()
 
+    def qr_data_uri(self, text: str) -> str:
+        """A PNG data URI for a QR code, or "" if segno is unavailable."""
+        if not text:
+            return ""
+        try:
+            import base64
+            import io
+
+            import segno
+
+            buffer = io.BytesIO()
+            segno.make(text, micro=False).save(buffer, kind="png", scale=4, border=2)
+            return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+        except Exception:  # noqa: BLE001 - QR is a nicety
+            return ""
+
     def devices(self) -> list[dict[str, Any]]:
         if self._server is None:
             return []
