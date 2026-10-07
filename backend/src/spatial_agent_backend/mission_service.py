@@ -2,6 +2,8 @@ from __future__ import annotations
 
 """Mission service: fan out a goal to N agents and merge the winner (pick-one)."""
 
+import asyncio
+from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from .mission import Mission
@@ -9,6 +11,7 @@ from .thread_service import ThreadService
 from .workspace import WorkspaceError, WorkspaceManager
 
 _TERMINAL = {"complete", "error", "idle"}
+_FINISHED = {"merged", "cancelled", "error"}
 
 
 class MissionService:
@@ -17,6 +20,8 @@ class MissionService:
         self.workspaces = workspaces
         self.coordinator = coordinator
         self._missions: dict[str, Mission] = {}
+        self._watchdogs: dict[str, asyncio.Task] = {}
+        self._emits: dict[str, Callable[..., Awaitable[Any]]] = {}
 
     def get(self, mission_id: str) -> Mission | None:
         return self._missions.get(mission_id)
@@ -74,7 +79,33 @@ class MissionService:
                 emit=emit,
             )
         await emit("mission.status", "", self._wire(mission))
+        self._emits[mission.id] = emit
+        if mission.budget_seconds > 0:
+            self._watchdogs[mission.id] = asyncio.create_task(self._budget_guard(mission))
         return True
+
+    async def _budget_guard(self, mission: Mission) -> None:
+        try:
+            await asyncio.sleep(mission.budget_seconds)
+        except asyncio.CancelledError:
+            return
+        if mission.status in _FINISHED:
+            return
+        for thread_id in list(mission.agent_thread_ids):
+            await self.coordinator.cancel(session_id=mission.session_id, thread_id=thread_id)
+        mission.status = "error"
+        emit = self._emits.get(mission.id)
+        if emit is not None:
+            await emit(
+                "mission.budget_exceeded",
+                "",
+                {"mission_id": mission.id, "budget_seconds": mission.budget_seconds},
+            )
+
+    def _stop_watchdog(self, mission_id: str) -> None:
+        task = self._watchdogs.pop(mission_id, None)
+        if task is not None and not task.done():
+            task.cancel()
 
     async def status(self, mission_id: str) -> dict:
         mission = self._missions.get(mission_id)
@@ -87,6 +118,7 @@ class MissionService:
                 statuses.append(thread.status)
         if mission.status == "running" and statuses and all(s in _TERMINAL for s in statuses):
             mission.status = "awaiting_merge"
+            self._stop_watchdog(mission.id)
         return self._wire(mission)
 
     async def cancel(self, mission_id: str, agent_id: str = "") -> bool:
@@ -98,6 +130,7 @@ class MissionService:
             await self.coordinator.cancel(session_id=mission.session_id, thread_id=thread_id)
         if not agent_id:
             mission.status = "cancelled"
+            self._stop_watchdog(mission.id)
         return True
 
     async def compare(self, mission_id: str) -> list[dict]:
@@ -134,6 +167,7 @@ class MissionService:
             commit = await self.workspaces.merge_worktree_to_base(worktree)
         except WorkspaceError as error:
             mission.status = "error"
+            self._stop_watchdog(mission.id)
             return {"merged": False, "error": str(error)}
         # Discard the losing agents.
         for thread_id in mission.agent_thread_ids:
@@ -145,6 +179,7 @@ class MissionService:
                 except WorkspaceError:
                     pass
         mission.status = "merged"
+        self._stop_watchdog(mission.id)
         return {"merged": True, "commit": commit, "run_id": run_id}
 
     @staticmethod
