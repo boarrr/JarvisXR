@@ -171,4 +171,11 @@ backend_pid=""
 rm -rf "$test_data_dir"
 test_data_dir=""
 
+# Desktop app runtime (hosts the daemon in-process; no GUI needed).
+PYTHONPATH="$project_root/backend/src:$project_root/desktop/src" \
+	"$backend_python" "$project_root/desktop/tests/test_runtime.py" >/dev/null || {
+	printf '%s\n' "Desktop daemon runtime tests failed" >&2
+	exit 1
+}
+
 printf '%s\n' "All backend, Godot, socket, reconnect, speech-boundary, and full-stack tests passed."

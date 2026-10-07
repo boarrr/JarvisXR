@@ -1,0 +1,181 @@
+from __future__ import annotations
+
+import asyncio
+import threading
+from typing import Any
+
+from spatial_agent_backend.config import Settings
+from spatial_agent_backend.server import SpatialAgentServer
+
+from .linkinfo import link_info
+
+
+class DaemonRuntime:
+    """Runs the daemon on a background asyncio loop and exposes a sync API.
+
+    The desktop app is one process: pywebview owns the main thread, this class
+    owns a daemon thread running the server's event loop.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._server: SpatialAgentServer | None = None
+        self._ready = threading.Event()
+        self._error = ""
+
+    # -- lifecycle -----------------------------------------------------------
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(target=self._run, name="spatial-daemon", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        loop = asyncio.new_event_loop()
+        self._loop = loop
+        asyncio.set_event_loop(loop)
+        try:
+            self._server = SpatialAgentServer(self.settings)
+            loop.run_until_complete(self._server.start())
+            loop.run_until_complete(self._server.wait_until_ready())
+        except Exception as error:  # noqa: BLE001 - surfaced to the UI
+            self._error = str(error)
+            self._ready.set()
+            return
+        self._ready.set()
+        try:
+            loop.run_forever()
+        finally:
+            try:
+                loop.run_until_complete(self._server.stop())
+            finally:
+                loop.close()
+
+    def wait_ready(self, timeout: float = 20.0) -> bool:
+        self._ready.wait(timeout)
+        return not self._error and self._server is not None
+
+    def stop(self) -> None:
+        if self._loop is not None and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._thread is not None:
+            self._thread.join(timeout=10)
+
+    def _submit(self, coro: Any) -> Any:
+        assert self._loop is not None, "runtime is not started"
+        return asyncio.run_coroutine_threadsafe(coro, self._loop)
+
+    # -- status / control ----------------------------------------------------
+    def status(self) -> dict[str, Any]:
+        server = self._server
+        running = self._loop is not None and self._loop.is_running()
+        return {
+            "running": running and server is not None,
+            "paused": server.coordinator.is_paused() if server is not None else False,
+            "provider": server.provider.name if server is not None else "",
+            "harness": self.settings.harness,
+            "port": server.bound_port() if server is not None else self.settings.port,
+            "auth_required": self.settings.auth_required,
+            "error": self._error,
+        }
+
+    def set_paused(self, value: bool) -> dict[str, Any]:
+        if self._server is not None:
+            self._server.coordinator.set_paused(bool(value))
+        return self.status()
+
+    def link_info(self) -> dict[str, Any]:
+        return link_info(self._server, self.settings)
+
+    # -- pairing -------------------------------------------------------------
+    def issue_pairing_code(self) -> str:
+        if self._server is None:
+            return ""
+        return self._server.pairing.issue_code()
+
+    def devices(self) -> list[dict[str, Any]]:
+        if self._server is None:
+            return []
+        return [device.to_wire() for device in self._server.pairing.list_devices()]
+
+    def revoke_device(self, device_id: str) -> bool:
+        if self._server is None:
+            return False
+        return self._server.pairing.revoke(device_id)
+
+    # -- agents --------------------------------------------------------------
+    def threads(self) -> list[dict[str, Any]]:
+        server = self._server
+        if server is None:
+            return []
+        threads = self._submit(server.threads.list_threads()).result(timeout=5)
+        return [
+            {
+                "id": thread.id,
+                "title": thread.title,
+                "status": thread.status,
+                "mission_id": str(thread.metadata.get("mission_id", "")),
+                "messages": [message.to_wire() for message in thread.messages],
+            }
+            for thread in threads
+        ]
+
+    def create_thread(self, title: str, workspace_id: str = "") -> dict[str, Any]:
+        server = self._server
+        if server is None:
+            return {}
+
+        async def _create() -> dict[str, Any]:
+            thread = await server.threads.create_thread(title or "New agent")
+            if workspace_id:
+                metadata = dict(thread.metadata)
+                metadata["workspace_id"] = workspace_id
+                thread.metadata = metadata
+                await server.threads.persist_thread(thread.id)
+            return {"id": thread.id, "title": thread.title}
+
+        return self._submit(_create()).result(timeout=5)
+
+    def rename_thread(self, thread_id: str, title: str) -> dict[str, Any]:
+        server = self._server
+        if server is None:
+            return {}
+        thread = self._submit(server.threads.rename_thread(thread_id, title)).result(timeout=5)
+        return {"id": thread.id, "title": thread.title}
+
+    def archive_thread(self, thread_id: str) -> bool:
+        server = self._server
+        if server is None:
+            return False
+        return bool(self._submit(server.threads.archive_thread(thread_id)).result(timeout=5))
+
+    def send_message(self, thread_id: str, content: str) -> bool:
+        server = self._server
+        if server is None:
+            return False
+
+        async def _noop(event_type: str, tid: str, payload: dict[str, Any]) -> None:
+            return None
+
+        return bool(
+            self._submit(
+                server.coordinator.submit_message(
+                    session_id="desktop-app",
+                    thread_id=thread_id,
+                    content=content,
+                    emit=_noop,
+                )
+            ).result(timeout=10)
+        )
+
+    def cancel_run(self, thread_id: str) -> bool:
+        server = self._server
+        if server is None:
+            return False
+        return bool(
+            self._submit(
+                server.coordinator.cancel(session_id="desktop-app", thread_id=thread_id)
+            ).result(timeout=5)
+        )

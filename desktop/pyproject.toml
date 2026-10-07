@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spatial-agent-desktop"
+version = "0.1.0"
+description = "Desktop control surface for the Spatial Agent daemon (agent office)"
+requires-python = ">=3.11"
+dependencies = [
+    "spatial-agent-backend",
+    "pywebview>=5.0",
+    "pystray>=0.19",
+    "Pillow>=10.0",
+    "segno>=1.6",
+]
+
+[project.scripts]
+spatial-agent-desktop = "spatial_agent_desktop.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+spatial_agent_desktop = ["web/*"]

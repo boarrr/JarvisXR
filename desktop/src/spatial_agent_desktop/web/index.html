@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Spatial Agent</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">SPATIAL&nbsp;AGENT</div>
+    <div id="chips" class="chips"></div>
+    <div class="actions">
+      <button id="btn-new">+ New agent</button>
+      <button id="btn-pause">Pause</button>
+      <button id="btn-pair">Pair headset</button>
+      <button id="btn-devices">Devices</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="office-wrap">
+      <canvas id="office"></canvas>
+      <div id="office-empty">No agents yet. Click “New agent”.</div>
+    </section>
+    <aside id="chat">
+      <div id="chat-title">Select an agent</div>
+      <div id="chat-log"></div>
+      <form id="chat-form">
+        <input id="chat-input" type="text" placeholder="Message the agent…" autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+    </aside>
+  </main>
+
+  <footer id="linkbar"></footer>
+
+  <dialog id="dialog">
+    <div id="dialog-body"></div>
+    <menu><button id="dialog-close">Close</button></menu>
+  </dialog>
+
+  <script src="office.js"></script>
+</body>
+</html>
