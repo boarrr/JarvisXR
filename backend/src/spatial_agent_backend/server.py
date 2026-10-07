@@ -150,6 +150,7 @@ class SpatialAgentServer:
             opencode_directory=settings.opencode_directory,
             test_command=settings.test_command,
             fs_root=settings.fs_root,
+            harness=self._build_harness(settings),
         )
         self.missions = MissionService(self.threads, self.workspaces, self.coordinator)
         # Lifecycle handles for embedding (daemon desktop app).
@@ -159,6 +160,14 @@ class SpatialAgentServer:
         self._websocket_server = None
         self._serve_ready: asyncio.Event | None = None
         self._stop_event: asyncio.Event | None = None
+
+    @staticmethod
+    def _build_harness(settings: Settings):
+        if settings.harness == "codex":
+            from .codex_cli_harness import CodexCliHarness
+
+            return CodexCliHarness()
+        return None
 
     async def initialize(self) -> None:
         await self.threads.initialize()

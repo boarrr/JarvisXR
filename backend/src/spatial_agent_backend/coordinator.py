@@ -134,6 +134,7 @@ class AgentCoordinator:
         opencode_directory: str = "",
         test_command: str = "",
         fs_root: Path | None = None,
+        harness: Any | None = None,
     ) -> None:
         self.threads = threads
         self.provider = provider
@@ -144,6 +145,7 @@ class AgentCoordinator:
         self.opencode_directory = opencode_directory
         self.test_command = test_command
         self.fs_root = fs_root
+        self.harness = harness
         self._opencode_permissions: dict[str, PendingOpencodePermission] = {}
         self._opencode_sessions: dict[str, str] = {}
         self._runs: dict[str, ActiveRun] = {}
@@ -355,6 +357,9 @@ class AgentCoordinator:
                 permission.decision.cancel()
 
     async def _drive_provider(self, run: ActiveRun, emit: EmitEvent) -> None:
+        if self.harness is not None:
+            await self._drive_harness(run, emit)
+            return
         if self.opencode is not None:
             await self._drive_opencode(run, emit)
             return
@@ -458,6 +463,93 @@ class AgentCoordinator:
             )
         finally:
             log_record("opencode_run_end", run_id=run.run_id)
+            if self._runs.get(run.thread_id) is run:
+                self._runs.pop(run.thread_id, None)
+
+    async def _drive_harness(self, run: ActiveRun, emit: EmitEvent) -> None:
+        assert self.harness is not None
+        sequence = 0
+        session_id = ""
+        try:
+            thread = await self.threads.set_status(run.thread_id, "working")
+            await emit("agent.status", run.thread_id, {"status": "working", "run_id": run.run_id})
+            await self._prepare_worktree(run, thread, emit)
+            directory = (
+                str(run.worktree.path) if run.worktree is not None else self.opencode_directory
+            )
+            prompt = ""
+            for message in reversed(thread.messages):
+                if message.role == "user":
+                    prompt = message.content
+                    break
+            session_id = await self.harness.create_session(
+                directory=directory, title=str(getattr(thread, "title", run.thread_id))
+            )
+            await emit(
+                "agent.message.started",
+                run.thread_id,
+                {"message_id": run.message_id, "role": "assistant", "run_id": run.run_id},
+            )
+            await self.harness.prompt(session_id, prompt)
+            async for event in self.harness.events(session_id):
+                if run.cancel_event.is_set():
+                    await self.harness.abort(session_id)
+                    await self._finish_cancelled(run, emit)
+                    return
+                if event.kind in {"delta", "thinking_delta"} and event.text:
+                    sequence += 1
+                    await self.threads.append_delta(run.thread_id, run.message_id, event.text)
+                    await emit(
+                        "agent.message.delta",
+                        run.thread_id,
+                        {
+                            "message_id": run.message_id,
+                            "delta": event.text,
+                            "sequence": sequence,
+                            "run_id": run.run_id,
+                        },
+                    )
+                elif event.kind == "tool":
+                    await emit(
+                        "agent.tool",
+                        run.thread_id,
+                        {"run_id": run.run_id, "tool": event.tool, "detail": event.detail},
+                    )
+                elif event.kind == "error":
+                    raise RuntimeError(event.text or "harness error")
+            await self.threads.complete_message(run.thread_id, run.message_id)
+            await self.threads.set_status(run.thread_id, "complete")
+            await emit(
+                "agent.message.completed",
+                run.thread_id,
+                {"message_id": run.message_id, "run_id": run.run_id},
+            )
+            await emit("agent.status", run.thread_id, {"status": "complete", "run_id": run.run_id})
+            await emit("run.completed", run.thread_id, {"run_id": run.run_id})
+            log_record("run_completed", session_id=run.session_id, thread_id=run.thread_id, run_id=run.run_id)
+        except asyncio.CancelledError:
+            await self._finish_cancelled(run, emit)
+        except Exception as error:
+            await self.threads.complete_message(run.thread_id, run.message_id)
+            await self.threads.set_status(run.thread_id, "error")
+            await emit(
+                "agent.message.completed",
+                run.thread_id,
+                {"message_id": run.message_id, "run_id": run.run_id},
+            )
+            await emit("agent.status", run.thread_id, {"status": "error", "run_id": run.run_id})
+            await emit("run.failed", run.thread_id, {"run_id": run.run_id, "message": str(error)})
+            log_record(
+                "run_failed",
+                session_id=run.session_id,
+                thread_id=run.thread_id,
+                run_id=run.run_id,
+                error_type=type(error).__name__,
+            )
+        finally:
+            if session_id:
+                with suppress(Exception):
+                    await self.harness.close(session_id)
             if self._runs.get(run.thread_id) is run:
                 self._runs.pop(run.thread_id, None)
 
