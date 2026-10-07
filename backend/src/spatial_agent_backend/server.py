@@ -150,6 +150,13 @@ class SpatialAgentServer:
             test_command=settings.test_command,
             fs_root=settings.fs_root,
         )
+        # Lifecycle handles for embedding (daemon desktop app).
+        self._ssl_context: ssl.SSLContext | None = None
+        self._advertiser = None
+        self._serve_task: asyncio.Task | None = None
+        self._websocket_server = None
+        self._serve_ready: asyncio.Event | None = None
+        self._stop_event: asyncio.Event | None = None
 
     async def initialize(self) -> None:
         await self.threads.initialize()
@@ -946,9 +953,10 @@ class SpatialAgentServer:
         )
         return context
 
-    async def serve_forever(self) -> None:
+    async def start(self) -> None:
+        """Bring the daemon up without blocking (for an embedding app)."""
         await self.initialize()
-        ssl_context = self._build_ssl_context()
+        self._ssl_context = self._build_ssl_context()
         log_record(
             "server_started",
             host=self.settings.host,
@@ -956,10 +964,10 @@ class SpatialAgentServer:
             provider=self.provider.name,
             database=str(self.settings.database_path),
             auth_required=self.settings.auth_required,
-            tls=bool(ssl_context),
+            tls=bool(self._ssl_context),
             workspaces=len(self.workspaces.list_workspaces()),
         )
-        advertiser = DiscoveryAdvertiser(
+        self._advertiser = DiscoveryAdvertiser(
             payload=build_beacon(
                 ws_port=self.settings.port,
                 discovery_port=self.settings.discovery_port,
@@ -970,30 +978,66 @@ class SpatialAgentServer:
             port=self.settings.discovery_port,
             enabled=self.settings.discovery_enabled,
         )
-        advertiser.start()
+        self._advertiser.start()
         if self.settings.discovery_enabled:
             log_record(
                 "discovery_started",
                 port=self.settings.discovery_port,
                 ips=local_ipv4_addresses(),
             )
-        try:
-            async with serve(
-                self.handle_connection,
-                self.settings.host,
-                self.settings.port,
-                max_size=self.settings.max_packet_bytes,
-                max_queue=32,
-                ping_interval=20,
-                ping_timeout=20,
-                ssl=ssl_context,
-            ) as websocket_server:
+        self._serve_ready = asyncio.Event()
+        self._stop_event = asyncio.Event()
+        self._serve_task = asyncio.create_task(self._serve())
+
+    async def _serve(self) -> None:
+        async with serve(
+            self.handle_connection,
+            self.settings.host,
+            self.settings.port,
+            max_size=self.settings.max_packet_bytes,
+            max_queue=32,
+            ping_interval=20,
+            ping_timeout=20,
+            ssl=self._ssl_context,
+        ) as websocket_server:
+            self._websocket_server = websocket_server
+            assert self._serve_ready is not None
+            self._serve_ready.set()
+            assert self._stop_event is not None
+            await self._stop_event.wait()
+
+    async def wait_until_ready(self) -> None:
+        if self._serve_ready is not None:
+            await self._serve_ready.wait()
+
+    def bound_port(self) -> int:
+        server = self._websocket_server
+        if server is not None:
+            for sock in getattr(server, "sockets", []) or []:
                 try:
-                    await websocket_server.serve_forever()
-                finally:
-                    await self.mcp.stop()
-        finally:
-            advertiser.stop()
+                    return int(sock.getsockname()[1])
+                except (OSError, IndexError, TypeError):
+                    continue
+        return self.settings.port
+
+    async def stop(self) -> None:
+        if self._stop_event is not None:
+            self._stop_event.set()
+        if self._serve_task is not None:
+            try:
+                await asyncio.wait_for(asyncio.shield(self._serve_task), timeout=5.0)
+            except asyncio.TimeoutError:
+                self._serve_task.cancel()
+        await self.mcp.stop()
+        if self._advertiser is not None:
+            self._advertiser.stop()
+        log_record("server_stopped")
+
+    async def serve_forever(self) -> None:
+        await self.start()
+        await self.wait_until_ready()
+        if self._serve_task is not None:
+            await self._serve_task
 
 
 def _mdns_name() -> str:

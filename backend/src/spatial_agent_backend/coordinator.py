@@ -152,6 +152,7 @@ class AgentCoordinator:
         self._worktrees_by_thread: dict[str, Worktree] = {}
         self._latest_run_by_thread: dict[str, str] = {}
         self._decided_runs: set[str] = set()
+        self._paused = False
 
     async def submit_message(
         self,
@@ -161,6 +162,13 @@ class AgentCoordinator:
         content: str,
         emit: EmitEvent,
     ) -> bool:
+        if self._paused:
+            await emit(
+                "error",
+                thread_id,
+                {"code": "paused", "message": "The daemon is paused; resume before sending"},
+            )
+            return False
         if thread_id in self._runs:
             await emit(
                 "error",
@@ -198,6 +206,14 @@ class AgentCoordinator:
         self._runs[thread_id] = run
         run.task = asyncio.create_task(self._drive_provider(run, emit), name=f"agent-run:{run.run_id}")
         return True
+
+    def set_paused(self, value: bool) -> None:
+        # Pause only stops *starting* new runs; in-flight runs continue unless
+        # the caller also cancels them.
+        self._paused = value
+
+    def is_paused(self) -> bool:
+        return self._paused
 
     async def cancel(self, *, session_id: str, thread_id: str) -> bool:
         run = self._runs.get(thread_id)

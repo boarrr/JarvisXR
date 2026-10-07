@@ -61,6 +61,7 @@ class Settings:
     anthropic_model: str = "claude-sonnet-5"
     openai_model: str = "gpt-6-astra"
     deepseek_model: str = "deepseek-chat"
+    harness: str = "opencode"
     opencode_url: str = "http://127.0.0.1:4096"
     opencode_password: str = ""
     opencode_username: str = "opencode"
@@ -109,6 +110,7 @@ class Settings:
             opencode_username=os.getenv("SPATIAL_AGENT_OPENCODE_USERNAME", "opencode"),
             opencode_directory=os.getenv("SPATIAL_AGENT_OPENCODE_DIR", ""),
             opencode_model=os.getenv("SPATIAL_AGENT_OPENCODE_MODEL", ""),
+            harness=os.getenv("SPATIAL_AGENT_HARNESS", "opencode").strip().lower(),
             test_command=os.getenv("SPATIAL_AGENT_TEST_COMMAND", ""),
             workspace_path=os.getenv("SPATIAL_AGENT_WORKSPACE_PATH", ""),
             workspace_name=os.getenv("SPATIAL_AGENT_WORKSPACE_NAME", ""),
@@ -149,6 +151,8 @@ class Settings:
             )
         if not 1 <= self.port <= 65535:
             raise ValueError("SPATIAL_AGENT_PORT must be between 1 and 65535")
+        if self.harness not in {"opencode", "codex", "fake"}:
+            raise ValueError("SPATIAL_AGENT_HARNESS must be 'opencode', 'codex', or 'fake'")
         if self.max_packet_bytes < 1024:
             raise ValueError("SPATIAL_AGENT_MAX_PACKET_BYTES must be at least 1024")
         if self.commands_per_minute < 1:

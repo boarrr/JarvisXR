@@ -44,6 +44,13 @@ CLIENT_COMMAND_TYPES = frozenset(
         "update.check",
         "update.fetch",
         "update.apply",
+        "mission.create",
+        "mission.status",
+        "mission.cancel",
+        "mission.merge",
+        "agent.spawn",
+        "agent.status",
+        "agent.compare",
     }
 )
 
@@ -68,6 +75,13 @@ V2_COMMAND_TYPES = frozenset(
         "voice.audio.chunk",
         "voice.audio.end",
         "voice.audio.cancel",
+        "mission.create",
+        "mission.status",
+        "mission.cancel",
+        "mission.merge",
+        "agent.spawn",
+        "agent.status",
+        "agent.compare",
     }
 )
 
@@ -193,6 +207,13 @@ def validate_command_payload(command: Envelope) -> None:
         "update.check": set(),
         "update.fetch": {"offset", "length"},
         "update.apply": set(),
+        "mission.create": {"goal", "agent_count", "harness", "budget_seconds"},
+        "mission.status": {"mission_id"},
+        "mission.cancel": {"mission_id", "agent_id"},
+        "mission.merge": {"mission_id", "run_id"},
+        "agent.spawn": {"mission_id", "task", "harness"},
+        "agent.status": {"mission_id"},
+        "agent.compare": {"mission_id"},
     }
     unexpected_fields = set(payload) - allowed_fields[command.type]
     if unexpected_fields:
@@ -216,6 +237,16 @@ def validate_command_payload(command: Envelope) -> None:
         _require_thread_id(command)
     elif command.type == "thread.separate":
         _require_thread_id(command)
+    elif command.type in {"mission.status", "agent.status", "agent.compare", "mission.cancel"}:
+        _required_text(payload, "mission_id", 64)
+    elif command.type == "mission.merge":
+        _required_text(payload, "mission_id", 64)
+        _required_text(payload, "run_id", 64)
+    elif command.type == "mission.create":
+        _required_text(payload, "goal", 4000)
+    elif command.type == "agent.spawn":
+        _required_text(payload, "mission_id", 64)
+        _required_text(payload, "task", 4000)
     elif command.type == "update.fetch":
         for field_name in ("offset", "length"):
             if field_name in payload and not isinstance(payload[field_name], int):
