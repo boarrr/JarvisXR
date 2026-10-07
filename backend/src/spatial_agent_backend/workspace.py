@@ -247,6 +247,41 @@ class WorkspaceManager:
         await self._git(worktree.path, "reset", "--hard", "--quiet")
         await self._git(worktree.path, "clean", "-fdq")
 
+    async def merge_worktree_to_base(self, worktree: Worktree) -> str:
+        """Merge the agent's branch into the workspace base branch.
+
+        Commits any pending agent work, then merges through a temporary worktree
+        so the operator's own checkout and branch are never switched.
+        """
+        workspace = self._require_workspace(worktree.workspace_id)
+        status = await self._git(worktree.path, "status", "--porcelain")
+        if status.strip():
+            await self.commit(worktree, f"spatial agent {worktree.run_id}")
+        merge_path = workspace.path / ".spatial" / "merge" / worktree.run_id
+        merge_path.parent.mkdir(parents=True, exist_ok=True)
+        await self._git(
+            workspace.path, "worktree", "add", "--force", str(merge_path), workspace.base_branch
+        )
+        try:
+            await self._git(
+                merge_path,
+                "-c",
+                "user.name=Spatial Agent",
+                "-c",
+                "user.email=spatial-agent@local",
+                "merge",
+                "--no-ff",
+                "-m",
+                f"spatial agent merge ({worktree.run_id})",
+                worktree.branch,
+            )
+            return (await self._git(merge_path, "rev-parse", "HEAD")).strip()
+        finally:
+            with suppress(Exception):
+                await self._git(
+                    workspace.path, "worktree", "remove", "--force", str(merge_path)
+                )
+
     async def diff(self, worktree: Worktree) -> tuple[list[FileDiff], bool]:
         await self._git(worktree.path, "add", "-A")
         raw = await self._git(

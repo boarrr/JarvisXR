@@ -19,6 +19,7 @@ from . import __version__
 from .auth import PairingManager
 from .config import Settings
 from .coordinator import AgentCoordinator
+from .mission_service import MissionService
 from .discovery import DiscoveryAdvertiser, build_beacon, local_ipv4_addresses
 from .mcp_host import McpHost
 from .observability import configure_logging, log_record
@@ -150,6 +151,7 @@ class SpatialAgentServer:
             test_command=settings.test_command,
             fs_root=settings.fs_root,
         )
+        self.missions = MissionService(self.threads, self.workspaces, self.coordinator)
         # Lifecycle handles for embedding (daemon desktop app).
         self._ssl_context: ssl.SSLContext | None = None
         self._advertiser = None
@@ -303,6 +305,7 @@ class SpatialAgentServer:
                         "diff_review",
                         "tool_catalog",
                         "pairing" if self.settings.auth_required else "open_loopback",
+                        "missions",
                         *(["mcp"] if self.mcp.connected_server_ids() else []),
                         *(["dual_provider_council"] if self.provider.name == "council" else []),
                     ],
@@ -633,6 +636,40 @@ class SpatialAgentServer:
             for source_id in command.payload["thread_ids"]:
                 await emit("thread.archived", str(source_id), {})
             await emit("thread.created", combined.id, {"thread": combined.to_wire()})
+        elif command.type == "mission.create":
+            workspace_id = str(command.payload.get("workspace_id") or "")
+            if not workspace_id and self.workspaces is not None:
+                registered = self.workspaces.list_workspaces()
+                if registered:
+                    workspace_id = registered[0].id
+            mission = await self.missions.create(
+                session_id=session.id,
+                workspace_id=workspace_id,
+                goal=str(command.payload.get("goal", "")),
+                agent_count=int(command.payload.get("agent_count", 3)),
+                harness=str(command.payload.get("harness", self.settings.harness)),
+                budget_seconds=int(command.payload.get("budget_seconds", 0)),
+            )
+            log_record("mission_created", session_id=session.id, mission_id=mission["id"])
+            await emit("mission.created", "", mission)
+            await self.missions.spawn(mission["id"], emit)
+        elif command.type == "mission.status":
+            await emit("mission.status", "", await self.missions.status(str(command.payload["mission_id"])))
+        elif command.type == "mission.cancel":
+            await self.missions.cancel(
+                str(command.payload["mission_id"]), str(command.payload.get("agent_id", ""))
+            )
+            await emit("mission.status", "", await self.missions.status(str(command.payload["mission_id"])))
+        elif command.type == "agent.compare":
+            agents = await self.missions.compare(str(command.payload["mission_id"]))
+            await emit("mission.compare", "", {"agents": agents})
+        elif command.type == "agent.status":
+            await emit("mission.status", "", await self.missions.status(str(command.payload["mission_id"])))
+        elif command.type == "mission.merge":
+            result = await self.missions.merge(
+                str(command.payload["mission_id"]), str(command.payload["run_id"])
+            )
+            await emit("mission.merged", "", result)
         elif command.type == "thread.separate":
             try:
                 restored = await self.threads.separate_thread(command.thread_id)
