@@ -67,6 +67,7 @@ func _ready() -> void:
 	EventBus.cockpit_panel_requested.connect(_on_cockpit_panel_requested)
 	EventBus.debug_message.connect(_on_debug_message)
 	AppState.thread_added.connect(_on_thread_added_for_layout)
+	_palm_console.compose_submitted.connect(_on_compose_submitted)
 	AppState.listening_state = _speech_service.get_state()
 	_register_pane_surfaces()
 
@@ -176,6 +177,8 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_updater.request_update()
 			elif event.target_id == "palm:code_toggle":
 				_code_viewer.toggle()
+			elif event.target_id == "palm:input_focus":
+				_palm_console.begin_typing()
 			elif event.target_id == "palm:review":
 				_toggle_cockpit_review()
 			elif event.target_id == "palm:files":
@@ -313,6 +316,11 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_orb_manager.attract_to(event.target_id, event.world_position)
 		InteractionEvent.Type.ATTRACT_END:
 			_orb_manager.attract_end(event.target_id)
+
+
+func _on_compose_submitted(text: String) -> void:
+	if not _command_router.submit_text(text):
+		EventBus.debug_message.emit("Message could not be sent")
 
 
 func _focus_next_thread() -> void:

@@ -1,6 +1,8 @@
 class_name PalmConsole
 extends Node3D
 
+signal compose_submitted(text: String)
+
 ## Left-hand master panel, redesigned voice-first.
 ##
 ## One scrollable surface: a header (agent + link), a continuously scrolling
@@ -17,7 +19,8 @@ const FOOTER_HEIGHT_PX := 196.0
 const CHAT_RENDER_INTERVAL := 0.1
 const CHAT_SCROLL_LINES_PER_METRE := 55.0
 
-const RECT_TALK := Rect2(16, 664, 608, 74)
+const RECT_INPUT := Rect2(16, 664, 462, 74)
+const RECT_SPEAK := Rect2(486, 664, 138, 74)
 const RECT_SECONDARY := Rect2(16, 754, 608, 62)
 const SECONDARY := [
 	["NEW", "palm:new_agent", "NewTarget"],
@@ -52,6 +55,8 @@ var _subtitle_label: Label = null
 var _build_label: Label = null
 var _body: RichTextLabel = null
 var _voice_label: Label = null
+var _input_field: LineEdit = null
+var _typing := false
 var _buttons: Dictionary = {}
 var _targets: Array[Area3D] = []
 var _button_rects: Array[Rect2] = []
@@ -177,7 +182,8 @@ func _build_screen() -> void:
 	)
 	_voice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
-	_make_button(root, RECT_TALK, "TALK", Color(0.05, 0.55, 0.36), Color(0.7, 1, 0.85), "TalkTarget", "palm:voice_toggle")
+	_make_input_field(root, RECT_INPUT)
+	_make_button(root, RECT_SPEAK, "SPEAK", Color(0.05, 0.55, 0.36), Color(0.7, 1, 0.85), "TalkTarget", "palm:voice_toggle", 18)
 	var count := SECONDARY.size()
 	var gap := 8.0
 	var width := (RECT_SECONDARY.size.x - gap * float(count - 1)) / float(count)
@@ -303,6 +309,124 @@ func _make_button(
 	area.position = _rect_to_local(rect)
 	add_child(area)
 	_targets.append(area)
+
+
+func _make_input_field(root: Control, rect: Rect2) -> void:
+	_input_field = LineEdit.new()
+	_input_field.position = rect.position
+	_input_field.size = rect.size
+	# Text is driven from hardware key events (see _unhandled_input), so the
+	# inner LineEdit never needs OS focus or the Android soft keyboard.
+	_input_field.editable = false
+	_input_field.placeholder_text = "Focus an agent to type…"
+	_input_field.add_theme_font_size_override("font_size", 20)
+	_input_field.add_theme_color_override("font_color", Color(0.9, 0.99, 1.0))
+	_input_field.add_theme_color_override("font_placeholder_color", Color(0.48, 0.66, 0.72))
+	_input_field.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.02, 0.12, 0.16, 1.0)
+	style.border_color = Color(0.2, 0.5, 0.56, 1.0)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(6)
+	_input_field.add_theme_stylebox_override("normal", style)
+	_input_field.add_theme_stylebox_override("focus", style)
+	root.add_child(_input_field)
+
+	# Pinch target over the field: selecting it starts typing.
+	var area := Area3D.new()
+	area.name = "InputTarget"
+	area.set_script(SPATIAL_TARGET_SCRIPT)
+	area.set("target_id", "palm:input_focus")
+	area.collision_layer = 2
+	area.collision_mask = 0
+	area.monitoring = false
+	area.add_to_group("interactable")
+	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
+	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.08)
+	var collision := CollisionShape3D.new()
+	collision.shape = shape
+	area.add_child(collision)
+	area.position = _rect_to_local(rect)
+	add_child(area)
+	_targets.append(area)
+
+
+func is_typing() -> bool:
+	return _typing
+
+
+func get_draft() -> String:
+	return _input_field.text if _input_field != null else ""
+
+
+func begin_typing() -> bool:
+	if _input_field == null:
+		return false
+	if AppState.focused_thread_id.is_empty():
+		AppState.set_update_banner("Focus an agent before typing")
+		return false
+	if not AppState.approval_requests.is_empty():
+		AppState.set_update_banner("Resolve the approval before typing")
+		return false
+	_typing = true
+	AppState.text_input_active = true
+	_refresh_header()
+	_render_now()
+	return true
+
+
+func end_typing() -> void:
+	if not _typing:
+		return
+	_typing = false
+	AppState.text_input_active = false
+	_refresh_header()
+	_render_now()
+
+
+func submit_composer() -> bool:
+	if _input_field == null:
+		return false
+	var text := _input_field.text.strip_edges()
+	if text.is_empty():
+		end_typing()
+		return false
+	_input_field.text = ""
+	compose_submitted.emit(text)
+	end_typing()
+	return true
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not _typing:
+		return
+	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	var key := event as InputEventKey
+	if key.keycode in [KEY_ENTER, KEY_KP_ENTER]:
+		submit_composer()
+		get_viewport().set_input_as_handled()
+		return
+	if key.keycode == KEY_ESCAPE:
+		end_typing()
+		get_viewport().set_input_as_handled()
+		return
+	if key.keycode == KEY_BACKSPACE:
+		_input_field.text = _input_field.text.substr(0, maxi(0, _input_field.text.length() - 1))
+		_render_now()
+		get_viewport().set_input_as_handled()
+		return
+	if key.unicode > 0 and key.unicode != 8:
+		_input_field.text += char(key.unicode)
+		_render_now()
+		get_viewport().set_input_as_handled()
+
+
+func _render_now() -> void:
+	if _viewport != null and visible:
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 func _rect_to_local(rect: Rect2) -> Vector3:
@@ -510,6 +634,7 @@ func _set_console_visible(value: bool) -> void:
 
 func _hide_panel() -> void:
 	if visible:
+		end_typing()
 		_set_console_visible(false)
 		_swipe_active = false
 
@@ -533,14 +658,23 @@ func _refresh_header() -> void:
 	var thread := AppState.get_thread(AppState.focused_thread_id)
 	if thread == null:
 		_title_label.text = "NO AGENT"
-		_subtitle_label.text = "Focus an agent, then tap TALK"
+		_subtitle_label.text = "Focus an agent, then type or SPEAK"
 	else:
 		_title_label.text = thread.title.to_upper()
-		_subtitle_label.text = "%s  ·  %s  ·  %s" % [
-			AgentThread.status_label(thread.status),
-			AppState.provider_name.to_upper(),
-			AppState.connection_state.to_upper(),
-		]
+		if _typing:
+			_subtitle_label.text = "TYPING  ·  Enter to send  ·  Esc to cancel"
+		else:
+			_subtitle_label.text = "%s  ·  %s  ·  %s" % [
+				AgentThread.status_label(thread.status),
+				AppState.provider_name.to_upper(),
+				AppState.connection_state.to_upper(),
+			]
+	if _input_field != null:
+		_input_field.placeholder_text = (
+			"Focus an agent to type…"
+			if thread == null
+			else ("Type a message… then press Enter" if _typing else "Tap here to type · or SPEAK")
+		)
 	var build := str(ProjectSettings.get_setting("application/config/version", "dev"))
 	_build_label.text = "BUILD %s" % build
 	var banner := AppState.update_banner.strip_edges()
