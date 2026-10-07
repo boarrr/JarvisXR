@@ -79,7 +79,7 @@ func refresh() -> void:
 	var pairs := _derive_pairs()
 	for pair in pairs:
 		_add_link(str(pair.get("source", "")), str(pair.get("target", "")))
-	_count_label.text = "%02d LINKS // CONTENT-BLIND" % _edges.size()
+	_count_label.text = "%02d LINKS · %02d MISSIONS // CONTENT-BLIND" % [_edges.size(), mission_count()]
 
 
 func get_link_count() -> int:
@@ -100,6 +100,30 @@ func get_debug_text() -> String:
 func _derive_pairs() -> Array[Dictionary]:
 	var pairs: Array[Dictionary] = []
 	var seen: Dictionary = {}
+
+	# Fleet constellation: star each mission from its first agent.
+	var missions: Dictionary = {}
+	for thread_id in AppState.ordered_thread_ids:
+		var thread := AppState.get_thread(thread_id)
+		if thread == null:
+			continue
+		var mission_id := str(thread.metadata.get("mission_id", ""))
+		if mission_id.is_empty():
+			continue
+		if not missions.has(mission_id):
+			missions[mission_id] = []
+		(missions[mission_id] as Array).append(thread_id)
+	for mission_id in missions.keys():
+		var members: Array = missions[mission_id]
+		if members.size() < 2:
+			continue
+		var hub := str(members[0])
+		for index in range(1, members.size()):
+			_append_pair(pairs, seen, hub, str(members[index]))
+			if pairs.size() >= MAX_LINKS:
+				break
+
+	# Combined-thread parentage.
 	for thread_id in AppState.ordered_thread_ids:
 		var thread := AppState.get_thread(thread_id)
 		if thread == null or thread.parent_thread_id.is_empty():
@@ -107,6 +131,7 @@ func _derive_pairs() -> Array[Dictionary]:
 		if AppState.get_thread(thread.parent_thread_id) != null:
 			_append_pair(pairs, seen, thread.parent_thread_id, thread.id)
 
+	# Focus star fallback so the map stays useful without missions.
 	var focus_id := AppState.focused_thread_id
 	if focus_id.is_empty() and not AppState.ordered_thread_ids.is_empty():
 		focus_id = AppState.ordered_thread_ids.front()
@@ -120,6 +145,17 @@ func _derive_pairs() -> Array[Dictionary]:
 				if pairs.size() >= MAX_LINKS:
 					break
 	return pairs
+
+
+func mission_count() -> int:
+	var missions: Dictionary = {}
+	for thread_id in AppState.ordered_thread_ids:
+		var thread := AppState.get_thread(thread_id)
+		if thread == null:
+			continue
+		if not str(thread.metadata.get("mission_id", "")).is_empty():
+			missions[str(thread.metadata.get("mission_id", ""))] = true
+	return missions.size()
 
 
 func _append_pair(pairs: Array[Dictionary], seen: Dictionary, source: String, target: String) -> void:

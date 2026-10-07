@@ -520,6 +520,8 @@ func _on_cockpit_panel_requested(panel: String) -> void:	match panel:
 				_file_viewer.open_focused_thread()
 		"daemon":
 			_daemon_settings_panel.toggle()
+		"missions":
+			_mission_topology.toggle_enabled()
 
 
 func _respond_to_next_approval(decision: String) -> bool:

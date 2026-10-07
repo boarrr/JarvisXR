@@ -36,7 +36,7 @@ func get_help_text() -> String:
 	return (
 		"/new TITLE · /focus NAME · /rename TITLE · /archive · /cancel · /list\n"
 		+ "/pair CODE · /workspaces · /workspace NAME · /files · /diff · /daemon\n"
-		+ "/apply · /reject · /tools · /tool status|clock|note · /mission GOAL"
+		+ "/apply · /reject · /tools · /tool status|clock|note · /mission GOAL · /fleet"
 	)
 
 
@@ -104,6 +104,9 @@ func _route_command(text: String) -> bool:
 				bridge.send_command("mission.create", {"goal": argument, "agent_count": 3}),
 				"Fleet launched for: %s" % argument
 			)
+		"/fleet":
+			EventBus.cockpit_panel_requested.emit("missions")
+			return _report(true, "Fleet constellation toggled")
 		"/pair":
 			if argument.is_empty():
 				return _report(false, "Usage: /pair CODE")
