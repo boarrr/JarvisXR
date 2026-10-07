@@ -52,7 +52,6 @@ func _run() -> void:
 	main._on_interaction_event(InteractionEvent.new(
 		InteractionEvent.Type.SELECT, "palm:input_focus", InteractionEvent.Source.HAND, null, {}
 	))
-	palm._unhandled_input(_key(120, KEY_X))
 	palm._unhandled_input(_key(0, KEY_ESCAPE))
 	_check(not palm.is_typing(), "escape exits typing mode")
 
@@ -60,10 +59,31 @@ func _run() -> void:
 	var speak := palm.get_node("TalkTarget") as SpatialActionTarget
 	_check(speak != null and speak.target_id == "palm:voice_toggle", "SPEAK target still drives voice")
 
+	# On-screen keyboard appears when no hardware keyboard has been seen.
+	var keyboard := main.get_node("SpatialKeyboard") as SpatialKeyboard
+	main._on_interaction_event(InteractionEvent.new(
+		InteractionEvent.Type.SELECT, "palm:input_focus", InteractionEvent.Source.HAND, null, {}
+	))
+	_check(keyboard.is_open(), "on-screen keyboard opens when no hardware keyboard is present")
+	_click(main, "kbd:k:q")
+	_click(main, "kbd:special:space")
+	_click(main, "kbd:k:w")
+	_check(palm.get_draft() == "q w", "on-screen keys append to the composer")
+	_click(main, "kbd:special:backspace")
+	_check(palm.get_draft() == "q ", "on-screen backspace edits the composer")
+	_click(main, "kbd:special:enter")
+	_check(not keyboard.is_open(), "on-screen ENTER submits and hides the keyboard")
+
 	if not _failed:
 		print("[TEST] Palm composer checks passed")
 	main.queue_free()
 	get_tree().quit(1 if _failed else 0)
+
+
+func _click(main: Node, target_id: String) -> void:
+	main._on_interaction_event(InteractionEvent.new(
+		InteractionEvent.Type.SELECT, target_id, InteractionEvent.Source.HAND, null, {}
+	))
 
 
 func _check(condition: bool, description: String) -> void:

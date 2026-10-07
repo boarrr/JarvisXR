@@ -16,6 +16,7 @@ var _speech_service: SpeechService = null
 @onready var _thread_panel: ThreadPanel = $ThreadPanel
 @onready var _orb_manager: OrbManager = $OrbManager
 @onready var _palm_console: PalmConsole = $PalmConsole
+@onready var _spatial_keyboard: SpatialKeyboard = $SpatialKeyboard
 @onready var _updater: UpdaterService = $UpdaterService
 @onready var _workspace_panel: WorkspacePanel = $WorkspacePanel
 @onready var _diff_review_panel: DiffReviewPanel = $DiffReviewPanel
@@ -34,6 +35,7 @@ var _pending_combine_sources: Array[String] = []
 var _pending_combine_positions: Dictionary = {}
 var _pending_bind_thread := false
 var _pane_surfaces: Dictionary = {}
+var _hardware_key_seen := false
 
 
 func _ready() -> void:
@@ -68,6 +70,8 @@ func _ready() -> void:
 	EventBus.debug_message.connect(_on_debug_message)
 	AppState.thread_added.connect(_on_thread_added_for_layout)
 	_palm_console.compose_submitted.connect(_on_compose_submitted)
+	_spatial_keyboard.key_input.connect(_on_keyboard_key)
+	_spatial_keyboard.special.connect(_on_keyboard_special)
 	AppState.listening_state = _speech_service.get_state()
 	_register_pane_surfaces()
 
@@ -178,7 +182,10 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 			elif event.target_id == "palm:code_toggle":
 				_code_viewer.toggle()
 			elif event.target_id == "palm:input_focus":
-				_palm_console.begin_typing()
+				if _palm_console.begin_typing() and not _hardware_key_seen:
+					_spatial_keyboard.open()
+			elif event.target_id.begins_with("kbd:"):
+				_spatial_keyboard.handle_key(event.target_id)
 			elif event.target_id == "palm:review":
 				_toggle_cockpit_review()
 			elif event.target_id == "palm:files":
@@ -318,7 +325,31 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 			_orb_manager.attract_end(event.target_id)
 
 
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		# Once a hardware keyboard is used we stop auto-showing the on-screen one.
+		_hardware_key_seen = true
+
+
+func _on_keyboard_key(text: String) -> void:
+	_palm_console.append_char(text)
+
+
+func _on_keyboard_special(name: String) -> void:
+	match name:
+		"backspace":
+			_palm_console.backspace()
+		"space":
+			_palm_console.append_char(" ")
+		"enter":
+			_palm_console.submit_composer()
+			_spatial_keyboard.close()
+		"close":
+			_spatial_keyboard.close()
+
+
 func _on_compose_submitted(text: String) -> void:
+	_spatial_keyboard.close()
 	if not _command_router.submit_text(text):
 		EventBus.debug_message.emit("Message could not be sent")
 

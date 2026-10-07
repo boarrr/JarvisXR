@@ -361,6 +361,20 @@ func get_draft() -> String:
 	return _input_field.text if _input_field != null else ""
 
 
+func append_char(character: String) -> void:
+	if _input_field == null:
+		return
+	_input_field.text += character
+	_render_now()
+
+
+func backspace() -> void:
+	if _input_field == null:
+		return
+	_input_field.text = _input_field.text.substr(0, maxi(0, _input_field.text.length() - 1))
+	_render_now()
+
+
 func begin_typing() -> bool:
 	if _input_field == null:
 		return false
