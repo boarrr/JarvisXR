@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: spatial-agent-desktop
+Version: 0.1.0
+Summary: Desktop control surface for the Spatial Agent daemon (agent office)
+Requires-Python: >=3.11
+Requires-Dist: spatial-agent-backend
+Requires-Dist: pywebview>=5.0
+Requires-Dist: pystray>=0.19
+Requires-Dist: Pillow>=10.0
+Requires-Dist: segno>=1.6

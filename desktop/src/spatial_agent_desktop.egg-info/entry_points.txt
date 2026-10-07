@@ -1,0 +1,2 @@
+[console_scripts]
+spatial-agent-desktop = spatial_agent_desktop.app:main

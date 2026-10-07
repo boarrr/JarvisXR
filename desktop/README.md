@@ -5,7 +5,23 @@ create/select/delete agents, chat with them, pause runs, and see the
 headset-facing link info (LAN URLs, CA fingerprint, pairing code, paired
 devices).
 
-## Run
+## Quick start (one command)
+
+From the repo root:
+
+```sh
+./scripts/run_daemon_app.sh
+```
+
+This creates the app's virtualenv, starts `opencode serve` (+ `whisper-server`
+when available), then opens the app window (which hosts the daemon on the LAN
+with TLS + pairing). Close the window to stop everything. The first run installs
+dependencies, so it takes a minute; later runs are instant.
+
+- UI-only demo (no agent backend): `SPATIAL_AGENT_PROVIDER=fake ./scripts/run_daemon_app.sh`
+- Codex instead of opencode: `SPATIAL_AGENT_HARNESS=codex ./scripts/run_daemon_app.sh`
+
+## Manual run
 
 ```sh
 cd desktop

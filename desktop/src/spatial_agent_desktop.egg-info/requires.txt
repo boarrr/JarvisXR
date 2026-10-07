@@ -1,0 +1,5 @@
+spatial-agent-backend
+pywebview>=5.0
+pystray>=0.19
+Pillow>=10.0
+segno>=1.6
