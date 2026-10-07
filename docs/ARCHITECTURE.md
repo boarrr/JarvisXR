@@ -1,9 +1,9 @@
 # Spatial Agent Interface Architecture
 
-The system is a dual-mode Godot presentation client—desktop simulator or Quest OpenXR—and a separate local Python agent service. One Godot unit is approximately one meter.
+The system is an XR-only Godot presentation client—OpenXR hand tracking on device, with a headless test runtime—and a separate local Python agent service. One Godot unit is approximately one meter.
 
 ```text
-Desktop simulator or Quest optical hand trackers
+Quest optical hand trackers (simulated joints in headless tests)
              │ semantic InteractionEvent
              ▼
       InteractionManager ───────► AppState ───────► orbs / panels
@@ -24,10 +24,10 @@ Desktop simulator or Quest optical hand trackers
 
 ## Godot client
 
-`Main` composes `UserRig`, `XRRuntime`, `OrbManager`, `CognitionLayer`, `MissionTopology`, `PrivacyVeil`, `InteractionManager`, `ThreadPanel`, `CodeViewer`, `QuickIntentPanel`, `PalmConsole`, `HandRayVisualizer`, `DesktopComposer`, `ApprovalPanel`, `BackendBridge`, both transports, `CommandRouter`, `LocalWhisperSpeechService`, `SpatialAudioCueService`, `RoomAnchorRegistry`, and diagnostics.
+`Main` composes `UserRig`, `XRRuntime`, `OrbManager`, `CognitionLayer`, `MissionTopology`, `PrivacyVeil`, `InteractionManager`, `ThreadPanel`, `CodeViewer`, `QuickIntentPanel`, `PalmConsole`, `HandRayVisualizer`, `ApprovalPanel`, `BackendBridge`, both transports, `CommandRouter`, `LocalWhisperSpeechService`, `SpatialAudioCueService`, `RoomAnchorRegistry`, and diagnostics.
 
 - `AppState` is authoritative for presentation state: connection/session, provider/model identity, threads/messages, focus/hover, transcript/listening state, and pending approvals.
-- `XRRuntime` owns the `XROrigin3D`/`XRCamera3D`, enables the XR viewport only when OpenXR initialized at startup, applies passthrough-friendly alpha output and VRS, and mirrors head pose into the device-neutral layout anchor. Desktop remains active when no runtime exists.
+- `XRRuntime` owns the `XROrigin3D`/`XRCamera3D`, enables the XR viewport only when OpenXR initialized at startup, applies passthrough-friendly alpha output and VRS, and mirrors head pose into the device-neutral layout anchor. There is no desktop fallback; the headless test runtime drives the same scenes without a device.
 - `InteractionSource` converts device input to semantic events. `OpenXRInteractionSource` reads tracked joints at Godot's standard left/right paths, requires optical rather than controller-derived hand data, stabilizes the distal-to-tip ray, applies thumb/index pinch hysteresis, quantizes code scroll, and emits bimanual transforms. Presentation objects never read XR APIs.
 - `OrbManager` creates views from thread data, maintains stable identity-to-slot mapping, and lays out overflow on additional rings.
 - `CognitionLayer` listens only to normalized event classifications and content-free command notifications. It maintains a bounded 32-record temporal black box, aggregates token deltas into pulses, draws ten reusable causal nodes, follows the focused orb, and exposes hand targets for rewind/live/forward inspection. Its privacy route switches between sealed local, single hosted egress, and explicit dual hosted Council egress.
@@ -35,7 +35,7 @@ Desktop simulator or Quest optical hand trackers
 - `PrivacyVeil` is a presentation privacy state in `AppState`. Views fail closed while it is active, the palm toggle remains reachable, and active speech capture is stopped. It does not pretend to cancel backend work or erase persisted data.
 - `DiffSculptor` classifies bounded diff lines into addition, removal, and context geometry attached to `CodeViewer`; no extra code copy is retained.
 - `SpatialAudioCueService` maps semantic states to short WAVs synthesized in memory and places playback at the relevant orb. `RoomAnchorRegistry` accepts only bounded semantic transforms for the session and advertises that raw scene mesh storage and vendor scene APIs are disabled.
-- `ThreadPanel`, `CodeViewer`, `QuickIntentPanel`, `PalmConsole`, `DesktopComposer`, and `ApprovalPanel` are views over domain state. World-space controls expose semantic target IDs; they never call a provider. The quick-intent surface preserves a completely hand-only path when mobile speech is unavailable.
+- `ThreadPanel`, `CodeViewer`, `QuickIntentPanel`, `PalmConsole`, and `ApprovalPanel` are views over domain state. World-space controls expose semantic target IDs; they never call a provider. The quick-intent surface preserves a completely hand-only path when mobile speech is unavailable.
 - `BackendTransport` has fake and WebSocket implementations. `BackendBridge` alone reduces normalized events into `AppState`; its command notification deliberately omits payloads so telemetry consumers cannot observe prompt content.
 - `BackendClient` performs protocol handshakes, bounded exponential reconnect, fresh snapshot requests, packet checks, and UTF-8 JSON decoding without blocking the frame loop.
 - `LocalWhisperSpeechService` records from a muted capture bus, runs configurable `whisper-cli` asynchronously, emits transcript signals, and deletes service-owned audio by default. It does not decide routing.
@@ -59,4 +59,4 @@ Every command and event uses the same protocol-v1 envelope. IDs and monotonicall
 
 ## Portability boundary
 
-Desktop mode is complete without OpenXR. Android feature overrides activate OpenXR, XR shaders, hand extensions, alpha passthrough, and the WebSocket backend only in the Quest export. The Meta vendor plugin is intentionally a verified setup-time dependency instead of an 85 MB checked-in binary tree. ADB reverse keeps the provider service loopback-only during development. See [Quest 3/3S setup](QUEST_3S_SETUP.md) and [Hand-only XR interaction target](HAND_INTERACTION_TARGET.md).
+There is no desktop runtime; the headless test runtime runs the same scenes without OpenXR. Android feature overrides activate OpenXR, XR shaders, hand extensions, alpha passthrough, and the WebSocket backend only in the Quest export. The Meta vendor plugin is intentionally a verified setup-time dependency instead of an 85 MB checked-in binary tree. ADB reverse keeps the provider service loopback-only during development. See [Quest 3/3S setup](QUEST_3S_SETUP.md) and [Hand-only XR interaction target](HAND_INTERACTION_TARGET.md).

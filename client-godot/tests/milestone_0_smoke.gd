@@ -17,38 +17,18 @@ func _run() -> void:
 
 	var rig := main.get_node("UserRig") as UserRig
 	var overlay := main.get_node("DebugOverlay") as DebugOverlay
+	var xr_runtime := main.get_node("XRRuntime") as XRRuntime
 	_check(rig != null, "UserRig exists")
 	_check(overlay != null, "DebugOverlay exists")
 	_check(absf(rig.global_position.y - 1.65) < EPSILON, "eye height is 1.65 m")
-	_check(rig.get_interaction_source().is_available(), "desktop source is available")
-	_check(ServiceRegistry.input_router.get_active_source() == rig.get_interaction_source(), "desktop source is active through InputRouter")
 
-	var start_position := rig.global_position
-	Input.action_press("move_forward")
-	rig._process(1.0)
-	Input.action_release("move_forward")
-	_check(rig.global_position.z < start_position.z - 3.0, "forward movement follows camera yaw basis")
-
-	rig._apply_mouse_look(Vector2(-deg_to_rad(90.0) / rig.mouse_sensitivity, 0.0))
-	var turned_position := rig.global_position
-	Input.action_press("move_forward")
-	rig._process(1.0)
-	Input.action_release("move_forward")
-	var turned_displacement := rig.global_position - turned_position
-	_check(absf(turned_displacement.x) > 3.0 and absf(turned_displacement.z) < 0.01, "movement rotates with yaw")
-
-	rig._apply_mouse_look(Vector2(0.0, -100000.0))
-	_check(rig.get_pitch_degrees() <= 85.001, "pitch is clamped")
-
-	for action in ["move_forward", "move_back", "move_left", "move_right", "move_up", "move_down", "ui_cancel", "pointer_select", "pointer_secondary", "push_to_talk", "focus_next", "debug_toggle"]:
-		_check(InputMap.has_action(action), "input action exists: %s" % action)
-
-	var toggle_event := InputEventAction.new()
-	toggle_event.action = "debug_toggle"
-	toggle_event.pressed = true
-	var overlay_was_visible := overlay.visible
-	overlay._unhandled_input(toggle_event)
-	_check(overlay.visible != overlay_was_visible, "F3 toggles the debug overlay")
+	var hand_source := xr_runtime.get_hand_source()
+	_check(hand_source != null, "XR runtime exposes an OpenXR hand source")
+	_check(not hand_source.is_available(), "OpenXR hand source stays inactive without hand tracking")
+	_check(
+		ServiceRegistry.input_router.get_active_source() == hand_source,
+		"OpenXR hand source is registered as the active source"
+	)
 
 	var openxr_source := OpenXRInteractionSource.new()
 	_check(not openxr_source.is_available(), "OpenXR hand source remains inactive without tracking")

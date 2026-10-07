@@ -13,7 +13,7 @@ enum Phase {
 
 var _main: Node = null
 var _router: CommandRouter = null
-var _source: DesktopInteractionSource = null
+var _source: OpenXRInteractionSource = null
 var _thread_id: String = ""
 var _phase: Phase = Phase.WAITING_FOR_THREAD
 var _elapsed: float = 0.0
@@ -30,7 +30,8 @@ func _ready() -> void:
 	_main = main_scene.instantiate()
 	add_child(_main)
 	_router = _main.get_node("CommandRouter") as CommandRouter
-	_source = (_main.get_node("UserRig") as UserRig).get_interaction_source()
+	_source = (_main.get_node("XRRuntime") as XRRuntime).get_hand_source()
+	_source.set_hand_tracking_active(true)
 
 
 func _process(delta: float) -> void:
@@ -60,10 +61,10 @@ func _process(delta: float) -> void:
 			if AppState.approval_requests.is_empty():
 				return
 			_check((_main.get_node("ApprovalPanel") as ApprovalPanel).is_open(), "real approval event opens the spatial panel")
-			var approval_event := InputEventAction.new()
-			approval_event.action = "approval_accept"
-			approval_event.pressed = true
-			_source._input(approval_event)
+			_check(
+				_source.submit_explicit_pinch_action(InteractionEvent.Type.APPROVE),
+				"hand pinch emits the approve action"
+			)
 			_phase = Phase.WAITING_FOR_TOOL
 		Phase.WAITING_FOR_TOOL:
 			var thread := AppState.get_thread(_thread_id)

@@ -18,17 +18,16 @@ func _run() -> void:
 	var transport := main.get_node("BackendBridge/FakeBackendTransport") as FakeBackendTransport
 	var manager := main.get_node("InteractionManager") as InteractionManager
 	var rig := main.get_node("UserRig") as UserRig
-	var source := rig.get_interaction_source()
+	var source := (main.get_node("XRRuntime") as XRRuntime).get_hand_source()
+	source.set_hand_tracking_active(true)
+	var orb := (main.get_node("OrbManager") as OrbManager).get_orb("thread_demo")
 	_check(panel != null and not panel.is_open(), "thread panel starts closed")
 	_check(AppState.get_thread("thread_demo").messages.size() == 1, "fake thread has seeded history")
 
-	source._process(0.0)
+	# Point the tracked hand at the orb, then pinch to focus it.
+	_aim_at(source, orb.global_position, false)
 	manager._physics_process(0.0)
-	Input.action_press("pointer_select")
-	source._process(0.0)
-	manager._physics_process(0.0)
-	Input.action_release("pointer_select")
-	source._process(0.0)
+	_aim_at(source, orb.global_position, true)
 	manager._physics_process(0.0)
 
 	_check(not panel.is_open(), "selecting an orb does not open a floating transcript window")
@@ -66,10 +65,10 @@ func _run() -> void:
 	_check(panel.get_rendered_body_text().contains("simulated update from Planning"), "completed response remains readable")
 	_check(not panel.get_rendered_body_text().contains("▌"), "streaming cursor clears on completion")
 
-	var dismiss_event := InputEventAction.new()
-	dismiss_event.action = "pointer_secondary"
-	dismiss_event.pressed = true
-	source._input(dismiss_event)
+	_check(
+		source.submit_explicit_pinch_action(InteractionEvent.Type.DISMISS),
+		"hand pinch emits a semantic dismiss action"
+	)
 	_check(AppState.focused_thread_id.is_empty(), "semantic dismiss clears focus")
 	_check(not panel.is_open(), "semantic dismiss closes the panel")
 	_check(AppState.get_thread("thread_debug_02") != null, "dismiss does not remove the thread")
@@ -78,6 +77,16 @@ func _run() -> void:
 		print("[TEST] Milestone 3 panel and streaming checks passed")
 	main.queue_free()
 	get_tree().quit(1 if _failed else 0)
+
+
+func _aim_at(source: OpenXRInteractionSource, target: Vector3, pinching: bool) -> void:
+	var origin := target + Vector3(0.0, 0.12, 0.9)
+	var forward := (target - origin).normalized()
+	var index_tip := origin
+	var index_distal := origin - forward * 0.05
+	var thumb_tip := index_tip + forward * (0.015 if pinching else 0.08)
+	var palm := Transform3D(Basis.IDENTITY, origin + Vector3(0.0, -0.08, 0.05))
+	source.submit_joint_sample("right", palm, thumb_tip, index_distal, index_tip)
 
 
 func _check(condition: bool, description: String) -> void:

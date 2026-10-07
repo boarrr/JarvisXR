@@ -76,9 +76,6 @@ func _run() -> void:
 		"orb renders updated thread status"
 	)
 
-	for action in ["debug_add_thread", "debug_remove_thread", "debug_cycle_status"]:
-		_check(InputMap.has_action(action), "debug input action exists: %s" % action)
-
 	if not _failed:
 		print("[TEST] Milestone 2 layout checks passed")
 	main.queue_free()

@@ -88,7 +88,6 @@ func _run() -> void:
 		and origin.y > ground.y + 0.5,
 		"XR layout anchors to the standing centre at head height"
 	)
-	AppState.ui_mode = "desktop"
 
 	# Right-hand-only pointer: the left hand informs markers and bimanual input
 	# but must not drive the aim ray (it holds the palm panel).

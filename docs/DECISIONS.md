@@ -2,10 +2,11 @@
 
 ## ADR-001: Godot desktop-first client
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-035
 - **Context:** Spatial ergonomics must be tested before headset integration adds platform complexity.
 - **Decision:** Build and keep a complete desktop simulation path in Godot.
 - **Consequences:** Iteration needs no headset; device input must remain behind adapters.
+- **Note:** The desktop runtime was removed once the OpenXR hand boundary matured.
 
 ## ADR-002: GDScript for client implementation
 
@@ -24,7 +25,7 @@
 ## ADR-004: Semantic InteractionSource abstraction
 
 - **Status:** Accepted
-- **Context:** Desktop simulation, hand rays, pinches, direct touch, and optional gaze stabilization must drive the same application behavior.
+- **Context:** Hand rays, pinches, direct touch, and optional gaze stabilization must drive the same application behavior; the earlier desktop simulation was retired.
 - **Decision:** Translate hardware input behind interchangeable `InteractionSource` implementations.
 - **Consequences:** Presentation objects stay device-neutral; adapters carry device-specific complexity.
 
@@ -54,7 +55,7 @@
 - **Status:** Accepted
 - **Context:** Target devices span Meta and Android XR families.
 - **Decision:** Use OpenXR as the headset boundary, target hand-ray/direct-touch and pinch interaction, and isolate vendor extensions. Controllers are not part of the final required workflow.
-- **Consequences:** Desktop input remains a simulator. Android initializes a real origin/camera and polls standard hand trackers; hardware logic remains isolated in `XRRuntime` and `OpenXRInteractionSource`.
+- **Consequences:** The simulator was retired; `OpenXRInteractionSource` is the sole interaction source. Android initializes a real origin/camera and polls standard hand trackers; hardware logic remains isolated in `XRRuntime` and `OpenXRInteractionSource`.
 
 ## ADR-009: Stable spatial slots
 
@@ -117,7 +118,7 @@
 - **Status:** Accepted
 - **Context:** Users need a glanceable way to inspect code emitted by working agents without turning the XR workspace into a full desktop IDE.
 - **Decision:** Extract the latest streamed fenced code into a floating `CodeEdit` with line numbers, syntax highlighting, minimap, normal-mode status line, and semantic navigation actions.
-- **Consequences:** Desktop shortcuts remain a simulator; the XR surface scrolls with pinch-drag and uses two-hand midpoint, spread, and yaw to reposition/scale/rotate without changing code extraction or thread state.
+- **Consequences:** Desktop shortcuts were retired with the desktop runtime; the XR surface scrolls with pinch-drag and uses two-hand midpoint, spread, and yaw to reposition/scale/rotate without changing code extraction or thread state.
 
 ## ADR-018: Hosted providers remain backend-selectable
 
@@ -234,6 +235,13 @@
 ## ADR-034: Android dictation is a replaceable platform adapter
 
 - **Status:** Accepted (rev 2)
-- **Context:** The desktop whisper.cpp process cannot run inside an APK, but headset users still need free-form input.
-- **Decision:** Add an `AndroidSpeechService` adapter over an optional `AndroidDictation` plugin wrapping the platform recognizer; keep whisper.cpp as the desktop adapter and quick intents as the fallback.
-- **Consequences:** Only finalized text crosses the protocol; without the plugin the app degrades to hand-only intents, and plugin builds remain a user-toolchain step.
+- **Context:** The desktop whisper.cpp process cannot run inside an APK, and the desktop runtime has been retired, but headset users still need free-form input.
+- **Decision:** Add an `AndroidSpeechService` adapter over an optional `AndroidDictation` plugin wrapping the platform recognizer; keep whisper.cpp as a headless-test adapter and quick intents as the fallback.
+- **Consequences:** Only finalized text crosses the protocol; the whisper adapter now runs only in headless tests, the user-facing client degrades to hand-only intents without the plugin, and plugin builds remain a user-toolchain step.
+
+## ADR-035: XR-only client with headless tests
+
+- **Status:** Accepted
+- **Context:** The desktop simulator was retired once the OpenXR hand boundary was mature enough to carry interaction work.
+- **Decision:** The Godot client targets OpenXR hand-tracking only. Device-free CI feeds simulated joint samples through `OpenXRInteractionSource.submit_joint_sample`, so the real interaction pipeline is exercised without a headset.
+- **Consequences:** There is no desktop product surface and hand ergonomics are verified on device, while automated tests remain headless and require no hardware.

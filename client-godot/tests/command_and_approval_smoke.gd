@@ -12,25 +12,17 @@ func _run() -> void:
 	var main := main_scene.instantiate()
 	add_child(main)
 	var router := main.get_node("CommandRouter") as CommandRouter
-	var composer := main.get_node("DesktopComposer") as DesktopComposer
 	var approval_panel := main.get_node("ApprovalPanel") as ApprovalPanel
 	var code_viewer := main.get_node("CodeViewer") as CodeViewer
 	var transport := main.get_node("BackendBridge/FakeBackendTransport") as FakeBackendTransport
-	var source := (main.get_node("UserRig") as UserRig).get_interaction_source()
+	var source := (main.get_node("XRRuntime") as XRRuntime).get_hand_source()
+	source.set_hand_tracking_active(true)
 
-	_check(router != null and composer != null, "desktop command workflow is composed")
-	_check(InputMap.has_action("message_compose"), "message composer action exists")
-	_check(InputMap.has_action("approval_accept") and InputMap.has_action("approval_deny"), "approval actions exist")
+	_check(router != null, "command router is composed")
 
 	AppState.focus_thread("thread_demo")
 	transport.advance_streams(10.0)
-	_check(not composer.get_node("Panel").visible, "composer stays hidden until explicitly summoned")
-	_check(composer.begin_editing(), "composer enters text mode")
-	_check(composer.get_node("Panel").visible, "summoning the composer reveals desktop text input")
-	_check(AppState.text_input_active and composer.is_editing(), "text mode suppresses spatial input")
-	composer.set_draft("A typed follow-up")
-	composer._submit_current_text()
-	_check(not AppState.text_input_active and composer.get_draft().is_empty(), "successful submit exits text mode")
+	_check(router.submit_text("A typed follow-up"), "typed message is accepted")
 	_check(transport.get_active_stream_count() == 1, "typed message starts a transport run")
 	transport.advance_streams(10.0)
 	_check(AppState.get_thread("thread_demo").messages.back().content.contains("typed follow-up"), "typed message streams a reply")
@@ -53,7 +45,7 @@ func _run() -> void:
 	_check(impact.get_route_node_count() == 3, "approval renders a bounded ghost-future action route")
 	_check(not impact.is_external_impact(), "ghost future marks the simulated write as local-only")
 	_check(not impact.get_description().contains("remember milk"), "ghost future never repeats sensitive tool arguments")
-	_check(not code_viewer.visible and not composer.visible, "approval mode hides lower-priority work surfaces")
+	_check(not code_viewer.visible, "approval mode hides lower-priority work surfaces")
 	_check(approval_panel.get_node("ApproveTarget").get_interaction_target_id() == "approval:approve", "approval exposes a world-space pinch target")
 	_check(approval_panel.get_node("DenyTarget").get_interaction_target_id() == "approval:deny", "denial exposes a world-space pinch target")
 	# The gate is modal: the ray must land on it even if an agent orb is closer.
@@ -78,15 +70,15 @@ func _run() -> void:
 	))
 	_check(not AppState.approval_requests.has(approval_id), "hand pinch approve resolves the request")
 	_check(not approval_panel.is_open(), "approval panel closes after resolution")
-	_check(code_viewer.visible and composer.visible, "work surfaces restore after the modal resolves")
+	_check(code_viewer.visible, "work surfaces restore after the modal resolves")
 	_check(AppState.get_thread(created_id).status == AgentThread.Status.COMPLETE, "approved tool reaches COMPLETE")
 	_check(AppState.get_thread(created_id).messages.back().role == AgentMessage.Role.TOOL, "approved tool result enters transcript")
 
 	_check(router.submit_text("/tool second request"), "second tool request is accepted")
-	var deny_event := InputEventAction.new()
-	deny_event.action = "approval_deny"
-	deny_event.pressed = true
-	source._input(deny_event)
+	_check(
+		source.submit_explicit_pinch_action(InteractionEvent.Type.DENY),
+		"hand pinch emits the deny action"
+	)
 	_check(AppState.approval_requests.is_empty(), "semantic deny resolves the request")
 	_check(AppState.get_thread(created_id).status == AgentThread.Status.IDLE, "denied tool returns to IDLE")
 
@@ -98,17 +90,17 @@ func _run() -> void:
 	)
 
 	var previous_focus := AppState.focused_thread_id
-	var focus_event := InputEventAction.new()
-	focus_event.action = "focus_next"
-	focus_event.pressed = true
-	source._input(focus_event)
+	_check(
+		source.submit_palm_action(InteractionEvent.Type.FOCUS),
+		"palm focus action emits through the hand seam"
+	)
 	_check(AppState.focused_thread_id != previous_focus, "semantic focus-next cycles threads")
 	AppState.focus_thread(created_id)
 	_check(router.submit_text("/archive"), "explicit archive command is accepted")
 	_check(AppState.get_thread(created_id) == null, "archive removes the thread")
 
 	if not _failed:
-		print("[TEST] Command, composer, and approval checks passed")
+		print("[TEST] Command, routing, and approval checks passed")
 	main.queue_free()
 	get_tree().quit(1 if _failed else 0)
 

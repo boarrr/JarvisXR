@@ -10,9 +10,6 @@ func register_source(source: InteractionSource) -> bool:
 	if source == null:
 		push_warning("[INPUT] Ignored a null interaction source")
 		return false
-	if not source.is_available():
-		push_warning("[INPUT] Interaction source is unavailable: %s" % source.source_name)
-		return false
 	if _active_source == source:
 		return true
 

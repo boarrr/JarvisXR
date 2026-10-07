@@ -1,6 +1,6 @@
 # Hand-Only XR Interaction Target
 
-The final product is controller-free. Keyboard, mouse, and desktop shortcuts exist only to make the interaction model testable before headset hardware is introduced.
+The final product is controller-free. Keyboard, mouse, and desktop shortcuts were used only to make the interaction model testable before headset hardware was introduced; they are gone now that the desktop simulator has been retired.
 
 ## Core gesture language
 
@@ -34,12 +34,12 @@ Voice remains complementary for message content, never a required substitute for
 
 ## Current implementation
 
-`XRRuntime` owns a real OpenXR origin/camera and chooses desktop fallback when the interface is absent. `OpenXRInteractionSource` polls both Godot `XRHandTracker` paths, rejects controller-inferred skeletons, requires valid/tracked joint flags, prefers the right hand for aim, and falls back to the left. A distal-index-to-tip vector becomes a smoothed ray; thumb/index distance drives a 24 mm begin / 36 mm release pinch hysteresis.
+`XRRuntime` owns a real OpenXR origin/camera; there is no desktop fallback. `OpenXRInteractionSource` polls both Godot `XRHandTracker` paths, rejects controller-inferred skeletons, requires valid/tracked joint flags, prefers the right hand for aim, and falls back to the left. A distal-index-to-tip vector becomes a smoothed ray; thumb/index distance drives a 24 mm begin / 36 mm release pinch hysteresis.
 
 While the code surface is hovered, vertical pinch movement is quantized into Vim viewer scroll events. When both hands pinch that surface, midpoint, hand separation, and signed yaw become `GRAB_BEGIN/MOVE/END` events that reposition, scale, and rotate the whole panel. The left-palm console exposes agent focus, Code Trace, Cognition, Mission Map, Privacy Veil, Ask/Voice, and Dismiss. If mobile speech is unavailable, Ask opens four fixed quick intents, so the complete headset navigation and agent-direction path still needs only tracked hands.
 
 The Cognition Lens follows the focused orb and turns backend event classes into a spatial causal constellation. Rewind, Return Live, and Forward are generous pinch targets on its temporal ribbon; no raw prompt, response token, or tool argument is stored in that visual history. Local/fake and hosted provider routes are visibly distinct.
 
-The approval gate blocks lower-priority surfaces and provides separate Approve and Deny targets. Headset ergonomics and false-positive rates still require a physical Quest acceptance pass; the gesture interpreter and synthetic boundary are automated without hardware.
+The approval gate blocks lower-priority surfaces and provides separate Approve and Deny targets. Headset ergonomics and false-positive rates still require a physical Quest acceptance pass; headless tests feed simulated joints through `OpenXRInteractionSource.submit_joint_sample`, so the gesture interpreter is automated without hardware.
 
 Privacy Veil is intentionally still reachable while an approval is pending. This prevents a sensitive consent surface from trapping the user: veil first, then clear it and decide. All other non-approval hand actions remain blocked by the consent gate.

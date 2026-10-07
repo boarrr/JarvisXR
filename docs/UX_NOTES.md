@@ -5,7 +5,7 @@
 - The interface is an original holographic instrument system: near-black optical glass, restrained cyan/teal emission, fine calibration marks, segmented arcs, and layered depth.
 - Agent states animate through core pulse, gimbal motion, a segmented status arc, color, text, and unread cues instead of relying on a glossy sphere.
 - Amber and red are reserved for approval, blocked, and error states. Decorative light stays subordinate to readable content.
-- The floor grid and central reticle establish scale and aim without turning the view into an opaque screen dashboard.
+- A hand-ray reticle establishes aim without turning the view into an opaque screen dashboard.
 
 ## Orb workspace
 
@@ -22,12 +22,11 @@ These are tunable defaults. Physical Quest comfort and reach still need hardware
 - Selecting an orb focuses its thread and places one world-space transcript in a forward-right reading zone.
 - The transcript shows the seven most recent messages and marks a streaming assistant message with a block cursor.
 - Push-away or a palm-menu dismiss action clears focus without archiving the thread.
-- Right-click, Escape, and Tab are desktop-simulator equivalents only.
 
 ## Code trace
 
 - The Vim-inspired viewer is a read-only floating trace, not a complete IDE. It shows the latest fenced assistant/tool code with line numbers, syntax highlighting, current-line emphasis, minimap, path, and position.
-- In XR, pinch-drag scrolls; the palm console opens or closes the trace; a two-hand pinch uses midpoint, separation, and yaw to reposition, scale, and rotate it. J/K, g/G, and C are desktop-simulator equivalents.
+- In XR, pinch-drag scrolls; the palm console opens or closes the trace; a two-hand pinch uses midpoint, separation, and yaw to reposition, scale, and rotate it.
 - The viewer remains attached to the focused thread and updates during streaming while preserving its scroll position.
 - A fenced `diff` or `patch` grows a small animated sculpture beside the surface: additions occupy the green/right lane, removals the red/left lane, and context remains dim cyan. Geometry is capped at 48 lines for Quest.
 
@@ -40,7 +39,7 @@ These are tunable defaults. Physical Quest comfort and reach still need hardware
 
 ## Message and command entry
 
-- The left-palm console exposes Ask / Voice after a thread is focused. If speech is unavailable, it opens four explicit quick intents: Continue, Summarize, Explain Code, and Privacy Review. Enter exposes the desktop simulator's free-form composer; while editing, look/movement and spatial shortcuts are suppressed.
+- The left-palm console exposes Ask / Voice after a thread is focused. If speech is unavailable, it opens four explicit quick intents: Continue, Summarize, Explain Code, and Privacy Review.
 - Commands use an explicit slash form so destructive and workspace operations are not confused with ordinary messages.
 - Archive is explicit; dismiss never deletes a thread.
 
@@ -48,15 +47,15 @@ These are tunable defaults. Physical Quest comfort and reach still need hardware
 
 - The backend, not the view, decides when approval is required.
 - The world-space approval panel names the tool, summarizes the proposed action, and shows the permission level. Its Ghost Future renders the content-blind action route, scope, side-effect class, and reversibility without repeating arguments.
-- The XR design requires an explicit pinch on spatial Approve or Deny targets. Y and N are desktop-simulator equivalents. No tool handler begins before an approve response.
+- The XR design requires an explicit pinch on spatial Approve or Deny targets. No tool handler begins before an approve response.
 
 ## Voice
 
-- Ask / Voice starts push-to-talk where the speech service is available. Hold V is the desktop-simulator equivalent when local Whisper is configured.
+- Ask / Voice starts push-to-talk where the speech service is available.
 - Listening and transcribing are visually distinct states. The UI states that transcription is local.
-- The speech service emits text only; `CommandRouter` applies the same focused-thread/global-command routing used by typed input.
+- The speech service emits text only; `CommandRouter` applies the same focused-thread/global-command routing used by protocol commands.
 - A 20-second default recording ceiling limits accidental capture. Audio retention is off by default.
-- The shipped `whisper-cli` adapter is desktop-only. Quest uses quick intents until a mobile-native speech implementation can preserve the same text-only protocol boundary.
+- The shipped `whisper-cli` adapter runs only in headless tests. Quest uses quick intents until a mobile-native speech implementation can preserve the same text-only protocol boundary.
 
 ## Hand-only acceptance rule
 

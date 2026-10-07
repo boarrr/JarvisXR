@@ -31,7 +31,7 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("debug_toggle"):
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F3:
 		visible = not visible
 		get_viewport().set_input_as_handled()
 
@@ -42,16 +42,11 @@ func _refresh_metrics() -> void:
 		source_name = ServiceRegistry.input_router.get_active_source_name()
 
 	var user_position := Vector3.ZERO
-	var yaw_degrees := 0.0
-	var pitch_degrees := 0.0
 	if _user_rig != null:
 		user_position = _user_rig.global_position
-		yaw_degrees = _user_rig.get_yaw_degrees()
-		pitch_degrees = _user_rig.get_pitch_degrees()
 
 	var focused := AppState.focused_thread_id if not AppState.focused_thread_id.is_empty() else "none"
 	var hovered := AppState.hovered_target_id if not AppState.hovered_target_id.is_empty() else "none"
-	var mouse_captured := "yes" if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else "no"
 	var protocol_event := _backend_bridge.get_last_event_type() if _backend_bridge != null else "none"
 	if protocol_event.is_empty():
 		protocol_event = "none"
@@ -63,10 +58,10 @@ func _refresh_metrics() -> void:
 
 	_metrics_label.text = (
 		"FPS: %d\nMode: %s\nInteraction: %s\nBackend: %s/%s\nThreads: %d\n"
-		+ "Position: %.2f, %.2f, %.2f\nYaw/Pitch: %.1f / %.1f deg\n"
-		+ "Mouse captured: %s\nFocused thread: %s\nHovered target: %s\nListening: %s\n"
+		+ "Position: %.2f, %.2f, %.2f\n"
+		+ "Focused thread: %s\nHovered target: %s\nListening: %s\n"
 		+ "Transcript: %s\nApprovals: %d\nProtocol event: %s\n"
-		+ "Keys: Enter message | C code | J/K scroll | V speak\nDebug: 1 add | 2 remove | 3 status"
+		+ "XR hand tracking only · F3 debug"
 	) % [
 		Engine.get_frames_per_second(),
 		AppState.ui_mode.capitalize(),
@@ -77,9 +72,6 @@ func _refresh_metrics() -> void:
 		user_position.x,
 		user_position.y,
 		user_position.z,
-		yaw_degrees,
-		pitch_degrees,
-		mouse_captured,
 		focused,
 		hovered,
 		AppState.listening_state,

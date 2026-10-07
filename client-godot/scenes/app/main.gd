@@ -14,8 +14,6 @@ var _speech_service: SpeechService = null
 @onready var _mission_topology: MissionTopology = $MissionTopology
 @onready var _quick_intent_panel: QuickIntentPanel = $QuickIntentPanel
 @onready var _thread_panel: ThreadPanel = $ThreadPanel
-@onready var _desktop_composer: DesktopComposer = $DesktopComposer
-@onready var _pointer_hud: CanvasLayer = $PointerHUD
 @onready var _orb_manager: OrbManager = $OrbManager
 @onready var _palm_console: PalmConsole = $PalmConsole
 @onready var _updater: UpdaterService = $UpdaterService
@@ -43,21 +41,13 @@ func _ready() -> void:
 		push_error("[APP] InputRouter is not available from ServiceRegistry")
 		return
 
-	var interaction_source: InteractionSource = _user_rig.get_interaction_source()
 	var xr_active := _xr_runtime.activate_if_available()
 	if not xr_active:
 		# XRCamera3D can claim the viewport while the scene enters the tree,
 		# even without a running XR session. Restore the camera we raycast from.
 		_user_rig.set_xr_tracking_active(false)
-	var lab_active := not xr_active and (
-		"--hand-lab" in OS.get_cmdline_user_args()
-		or (DisplayServer.get_name() != "headless" and bool(ProjectSettings.get_setting("spatial_agent/desktop_hand_lab", true)))
-	) and "--classic-desktop" not in OS.get_cmdline_user_args()
-	if xr_active:
-		interaction_source = _xr_runtime.get_hand_source()
-	elif lab_active:
-		interaction_source = ($HandLab as HandLab).start(self)
-	if not ServiceRegistry.input_router.register_source(interaction_source):
+	var interaction_source: InteractionSource = _xr_runtime.get_hand_source()
+	if interaction_source == null or not ServiceRegistry.input_router.register_source(interaction_source):
 		push_error("[APP] Failed to register the interaction source")
 		return
 	if not _interaction_manager.set_interaction_source(interaction_source):
@@ -80,11 +70,7 @@ func _ready() -> void:
 	AppState.listening_state = _speech_service.get_state()
 	_register_pane_surfaces()
 
-	AppState.ui_mode = "xr_hands" if xr_active else ("hand_lab" if lab_active else "desktop")
-	_pointer_hud.visible = not xr_active and not lab_active
-	$DevelopmentFloor.visible = not xr_active
-	$HolographicGrid.visible = not xr_active
-	_desktop_composer.visible = false if xr_active else _desktop_composer.visible
+	AppState.ui_mode = "xr_hands"
 	if not _configure_backend_transport():
 		return
 	if not _backend_bridge.start():
@@ -566,8 +552,6 @@ func _submit_quick_intent(target_id: String) -> bool:
 	)
 	if accepted:
 		_quick_intent_panel.close()
-		if AppState.ui_mode == "hand_lab":
-			($HandLab as HandLab)._checks.ask = true
 		EventBus.debug_message.emit("Quick intent sent: %s" % target_id.trim_prefix("quick:"))
 	return accepted
 
@@ -621,7 +605,6 @@ func _on_approval_requested(_request: Dictionary) -> void:
 	_daemon_settings_panel.visible = false
 	_cognition_layer.set_blocked(true)
 	_mission_topology.set_blocked(true)
-	_desktop_composer.visible = false
 
 
 func _on_approval_resolved(_approval_id: String) -> void:
@@ -633,7 +616,6 @@ func _on_approval_resolved(_approval_id: String) -> void:
 	_quick_intent_panel.visible = _restore_quick_intent_panel
 	_cognition_layer.set_blocked(false)
 	_mission_topology.set_blocked(false)
-	_desktop_composer.visible = AppState.ui_mode == "desktop"
 	_restore_code_viewer = false
 	_restore_thread_panel = false
 	_restore_quick_intent_panel = false

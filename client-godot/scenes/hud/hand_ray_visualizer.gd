@@ -134,7 +134,7 @@ func _build_hint() -> void:
 
 
 func _process(_delta: float) -> void:
-	if _source == null or AppState.ui_mode not in ["xr_hands", "hand_lab"]:
+	if _source == null or AppState.ui_mode != "xr_hands":
 		visible = false
 		return
 
@@ -142,14 +142,14 @@ func _process(_delta: float) -> void:
 	any_visible = _update_glove(any_visible)
 	any_visible = _update_pointer(any_visible)
 
-	var show_hint := AppState.ui_mode == "xr_hands" and not _source.has_tracking_data()
+	var show_hint := not _source.has_tracking_data()
 	_hint.visible = show_hint
 	if show_hint:
 		_place_hint()
 		any_visible = true
 	if _gesture_hud != null:
 		_update_gesture_hud()
-		_gesture_hud.visible = AppState.ui_mode == "xr_hands" or AppState.ui_mode == "hand_lab"
+		_gesture_hud.visible = true
 		if _gesture_hud.visible:
 			any_visible = true
 	visible = any_visible

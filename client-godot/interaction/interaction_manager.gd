@@ -23,8 +23,8 @@ var _dwell_direction := Vector3.ZERO
 
 
 func set_interaction_source(source: InteractionSource) -> bool:
-	if source == null or not source.is_available():
-		push_warning("[INPUT] InteractionManager rejected an unavailable source")
+	if source == null:
+		push_warning("[INPUT] InteractionManager rejected a null source")
 		return false
 	if _interaction_source != null and _interaction_source.interaction_event.is_connected(_on_source_interaction_event):
 		_interaction_source.interaction_event.disconnect(_on_source_interaction_event)

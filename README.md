@@ -1,23 +1,23 @@
 # Spatial Agent XR
 
-A Quest-ready Godot 4.7 spatial agent workbench with a complete desktop simulator. Eight data-driven agent orbs run out of the box in offline mode; the same client can connect to the included local WebSocket backend for persistent threads, streaming responses, cancellation, safe telemetry, approval-gated tools, OpenAI, Claude, DeepSeek, or an explicit dual-provider Council mode.
+A Quest-ready Godot 4.7 spatial agent workbench for OpenXR hand tracking. Eight data-driven agent orbs run out of the box in offline mode; the same client can connect to the included local WebSocket backend for persistent threads, streaming responses, cancellation, safe telemetry, approval-gated tools, OpenAI, Claude, DeepSeek, or an explicit dual-provider Council mode.
 
 > **Rev 2 (spatial dev cockpit):** the headset is now a terminal for a companion daemon that owns the workspace. Agents work in isolated `git worktree` branches, MCP servers (filesystem, git, shell, browser, GitHub) expose real tools behind the approval gate, LAN devices pair with a short code over TLS, and new cockpit panels cover workspace state, diff review, file browsing, and daemon settings. See [Spatial Dev Cockpit](docs/SPATIAL_DEV_COCKPIT.md) and the new ADRs in [Decisions](docs/DECISIONS.md).
 
-![Spatial Agent desktop prototype](preview.png)
+![Spatial Agent XR prototype](preview.png)
 
 ## What is complete
 
-- Desktop movement, center-ray hover/select, semantic focus/dismiss, and stable 8–12-orb layout.
-- Original holographic instrument treatment with concentric orb telemetry, calibrated ticks, dark-glass panels, an animated reticle, and a procedural spatial grid.
+- Hand-ray hover/select, pinch selection, semantic focus/dismiss, and a stable 8–12-orb layout.
+- Original holographic instrument treatment with concentric orb telemetry, calibrated ticks, dark-glass panels, and an animated hand-ray reticle.
 - Readable world-space transcript panel with incremental assistant output.
 - Vim-inspired floating code trace with streamed fenced-code extraction, line numbers, syntax highlighting, minimap, semantic scrolling, and a bounded animated 3D sculpture for fenced diffs.
-- Keyboard composer and commands for create, focus, rename, archive, cancel, list, and the safe tool demonstration.
+- Protocol commands for create, focus, rename, archive, cancel, list, and the safe tool demonstration.
 - Versioned provider-neutral WebSocket protocol, reconnection with snapshot restoration, packet limits, strict command validation, and per-session rate limiting.
 - SQLite persistence and a provider abstraction with deterministic fake, OpenAI Responses, Claude, DeepSeek chat completions, and explicit OpenAI+Claude Council adapters.
 - Explicit backend-authoritative approval UI with modal world-space Approve/Deny pinch targets and a content-blind **Ghost Future** showing route, scope, side effects, and reversibility before consent. The included `demo.write_note` tool is simulated and makes no external change.
 - Privacy-oriented local push-to-talk boundary using `whisper.cpp`; microphone audio is not sent over WebSocket and temporary recordings are deleted by default.
-- A real `XROrigin3D`/`XRCamera3D` runtime that activates only when OpenXR is initialized, with optical-hand-only joint polling, stabilized hand ray, thumb-index pinch hysteresis, pinch-drag code scrolling, and two-hand Code Trace transforms. Controller-inferred skeletons are rejected.
+- A real `XROrigin3D`/`XRCamera3D` runtime with optical-hand-only joint polling, a stabilized hand ray, thumb-index pinch hysteresis, pinch-drag code scrolling, and two-hand Code Trace transforms. Controller-inferred skeletons are rejected.
 - A left-palm command console with live provider/model/link telemetry and pinch targets for focus, Code Trace, Cognition Lens, Mission Map, Privacy Veil, ask/voice, and dismiss. When speech is unavailable, ASK opens a four-choice hand-only quick-intent panel.
 - A summonable Spatial Cognition Layer: live backend activity becomes an animated causal constellation around the focused agent, a hand-scrubbable temporal black box, and a privacy field that makes local versus hosted provider routing visible without rendering prompt contents.
 - A room-scale Mission Map with animated, content-blind status pulses over explicit parent links and clearly labelled focused-agent correlations. It is capped at 12 links for standalone hardware.
@@ -27,42 +27,19 @@ A Quest-ready Godot 4.7 spatial agent workbench with a complete desktop simulato
 
 See [completion status](docs/STATUS.md) for the few checks that require the user's own provider credential, microphone/model, or Quest hardware.
 
-The current desktop update is **Hand Lab**, on the v0.4 Autonomous Supervision foundation. See the [Hand Lab guide](docs/HAND_LAB.md) and [verified status](docs/STATUS.md).
+The client is **XR-only**: it targets OpenXR hand tracking on Quest and Android XR, and the earlier desktop Hand Lab simulator has been removed. Development runs either headless or on device.
 
-## Quick start: Hand Lab (no headset)
+## Development and testing
 
-Double-click **Launch Hand Lab.command**. The new desktop Hand Lab gives you a free mouse pointer, click-to-pinch, a palm menu, a guided practice circuit, and Shift-drag two-hand code manipulation. It explicitly disables OpenXR for this launch. See [the Hand Lab guide](docs/HAND_LAB.md) for the full testing workflow and controls.
+Run the backend and headless Godot suites without a headset:
 
-New graphics include Fresnel/plasma agent cores, a procedural reactor floor and up to 3,200 GPU-animated motes. Auto/Eco/Balanced/Ultra presets and a live frame-time display let you balance clarity and speed. The room decorations are omitted from real XR passthrough.
+```sh
+./scripts/test_all.sh
+```
 
-![Hand Lab](hand-lab-preview.png)
+On-device work uses the Quest 3/3S export and deploy path in [Quest 3/3S setup](docs/QUEST_3S_SETUP.md). See [verified status](docs/STATUS.md) for current test counts.
 
-## Classic desktop controls
-
-Requirements for the desktop simulator: Godot 4.7.2 (or a compatible 4.7.x build), keyboard, and mouse. No Python, account, API key, network, microphone, or headset is needed. These peripherals are not part of the final XR interaction target.
-
-1. Open `client-godot/project.godot` in Godot.
-2. Set `spatial_agent/desktop_hand_lab=false`, or launch with `-- --classic-desktop`. The committed configuration uses `backend_mode="fake"`.
-3. Aim with the center reticle and left-click an orb.
-
-Controls:
-
-| Input | Action |
-|---|---|
-| Mouse | Look / aim |
-| Left click | Select orb |
-| W/A/S/D | Move horizontally |
-| Space/Ctrl | Move vertically |
-| Enter | Open or submit the message composer |
-| Tab | Cycle focused thread |
-| C | Open / close the focused thread's code trace |
-| J / K | Scroll the open code trace |
-| g / G | Go to top / bottom of the code trace |
-| Escape/right click | Cancel typing or dismiss focus |
-| Hold V | Local push-to-talk, when configured |
-| Y / N | Approve / deny the visible tool request |
-| F3 | Toggle diagnostics |
-| 1 / 2 / 3 | Add thread / remove newest / cycle status in fake mode |
+## Hand-only XR workflow
 
 The headset workflow is hand-only: point with an index ray, pinch to select, pinch-drag to scroll, use the left-palm console for workspace actions, and pinch with both hands to reposition/scale Code Trace. **Cognition** summons causal telemetry, **Mission Map** reveals swarm activity, and **Privacy Veil** immediately conceals the workspace. No controller action map is required. If headset speech is unavailable, ASK / VOICE opens fixed, clearly labeled intents for Continue, Summarize, Explain Code, and Privacy Review. See the [hand-only XR target](docs/HAND_INTERACTION_TARGET.md).
 
@@ -70,7 +47,7 @@ Sensitive actions replace the workspace with a blocking spatial gate. Approve an
 
 ![Hand-only explicit approval gate](approval-preview.png)
 
-Composer commands:
+Commands:
 
 ```text
 /help
@@ -133,7 +110,7 @@ speech_retain_recordings=false
 speech_max_recording_seconds=20.0
 ```
 
-Hold V while speaking and release it to transcribe. Recognition runs as a child process without blocking the Godot frame loop. The resulting text—not the audio—is routed through `voice.transcript.final` to the focused thread. This adapter is desktop-only; Quest falls back to the hand-only quick-intent panel until a mobile-native speech adapter is configured.
+Recognition runs as a child process without blocking the Godot frame loop. The resulting text—not the audio—is routed through `voice.transcript.final` to the focused thread. This adapter is exercised by the headless suite and is not part of the XR product surface; Quest uses the hand-only quick-intent panel until a mobile-native speech adapter is configured.
 
 ## Sensitive-data notes
 

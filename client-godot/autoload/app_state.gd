@@ -88,7 +88,7 @@ func set_update_banner(value: String) -> void:
 		return
 	update_banner = value
 	update_banner_changed.emit(value)
-var ui_mode: String = "desktop":
+var ui_mode: String = "xr_hands":
 	set(value):
 		if ui_mode == value:
 			return

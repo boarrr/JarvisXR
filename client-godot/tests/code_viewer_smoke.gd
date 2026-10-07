@@ -11,17 +11,18 @@ func _run() -> void:
 	var main := (load("res://scenes/app/main.tscn") as PackedScene).instantiate()
 	add_child(main)
 	var viewer := main.get_node("CodeViewer") as CodeViewer
-	var source := (main.get_node("UserRig") as UserRig).get_interaction_source()
+	var source := (main.get_node("XRRuntime") as XRRuntime).get_hand_source()
+	source.set_hand_tracking_active(true)
 	var code_orb := (main.get_node("OrbManager") as OrbManager).get_orb("thread_debug_03")
 	_check(viewer != null and not viewer.is_open(), "code viewer starts closed")
 	_check(code_orb.get_node("VisualRoot/TickRing").multimesh.instance_count == 36, "orb exposes calibrated holographic ticks")
 	_check(code_orb.get_node("VisualRoot/StatusSegments").multimesh.instance_count == 14, "orb exposes segmented status arc")
 	_check(AppState.focus_thread("thread_debug_03"), "code agent can be focused")
 
-	var toggle_event := InputEventAction.new()
-	toggle_event.action = "code_view_toggle"
-	toggle_event.pressed = true
-	source._input(toggle_event)
+	_check(
+		source.submit_explicit_pinch_action(InteractionEvent.Type.CODE_TOGGLE),
+		"hand pinch emits the code toggle action"
+	)
 	_check(viewer.is_open(), "semantic code toggle opens a world-space viewer")
 	_check(viewer.get_rendered_code().contains("func route_agent_delta"), "viewer extracts fenced agent code")
 	_check(viewer.get_rendered_code().contains("last_sequence"), "viewer preserves code content")
@@ -57,13 +58,14 @@ func _run() -> void:
 	_check(sculpture.get_added_count() == 1 and sculpture.get_removed_count() == 1, "additions and removals occupy distinct holographic lanes")
 	_check(sculpture.get_bar_count() <= 48, "diff geometry is bounded for standalone headset rendering")
 
-	for action in ["code_scroll_up", "code_scroll_down", "code_go_top", "code_go_bottom"]:
-		_check(InputMap.has_action(action), "code viewer action exists: %s" % action)
-	var scroll_event := InputEventAction.new()
-	scroll_event.action = "code_scroll_down"
-	scroll_event.pressed = true
-	source._input(scroll_event)
-	source._input(toggle_event)
+	var code_edit := viewer.get_node("CodeViewport/Root/Frame/VBox/Code") as CodeEdit
+	var scroll_before := code_edit.scroll_vertical
+	_check(source.submit_pinch_scroll(-1.0), "hand pinch scroll emits a code scroll action")
+	_check(code_edit.scroll_vertical > scroll_before, "pinch scroll advances the code viewer")
+	_check(
+		source.submit_explicit_pinch_action(InteractionEvent.Type.CODE_TOGGLE),
+		"hand pinch emits the code toggle action again"
+	)
 	_check(not viewer.is_open(), "semantic code toggle closes the viewer")
 
 	if not _failed:
