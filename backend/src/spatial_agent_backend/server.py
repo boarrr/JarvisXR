@@ -140,6 +140,7 @@ class SpatialAgentServer:
         else:
             self.provider_label = self.provider.name
             self.provider_model = getattr(self.provider, "model", "local-deterministic")
+        harness = self._build_harness(settings)
         self.coordinator = AgentCoordinator(
             self.threads,
             self.provider,
@@ -150,9 +151,18 @@ class SpatialAgentServer:
             opencode_directory=settings.opencode_directory,
             test_command=settings.test_command,
             fs_root=settings.fs_root,
-            harness=self._build_harness(settings),
+            harness=harness,
         )
-        self.missions = MissionService(self.threads, self.workspaces, self.coordinator)
+        planner = None
+        if harness is not None:
+            from .director import plan_with_harness
+
+            async def _planner(directory: str, goal: str, count: int) -> list[str]:
+                return await plan_with_harness(harness, directory, goal, count)
+
+            planner = _planner
+
+        self.missions = MissionService(self.threads, self.workspaces, self.coordinator, planner=planner)
         # Lifecycle handles for embedding (daemon desktop app).
         self._ssl_context: ssl.SSLContext | None = None
         self._advertiser = None
@@ -660,6 +670,7 @@ class SpatialAgentServer:
                 harness=str(command.payload.get("harness", self.settings.harness)),
                 budget_seconds=int(command.payload.get("budget_seconds", 0)),
                 budget_cost=float(command.payload.get("budget_cost", 0.0)),
+                directed=bool(command.payload.get("directed", False)),
             )
             log_record("mission_created", session_id=session.id, mission_id=mission["id"])
             await emit("mission.created", "", mission)

@@ -67,6 +67,7 @@ class Bridge:
         workspace_id: str = "",
         budget_seconds: int = 0,
         budget_cost: float = 0.0,
+        directed: bool = False,
     ) -> dict[str, Any]:
         return self._runtime.create_mission(
             str(goal),
@@ -75,6 +76,7 @@ class Bridge:
             str(workspace_id),
             int(budget_seconds),
             float(budget_cost),
+            bool(directed),
         )
 
     def mission_status(self, mission_id: str) -> dict[str, Any]:

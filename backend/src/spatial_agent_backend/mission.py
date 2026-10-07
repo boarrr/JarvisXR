@@ -18,4 +18,6 @@ class Mission:
     budget_seconds: int = 0
     budget_cost: float = 0.0
     status: str = "running"
+    directed: bool = False
+    sub_tasks: list[str] = field(default_factory=list)
     agent_thread_ids: list[str] = field(default_factory=list)

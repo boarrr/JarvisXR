@@ -6,6 +6,7 @@ import asyncio
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
+from .director import Planner, fallback_tasks
 from .mission import Mission
 from .thread_service import ThreadService
 from .workspace import WorkspaceError, WorkspaceManager
@@ -15,10 +16,17 @@ _FINISHED = {"merged", "cancelled", "error"}
 
 
 class MissionService:
-    def __init__(self, threads: ThreadService, workspaces: WorkspaceManager | None, coordinator) -> None:
+    def __init__(
+        self,
+        threads: ThreadService,
+        workspaces: WorkspaceManager | None,
+        coordinator,
+        planner: Planner | None = None,
+    ) -> None:
         self.threads = threads
         self.workspaces = workspaces
         self.coordinator = coordinator
+        self.planner = planner
         self._missions: dict[str, Mission] = {}
         self._watchdogs: dict[str, asyncio.Task] = {}
         self._emits: dict[str, Callable[..., Awaitable[Any]]] = {}
@@ -80,6 +88,7 @@ class MissionService:
         harness: str = "opencode",
         budget_seconds: int = 0,
         budget_cost: float = 0.0,
+        directed: bool = False,
     ) -> dict:
         count = max(1, min(int(agent_count), 8))
         mission = Mission(
@@ -91,6 +100,7 @@ class MissionService:
             agent_count=count,
             budget_seconds=max(0, int(budget_seconds)),
             budget_cost=max(0.0, float(budget_cost)),
+            directed=bool(directed),
         )
         self._missions[mission.id] = mission
         self._persist(mission)
@@ -102,8 +112,22 @@ class MissionService:
             return False
         if mission.agent_thread_ids:
             return True  # already fanned out
+        if mission.directed and not mission.sub_tasks:
+            mission.sub_tasks = await self._plan(mission)
+            await emit(
+                "mission.planned",
+                "",
+                {"mission_id": mission.id, "sub_tasks": list(mission.sub_tasks)},
+            )
         for index in range(mission.agent_count):
-            thread = await self.threads.create_thread(f"{mission.goal} · #{index + 1}")
+            if mission.directed and index < len(mission.sub_tasks):
+                task = mission.sub_tasks[index]
+                title = task
+                content = task
+            else:
+                title = f"{mission.goal} · #{index + 1}"
+                content = f"{mission.goal}\n\nYou are worker #{index + 1} of {mission.agent_count}."
+            thread = await self.threads.create_thread(title)
             metadata = dict(thread.metadata)
             if mission.workspace_id:
                 metadata["workspace_id"] = mission.workspace_id
@@ -119,7 +143,7 @@ class MissionService:
             await self.coordinator.submit_message(
                 session_id=mission.session_id,
                 thread_id=thread.id,
-                content=f"{mission.goal}\n\nYou are worker #{index + 1} of {mission.agent_count}.",
+                content=content,
                 emit=emit,
             )
         await emit("mission.status", "", self._wire(mission))
@@ -128,6 +152,21 @@ class MissionService:
         if mission.budget_seconds > 0 or mission.budget_cost > 0:
             self._watchdogs[mission.id] = asyncio.create_task(self._budget_guard(mission))
         return True
+
+    async def _plan(self, mission: Mission) -> list[str]:
+        directory = ""
+        if self.workspaces is not None and mission.workspace_id:
+            workspace = self.workspaces.get(mission.workspace_id)
+            if workspace is not None:
+                directory = str(workspace.path)
+        if self.planner is not None:
+            try:
+                tasks = await self.planner(directory, mission.goal, mission.agent_count)
+                if tasks:
+                    return [str(task) for task in tasks][: mission.agent_count]
+            except Exception:  # noqa: BLE001 - fall back to a naive split
+                pass
+        return fallback_tasks(mission.goal, mission.agent_count)
 
     async def _budget_guard(self, mission: Mission) -> None:
         loop = asyncio.get_event_loop()
@@ -263,5 +302,7 @@ class MissionService:
             "status": mission.status,
             "budget_seconds": mission.budget_seconds,
             "budget_cost": mission.budget_cost,
+            "directed": mission.directed,
+            "sub_tasks": list(mission.sub_tasks),
             "agents": list(mission.agent_thread_ids),
         }

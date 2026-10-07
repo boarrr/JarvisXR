@@ -214,6 +214,7 @@ class DaemonRuntime:
         workspace_id: str = "",
         budget_seconds: int = 0,
         budget_cost: float = 0.0,
+        directed: bool = False,
     ) -> dict[str, Any]:
         server = self._server
         if server is None or not goal.strip():
@@ -233,6 +234,7 @@ class DaemonRuntime:
                 harness=harness or self.settings.harness,
                 budget_seconds=int(budget_seconds),
                 budget_cost=float(budget_cost),
+                directed=bool(directed),
             )
             await server.missions.spawn(mission["id"], self._noop_emit)
             return await server.missions.status(mission["id"])

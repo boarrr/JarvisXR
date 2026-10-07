@@ -207,7 +207,7 @@ def validate_command_payload(command: Envelope) -> None:
         "update.check": set(),
         "update.fetch": {"offset", "length"},
         "update.apply": set(),
-        "mission.create": {"goal", "agent_count", "harness", "budget_seconds", "budget_cost"},
+        "mission.create": {"goal", "agent_count", "harness", "budget_seconds", "budget_cost", "directed"},
         "mission.status": {"mission_id"},
         "mission.cancel": {"mission_id", "agent_id"},
         "mission.merge": {"mission_id", "run_id"},

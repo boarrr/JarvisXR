@@ -184,7 +184,8 @@ function initEvents() {
         `<input id="m-goal" placeholder="Goal" style="width:100%;padding:8px;margin-bottom:8px" />` +
         `<p>Workers: <input id="m-count" type="number" min="1" max="8" value="3" style="width:60px" />` +
         `  Budget min: <input id="m-mins" type="number" min="0" value="0" style="width:60px" />` +
-        `  Budget $: <input id="m-cost" type="number" min="0" step="0.5" value="0" style="width:70px" /></p>` +
+        `  Budget $: <input id="m-cost" type="number" min="0" step="0.5" value="0" style="width:70px" />` +
+        `  <label><input id="m-directed" type="checkbox" /> Director (auto-decompose)</label></p>` +
         `<menu><button id="m-create">Create mission</button></menu>`
     );
     $("m-create").addEventListener("click", async () => {
@@ -193,9 +194,10 @@ function initEvents() {
       const count = parseInt($("m-count").value, 10) || 3;
       const seconds = (parseFloat($("m-mins").value) || 0) * 60;
       const cost = parseFloat($("m-cost").value) || 0;
+      const directed = $("m-directed").checked;
       if (!a || !goal) return;
       $("dialog").close();
-      await a.create_mission(goal, count, "", "", Math.round(seconds), cost);
+      await a.create_mission(goal, count, "", "", Math.round(seconds), cost, directed);
       refresh();
     });
   });
