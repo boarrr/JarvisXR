@@ -21,6 +21,9 @@ class MissionService:
     def get(self, mission_id: str) -> Mission | None:
         return self._missions.get(mission_id)
 
+    def list_missions(self) -> list[dict]:
+        return [self._wire(mission) for mission in self._missions.values()]
+
     async def create(
         self,
         *,

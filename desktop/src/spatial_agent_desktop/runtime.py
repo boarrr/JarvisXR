@@ -179,3 +179,64 @@ class DaemonRuntime:
                 server.coordinator.cancel(session_id="desktop-app", thread_id=thread_id)
             ).result(timeout=5)
         )
+
+    # -- missions (fleet) ----------------------------------------------------
+    async def _noop_emit(self, event_type: str, thread_id: str, payload: dict[str, Any]) -> None:
+        return None
+
+    def missions(self) -> list[dict[str, Any]]:
+        server = self._server
+        if server is None:
+            return []
+        return server.missions.list_missions()
+
+    def create_mission(
+        self, goal: str, agent_count: int = 3, harness: str = "", workspace_id: str = ""
+    ) -> dict[str, Any]:
+        server = self._server
+        if server is None or not goal.strip():
+            return {}
+
+        async def _create() -> dict[str, Any]:
+            wsid = workspace_id
+            if not wsid and server.workspaces is not None:
+                registered = server.workspaces.list_workspaces()
+                if registered:
+                    wsid = registered[0].id
+            mission = await server.missions.create(
+                session_id="desktop-app",
+                workspace_id=wsid,
+                goal=goal,
+                agent_count=agent_count,
+                harness=harness or self.settings.harness,
+            )
+            await server.missions.spawn(mission["id"], self._noop_emit)
+            return await server.missions.status(mission["id"])
+
+        return self._submit(_create()).result(timeout=15)
+
+    def mission_status(self, mission_id: str) -> dict[str, Any]:
+        server = self._server
+        if server is None:
+            return {}
+        return self._submit(server.missions.status(mission_id)).result(timeout=5)
+
+    def mission_compare(self, mission_id: str) -> list[dict[str, Any]]:
+        server = self._server
+        if server is None:
+            return []
+        return self._submit(server.missions.compare(mission_id)).result(timeout=10)
+
+    def mission_merge(self, mission_id: str, run_id: str) -> dict[str, Any]:
+        server = self._server
+        if server is None:
+            return {}
+        return self._submit(server.missions.merge(mission_id, run_id)).result(timeout=30)
+
+    def mission_cancel(self, mission_id: str, agent_id: str = "") -> bool:
+        server = self._server
+        if server is None:
+            return False
+        return bool(
+            self._submit(server.missions.cancel(mission_id, agent_id)).result(timeout=5)
+        )

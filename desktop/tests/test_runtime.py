@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import socket
+import subprocess
 import tempfile
 import time
 import unittest
@@ -41,6 +42,16 @@ class DaemonRuntimeTests(unittest.TestCase):
         self.runtime = DaemonRuntime(_settings(Path(self._tmpdir.name)))
         self.runtime.start()
         self.assertTrue(self.runtime.wait_ready(), "daemon runtime should become ready")
+        # Mission fan-out needs a registered git workspace for worktrees.
+        repo = Path(self._tmpdir.name) / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "T"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "t@e.com"], cwd=repo, check=True, capture_output=True)
+        (repo / "app.py").write_text("print('hi')\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+        self.runtime._server.workspaces.register("Demo", repo)
 
     def tearDown(self) -> None:
         self.runtime.stop()
@@ -84,6 +95,28 @@ class DaemonRuntimeTests(unittest.TestCase):
         resumed = self.runtime.set_paused(False)
         self.assertFalse(resumed["paused"])
         self.assertTrue(self.runtime.send_message(thread_id, "runs again"))
+
+    def test_mission_fan_out_and_pick_one(self) -> None:
+        mission = self.runtime.create_mission("Add a feature", agent_count=2)
+        mission_id = str(mission.get("id", ""))
+        self.assertTrue(mission_id)
+        self.assertEqual(len(mission.get("agents", [])), 2)
+
+        status = mission
+        for _ in range(100):
+            status = self.runtime.mission_status(mission_id)
+            if status.get("status") == "awaiting_merge":
+                break
+            time.sleep(0.05)
+        self.assertEqual(status.get("status"), "awaiting_merge")
+
+        agents = self.runtime.mission_compare(mission_id)
+        run_ids = [a["run_id"] for a in agents if a.get("run_id")]
+        self.assertTrue(run_ids, "agents should expose worktree run ids")
+
+        result = self.runtime.mission_merge(mission_id, run_ids[0])
+        self.assertTrue(result.get("merged"))
+        self.assertEqual(self.runtime.mission_status(mission_id).get("status"), "merged")
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ func get_help_text() -> String:
 	return (
 		"/new TITLE · /focus NAME · /rename TITLE · /archive · /cancel · /list\n"
 		+ "/pair CODE · /workspaces · /workspace NAME · /files · /diff · /daemon\n"
-		+ "/apply · /reject · /tools · /tool status|clock|note"
+		+ "/apply · /reject · /tools · /tool status|clock|note · /mission GOAL"
 	)
 
 
@@ -96,6 +96,13 @@ func _route_command(text: String) -> bool:
 			return _report(
 				bridge.send_command("message.send", {"content": text}, AppState.focused_thread_id),
 				"Approval-gated tool requested"
+			)
+		"/mission":
+			if argument.is_empty():
+				return _report(false, "Usage: /mission GOAL")
+			return _report(
+				bridge.send_command("mission.create", {"goal": argument, "agent_count": 3}),
+				"Fleet launched for: %s" % argument
 			)
 		"/pair":
 			if argument.is_empty():

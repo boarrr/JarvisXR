@@ -178,6 +178,45 @@ function initEvents() {
     refresh();
   });
 
+  $("btn-mission").addEventListener("click", () => {
+    openDialog(
+      `<p>New mission (fans out to N agents, each its own worktree)</p>` +
+        `<input id="m-goal" placeholder="Goal" style="width:100%;padding:8px;margin-bottom:8px" />` +
+        `<p>Workers: <input id="m-count" type="number" min="1" max="8" value="3" style="width:60px" /></p>` +
+        `<menu><button id="m-create">Create mission</button></menu>`
+    );
+    $("m-create").addEventListener("click", async () => {
+      const a = api();
+      const goal = $("m-goal").value.trim();
+      const count = parseInt($("m-count").value, 10) || 3;
+      if (!a || !goal) return;
+      $("dialog").close();
+      await a.create_mission(goal, count);
+      refresh();
+    });
+  });
+
+  $("btn-missions").addEventListener("click", async () => {
+    const a = api();
+    if (!a) return;
+    const missions = await a.list_missions();
+    if (!missions.length) {
+      openDialog("<p>No missions yet.</p>");
+      return;
+    }
+    const rows = missions
+      .map(
+        (m) =>
+          `<div class="devrow"><span>${escapeHtml(m.goal)} · ${m.status} · ${m.agents.length} agents</span>` +
+          `<button data-compare="${m.id}">compare</button></div>`
+      )
+      .join("");
+    openDialog(`<p>Missions</p>${rows}`);
+    $("dialog-body").querySelectorAll("[data-compare]").forEach((btn) =>
+      btn.addEventListener("click", () => showCompare(btn.getAttribute("data-compare")))
+    );
+  });
+
   $("btn-pause").addEventListener("click", async () => {
     const a = api();
     if (!a) return;
@@ -229,6 +268,49 @@ function initEvents() {
 function openDialog(html) {
   $("dialog-body").innerHTML = html;
   $("dialog").showModal();
+}
+
+function escapeHtml(value) {
+  return String(value == null ? "" : value).replace(/[&<>"]/g, (c) => {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+
+async function showCompare(missionId) {
+  const a = api();
+  if (!a) return;
+  const agents = await a.mission_compare(missionId);
+  const blocks = agents
+    .map((agent) => {
+      const files = (agent.files || [])
+        .map(
+          (f) =>
+            `<li>${escapeHtml(f.path)} <span style="color:#7fa6bd">+${f.additions || 0}/-${
+              f.deletions || 0
+            }</span></li>`
+        )
+        .join("");
+      const runId = agent.run_id || "";
+      return (
+        `<div class="devrow"><div><b>${escapeHtml((agent.thread_id || "").slice(0, 14))}</b>` +
+        `<ul style="margin:6px 0 0;padding-left:18px">${files || "<li>no changes</li>"}</ul></div>` +
+        (runId ? `<button data-merge="${missionId}|${runId}">merge</button>` : "") +
+        `</div>`
+      );
+    })
+    .join("");
+  openDialog(`<p>Compare agents (pick-one merge)</p>${blocks || "<p>No agents.</p>"}`);
+  $("dialog-body").querySelectorAll("[data-merge]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const [mid, rid] = btn.getAttribute("data-merge").split("|");
+      const result = await a.mission_merge(mid, rid);
+      $("dialog").close();
+      refresh();
+      if (!result || !result.merged) {
+        openDialog(`<p>Merge failed: ${escapeHtml((result && result.error) || "unknown")}</p>`);
+      }
+    })
+  );
 }
 
 window.addEventListener("pywebviewready", () => {

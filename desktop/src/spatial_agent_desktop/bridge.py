@@ -51,3 +51,26 @@ class Bridge:
 
     def cancel_run(self, thread_id: str) -> bool:
         return self._runtime.cancel_run(str(thread_id))
+
+    # -- missions (fleet) ----------------------------------------------------
+    def list_missions(self) -> list[dict[str, Any]]:
+        return self._runtime.missions()
+
+    def create_mission(
+        self, goal: str, agent_count: int = 3, harness: str = "", workspace_id: str = ""
+    ) -> dict[str, Any]:
+        return self._runtime.create_mission(
+            str(goal), int(agent_count), str(harness), str(workspace_id)
+        )
+
+    def mission_status(self, mission_id: str) -> dict[str, Any]:
+        return self._runtime.mission_status(str(mission_id))
+
+    def mission_compare(self, mission_id: str) -> list[dict[str, Any]]:
+        return self._runtime.mission_compare(str(mission_id))
+
+    def mission_merge(self, mission_id: str, run_id: str) -> dict[str, Any]:
+        return self._runtime.mission_merge(str(mission_id), str(run_id))
+
+    def mission_cancel(self, mission_id: str, agent_id: str = "") -> bool:
+        return self._runtime.mission_cancel(str(mission_id), str(agent_id))
