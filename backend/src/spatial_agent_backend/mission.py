@@ -16,5 +16,6 @@ class Mission:
     harness: str
     agent_count: int
     budget_seconds: int = 0
+    budget_cost: float = 0.0
     status: str = "running"
     agent_thread_ids: list[str] = field(default_factory=list)

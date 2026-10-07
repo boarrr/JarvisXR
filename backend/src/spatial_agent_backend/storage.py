@@ -98,6 +98,7 @@ class SQLiteStore:
                     harness TEXT NOT NULL DEFAULT '',
                     agent_count INTEGER NOT NULL DEFAULT 0,
                     budget_seconds INTEGER NOT NULL DEFAULT 0,
+                    budget_cost REAL NOT NULL DEFAULT 0,
                     status TEXT NOT NULL DEFAULT 'running',
                     agents_json TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL,
@@ -320,6 +321,7 @@ class SQLiteStore:
         harness: str = "",
         agent_count: int = 0,
         budget_seconds: int = 0,
+        budget_cost: float = 0.0,
         status: str = "running",
         agents: list[str] | None = None,
     ) -> None:
@@ -329,8 +331,9 @@ class SQLiteStore:
                 """
                 INSERT INTO missions (
                     mission_id, session_id, workspace_id, goal, harness,
-                    agent_count, budget_seconds, status, agents_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    agent_count, budget_seconds, budget_cost, status, agents_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(mission_id) DO UPDATE SET
                     status = excluded.status,
                     agents_json = excluded.agents_json,
@@ -344,6 +347,7 @@ class SQLiteStore:
                     harness,
                     agent_count,
                     budget_seconds,
+                    budget_cost,
                     status,
                     json.dumps(agents or []),
                     timestamp,
@@ -375,6 +379,7 @@ class SQLiteStore:
             "harness": row["harness"],
             "agent_count": row["agent_count"],
             "budget_seconds": row["budget_seconds"],
+            "budget_cost": row["budget_cost"] if "budget_cost" in row.keys() else 0.0,
             "status": row["status"],
             "agents": json.loads(row["agents_json"] or "[]"),
         }

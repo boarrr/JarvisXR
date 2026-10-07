@@ -659,6 +659,7 @@ class SpatialAgentServer:
                 agent_count=int(command.payload.get("agent_count", 3)),
                 harness=str(command.payload.get("harness", self.settings.harness)),
                 budget_seconds=int(command.payload.get("budget_seconds", 0)),
+                budget_cost=float(command.payload.get("budget_cost", 0.0)),
             )
             log_record("mission_created", session_id=session.id, mission_id=mission["id"])
             await emit("mission.created", "", mission)

@@ -94,6 +94,12 @@ class CodexCliHarness:
             return AgentEvent("tool", tool=str(payload.get("name", "")), detail=payload)
         if kind == "file":
             return AgentEvent("file_edited", path=str(payload.get("path", "")))
+        if kind in {"usage", "cost"}:
+            return AgentEvent(
+                "usage",
+                cost=float(payload.get("cost", 0.0)),
+                tokens=int(payload.get("tokens", 0)),
+            )
         if kind in {"done", "result", "idle", "complete"}:
             return AgentEvent("status", status="idle")
         if kind == "error":

@@ -57,10 +57,21 @@ class Bridge:
         return self._runtime.missions()
 
     def create_mission(
-        self, goal: str, agent_count: int = 3, harness: str = "", workspace_id: str = ""
+        self,
+        goal: str,
+        agent_count: int = 3,
+        harness: str = "",
+        workspace_id: str = "",
+        budget_seconds: int = 0,
+        budget_cost: float = 0.0,
     ) -> dict[str, Any]:
         return self._runtime.create_mission(
-            str(goal), int(agent_count), str(harness), str(workspace_id)
+            str(goal),
+            int(agent_count),
+            str(harness),
+            str(workspace_id),
+            int(budget_seconds),
+            float(budget_cost),
         )
 
     def mission_status(self, mission_id: str) -> dict[str, Any]:

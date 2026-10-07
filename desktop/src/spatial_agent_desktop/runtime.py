@@ -191,7 +191,13 @@ class DaemonRuntime:
         return server.missions.list_missions()
 
     def create_mission(
-        self, goal: str, agent_count: int = 3, harness: str = "", workspace_id: str = ""
+        self,
+        goal: str,
+        agent_count: int = 3,
+        harness: str = "",
+        workspace_id: str = "",
+        budget_seconds: int = 0,
+        budget_cost: float = 0.0,
     ) -> dict[str, Any]:
         server = self._server
         if server is None or not goal.strip():
@@ -209,6 +215,8 @@ class DaemonRuntime:
                 goal=goal,
                 agent_count=agent_count,
                 harness=harness or self.settings.harness,
+                budget_seconds=int(budget_seconds),
+                budget_cost=float(budget_cost),
             )
             await server.missions.spawn(mission["id"], self._noop_emit)
             return await server.missions.status(mission["id"])

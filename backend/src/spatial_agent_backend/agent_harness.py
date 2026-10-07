@@ -24,13 +24,15 @@ class HarnessCapabilities:
 class AgentEvent:
     """A normalized event from an agent run."""
 
-    kind: str  # delta | thinking_delta | tool | permission | status | file_edited | idle | error
+    kind: str  # delta | thinking_delta | tool | permission | status | file_edited | idle | error | usage
     text: str = ""
     tool: str = ""
     status: str = ""
     approval_id: str = ""
     command: str = ""
     path: str = ""
+    cost: float = 0.0
+    tokens: int = 0
     detail: dict[str, Any] = field(default_factory=dict)
 
 

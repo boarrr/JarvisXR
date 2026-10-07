@@ -155,6 +155,7 @@ class AgentCoordinator:
         self._latest_run_by_thread: dict[str, str] = {}
         self._decided_runs: set[str] = set()
         self._paused = False
+        self._thread_costs: dict[str, float] = {}
 
     async def submit_message(
         self,
@@ -216,6 +217,12 @@ class AgentCoordinator:
 
     def is_paused(self) -> bool:
         return self._paused
+
+    def thread_cost(self, thread_id: str) -> float:
+        return self._thread_costs.get(thread_id, 0.0)
+
+    def total_cost(self, thread_ids: list[str]) -> float:
+        return sum(self._thread_costs.get(thread_id, 0.0) for thread_id in thread_ids)
 
     async def cancel(self, *, session_id: str, thread_id: str) -> bool:
         run = self._runs.get(thread_id)
@@ -514,6 +521,19 @@ class AgentCoordinator:
                         "agent.tool",
                         run.thread_id,
                         {"run_id": run.run_id, "tool": event.tool, "detail": event.detail},
+                    )
+                elif event.kind == "usage":
+                    total = self._thread_costs.get(run.thread_id, 0.0) + event.cost
+                    self._thread_costs[run.thread_id] = total
+                    await emit(
+                        "agent.usage",
+                        run.thread_id,
+                        {
+                            "run_id": run.run_id,
+                            "cost": event.cost,
+                            "tokens": event.tokens,
+                            "total_cost": total,
+                        },
                     )
                 elif event.kind == "error":
                     raise RuntimeError(event.text or "harness error")

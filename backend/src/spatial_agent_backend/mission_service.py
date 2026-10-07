@@ -42,6 +42,7 @@ class MissionService:
                 harness=row["harness"],
                 agent_count=int(row["agent_count"]),
                 budget_seconds=int(row["budget_seconds"]),
+                budget_cost=float(row.get("budget_cost", 0.0)),
                 status=row["status"],
                 agent_thread_ids=list(row["agents"]),
             )
@@ -58,6 +59,7 @@ class MissionService:
             harness=mission.harness,
             agent_count=mission.agent_count,
             budget_seconds=mission.budget_seconds,
+            budget_cost=mission.budget_cost,
             status=mission.status,
             agents=list(mission.agent_thread_ids),
         )
@@ -77,6 +79,7 @@ class MissionService:
         agent_count: int = 3,
         harness: str = "opencode",
         budget_seconds: int = 0,
+        budget_cost: float = 0.0,
     ) -> dict:
         count = max(1, min(int(agent_count), 8))
         mission = Mission(
@@ -87,6 +90,7 @@ class MissionService:
             harness=harness,
             agent_count=count,
             budget_seconds=max(0, int(budget_seconds)),
+            budget_cost=max(0.0, float(budget_cost)),
         )
         self._missions[mission.id] = mission
         self._persist(mission)
@@ -121,28 +125,48 @@ class MissionService:
         await emit("mission.status", "", self._wire(mission))
         self._persist(mission)
         self._emits[mission.id] = emit
-        if mission.budget_seconds > 0:
+        if mission.budget_seconds > 0 or mission.budget_cost > 0:
             self._watchdogs[mission.id] = asyncio.create_task(self._budget_guard(mission))
         return True
 
     async def _budget_guard(self, mission: Mission) -> None:
-        try:
-            await asyncio.sleep(mission.budget_seconds)
-        except asyncio.CancelledError:
-            return
-        if mission.status in _FINISHED:
-            return
-        for thread_id in list(mission.agent_thread_ids):
-            await self.coordinator.cancel(session_id=mission.session_id, thread_id=thread_id)
-        mission.status = "error"
-        self._persist(mission)
-        emit = self._emits.get(mission.id)
-        if emit is not None:
-            await emit(
-                "mission.budget_exceeded",
-                "",
-                {"mission_id": mission.id, "budget_seconds": mission.budget_seconds},
-            )
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + mission.budget_seconds if mission.budget_seconds > 0 else None
+        while True:
+            if mission.status in _FINISHED:
+                return
+            now = loop.time()
+            reason = ""
+            if deadline is not None and now >= deadline:
+                reason = "time"
+            elif mission.budget_cost > 0 and self.coordinator is not None:
+                if self.coordinator.total_cost(mission.agent_thread_ids) >= mission.budget_cost:
+                    reason = "cost"
+            if reason:
+                for thread_id in list(mission.agent_thread_ids):
+                    await self.coordinator.cancel(session_id=mission.session_id, thread_id=thread_id)
+                mission.status = "error"
+                self._persist(mission)
+                emit = self._emits.get(mission.id)
+                if emit is not None:
+                    await emit(
+                        "mission.budget_exceeded",
+                        "",
+                        {
+                            "mission_id": mission.id,
+                            "reason": reason,
+                            "budget_seconds": mission.budget_seconds,
+                            "budget_cost": mission.budget_cost,
+                        },
+                    )
+                return
+            delay = 0.5
+            if deadline is not None:
+                delay = max(0.05, min(0.5, deadline - now))
+            try:
+                await asyncio.sleep(delay)
+            except asyncio.CancelledError:
+                return
 
     def _stop_watchdog(self, mission_id: str) -> None:
         task = self._watchdogs.pop(mission_id, None)
@@ -238,5 +262,6 @@ class MissionService:
             "agent_count": mission.agent_count,
             "status": mission.status,
             "budget_seconds": mission.budget_seconds,
+            "budget_cost": mission.budget_cost,
             "agents": list(mission.agent_thread_ids),
         }
