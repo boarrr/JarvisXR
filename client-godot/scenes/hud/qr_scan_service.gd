@@ -8,7 +8,7 @@ extends Node3D
 
 @export var user_rig_path: NodePath = ^"../UserRig"
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
-@export_range(0.6, 2.0, 0.05) var scan_distance: float = 1.0
+@export_range(0.6, 2.0, 0.05) var scan_distance: float = 1.2
 @export_range(2, 30, 1) var scan_every_frames: int = 8
 
 const PROMPT_SCAN := "SCAN THE QR CODE IN THE\nSPATIAL AGENT APP"
@@ -71,11 +71,14 @@ func start_scan() -> bool:
 		_camera_texture = feed.get_texture(CameraServer.FEED_RGBA_IMAGE)
 		if _quad != null and _quad.material_override is StandardMaterial3D:
 			(_quad.material_override as StandardMaterial3D).albedo_texture = _camera_texture
+			_quad.visible = true
 		if _capture_rect != null:
 			_capture_rect.texture = _camera_texture
 		_set_prompt(PROMPT_SCAN)
 		AppState.set_update_banner("Scan the pairing QR from the app")
 	else:
+		if _quad != null:
+			_quad.visible = false
 		_set_prompt(PROMPT_NO_CAMERA)
 		AppState.set_update_banner("No passthrough camera; enter the code")
 		EventBus.debug_message.emit("QR scan unavailable: no camera feed")
@@ -153,7 +156,7 @@ func _build() -> void:
 	frame_material.albedo_color = Color(0.02, 0.09, 0.13, 0.96)
 	var frame := MeshInstance3D.new()
 	var frame_mesh := QuadMesh.new()
-	frame_mesh.size = Vector2(1.02, 0.9)
+	frame_mesh.size = Vector2(0.78, 0.66)
 	frame.mesh = frame_mesh
 	frame.material_override = frame_material
 	frame.position = Vector3(0.0, 0.0, -0.01)
@@ -162,12 +165,13 @@ func _build() -> void:
 
 	var camera_material := StandardMaterial3D.new()
 	camera_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	camera_material.albedo_color = Color.WHITE
+	camera_material.albedo_color = Color(0.03, 0.07, 0.1)
 	_quad = MeshInstance3D.new()
 	var mesh := QuadMesh.new()
-	mesh.size = Vector2(0.9, 0.68)
+	mesh.size = Vector2(0.7, 0.5)
 	_quad.mesh = mesh
 	_quad.material_override = camera_material
+	_quad.visible = false
 	_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_quad)
 
@@ -175,7 +179,7 @@ func _build() -> void:
 	_prompt.text = PROMPT_SCAN
 	_prompt.font_size = 40
 	_prompt.modulate = Color(0.7, 0.98, 1.0)
-	_prompt.position = Vector3(0.0, 0.56, 0.02)
+	_prompt.position = Vector3(0.0, 0.46, 0.02)
 	add_child(_prompt)
 
 	_viewport = SubViewport.new()
