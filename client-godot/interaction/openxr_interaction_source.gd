@@ -124,6 +124,8 @@ var _crush_candidate := ""
 var _last_orb_hover_id := ""
 var _last_orb_hover_msec := 0
 var _last_ui_touch_msec := 0
+var _debug_touch_target: Dictionary = {}
+var _debug_touch_mm: Dictionary = {}
 var _tap_prev_pinch := {"left": false, "right": false}
 var _tap_begin_msec := {"left": 0, "right": 0}
 var _tap_prev_release_msec := {"left": 0, "right": 0}
@@ -230,6 +232,7 @@ func _physics_process(_delta: float) -> void:
 			hand_sample.get("index_tip", Vector3.ZERO) as Vector3
 		) + _hand_stop_offset[hand_name]
 		_update_touch_interaction(hand_name, tip)
+		_update_touch_debug(hand_name, tip)
 	_update_bimanual_gesture()
 	_flush_single_taps()
 	if _telemetry_enabled:
@@ -1073,6 +1076,36 @@ func _finish_grab(position: Vector3) -> void:
 		{"gesture": "orb_grab", "phase": "end"}
 	))
 	_grab_target_id = ""
+
+
+func _update_touch_debug(hand_name: String, position: Vector3) -> void:
+	# Distance (mm) to the nearest button the fingertip would press, regardless
+	# of the contact threshold, so the press distance can be tuned.
+	var best_id := ""
+	var best_distance := 0.3
+	for node in get_tree().get_nodes_in_group("interactable"):
+		var area := node as Area3D
+		if area == null or not area.is_visible_in_tree():
+			continue
+		if not area.has_method("get_interaction_target_id"):
+			continue
+		var target_id := str(area.call("get_interaction_target_id"))
+		if target_id.is_empty():
+			continue
+		var distance := _distance_to_area(area, position)
+		if distance <= best_distance:
+			best_distance = distance
+			best_id = target_id
+	_debug_touch_target[hand_name] = best_id
+	_debug_touch_mm[hand_name] = maxf(best_distance, 0.0) * 1000.0 if not best_id.is_empty() else -1.0
+
+
+func get_debug_touch_target(hand_name: String) -> String:
+	return str(_debug_touch_target.get(hand_name, ""))
+
+
+func get_debug_touch_distance_mm(hand_name: String) -> float:
+	return float(_debug_touch_mm.get(hand_name, -1.0))
 
 
 func _nearest_touch_target(position: Vector3) -> Dictionary:

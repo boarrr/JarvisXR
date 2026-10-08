@@ -318,6 +318,12 @@ func _update_gesture_hud() -> void:
 			_source.get_fist_state(hand_name),
 			_source.is_hand_pinching(hand_name),
 		])
+		var nearest := _source.get_debug_touch_target(hand_name)
+		var nearest_mm := _source.get_debug_touch_distance_mm(hand_name)
+		lines.append("   -> %s  %s" % [
+			nearest if not nearest.is_empty() else "-",
+			("%.0f mm" % nearest_mm) if nearest_mm >= 0.0 else "-- mm",
+		])
 	_gesture_hud.text = "\n".join(lines)
 	var camera := get_viewport().get_camera_3d()
 	if camera != null:

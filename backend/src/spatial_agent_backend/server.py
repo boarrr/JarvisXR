@@ -21,6 +21,23 @@ from .config import Settings
 from .coordinator import AgentCoordinator
 from .mission_service import MissionService
 from .qr import decode_qr
+
+# Event types that describe shared workspace state and must reach every client.
+_SHARED_EVENT_PREFIXES = (
+    "agent.",
+    "run.",
+    "thread.",
+    "diff.",
+    "mission.",
+    "approval.",
+    "tool.",
+    "workspace.",
+    "file.",
+)
+
+
+def _is_shared_event(event_type: str) -> bool:
+    return event_type.startswith(_SHARED_EVENT_PREFIXES)
 from .discovery import DiscoveryAdvertiser, build_beacon, local_ipv4_addresses
 from .mcp_host import McpHost
 from .observability import configure_logging, log_record
@@ -171,6 +188,7 @@ class SpatialAgentServer:
         self._websocket_server = None
         self._serve_ready: asyncio.Event | None = None
         self._stop_event: asyncio.Event | None = None
+        self._sessions: list[Session] = []
 
     @staticmethod
     def _build_harness(settings: Settings):
@@ -206,6 +224,7 @@ class SpatialAgentServer:
 
     async def handle_connection(self, connection: ServerConnection) -> None:
         session = Session(new_id("sess"), connection)
+        self._sessions.append(session)
         log_record("connection_opened", session_id=session.id, remote=str(connection.remote_address))
 
         async def emit(event_type: str, thread_id: str, payload: dict[str, Any]) -> None:
@@ -215,7 +234,12 @@ class SpatialAgentServer:
                 thread_id=thread_id,
                 payload=payload,
             )
-            await self._send(session, event)
+            if _is_shared_event(event_type):
+                # Shared workspace state goes to every connected client (e.g. the
+                # headset and the desktop app see the same transcripts).
+                await self._broadcast_event(event)
+            else:
+                await self._send(session, event)
 
         try:
             async for raw in connection:
@@ -273,6 +297,7 @@ class SpatialAgentServer:
             pass
         finally:
             await self.coordinator.cancel_session(session.id)
+            self._sessions[:] = [active for active in self._sessions if active is not session]
             log_record("connection_closed", session_id=session.id)
 
     async def _dispatch(self, session: Session, command: Envelope, emit: Any) -> None:
@@ -1019,6 +1044,20 @@ class SpatialAgentServer:
             )
         except ConnectionClosed:
             return
+
+    async def _broadcast_event(self, event: Envelope) -> None:
+        for active in list(self._sessions):
+            await self._send(active, event)
+
+    async def broadcast(
+        self, event_type: str, thread_id: str, payload: dict[str, Any], session_id: str = ""
+    ) -> None:
+        """Send a shared event to every connected client (used by the desktop app,
+        which runs agents in-process rather than over a websocket session)."""
+        event = make_event(
+            event_type, session_id=session_id, thread_id=thread_id, payload=payload
+        )
+        await self._broadcast_event(event)
 
     def _build_ssl_context(self) -> ssl.SSLContext | None:
         if not (self.settings.tls_certificate_path and self.settings.tls_private_key_path):

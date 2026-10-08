@@ -321,7 +321,10 @@ class DaemonRuntime:
 
     # -- missions (fleet) ----------------------------------------------------
     async def _noop_emit(self, event_type: str, thread_id: str, payload: dict[str, Any]) -> None:
-        return None
+        # The desktop app runs agents in-process; broadcast so any connected
+        # clients (e.g. the headset) see the same transcript live.
+        if self._server is not None:
+            await self._server.broadcast(event_type, thread_id, payload, "desktop-app")
 
     def missions(self) -> list[dict[str, Any]]:
         server = self._server

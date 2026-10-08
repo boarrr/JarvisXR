@@ -2,8 +2,14 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="horizonos.permission.HEADSET_CAMERA" />
     <uses-permission android:name="com.oculus.permission.HEADSET_CAMERA" />
+    <!-- Godot injects the deprecated com.oculus.permission.HAND_TRACKING; the
+         runtime now requires the horizonos name, else hand tracking is denied. -->
+    <uses-permission android:name="horizonos.permission.HAND_TRACKING" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!-- Grant ALPHA_BLEND (passthrough) from the runtime. -->
+    <uses-feature android:name="com.oculus.feature.PASSTHROUGH" android:required="false" />
+    <uses-feature android:name="com.oculus.feature.BOUNDARYLESS_APP" android:required="false" />
     <application>
         <meta-data
             android:name="org.godotengine.plugin.v2.PassthroughCamera"

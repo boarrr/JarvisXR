@@ -39,6 +39,10 @@ func activate_if_available() -> bool:
 	get_viewport().transparent_bg = true
 	get_viewport().vrs_mode = Viewport.VRS_XR
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	# 2 == Alpha Blend (passthrough) in Godot's XRInterface blend enum
+	# (0=Opaque, 1=Additive, 2=Alpha). Applied here (after the Meta passthrough
+	# feature is created) because the project setting is applied too early.
+	openxr_interface.set_environment_blend_mode(2)
 	_configure_passthrough_background(true)
 	var target_rate := float(ProjectSettings.get_setting("spatial_agent/xr_refresh_rate", 72.0))
 	if target_rate > 0.0:

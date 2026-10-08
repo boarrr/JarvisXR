@@ -1,4 +1,4 @@
-[gd_scene load_steps=32 format=3]
+[gd_scene load_steps=33 format=3]
 
 [ext_resource type="Script" path="res://scenes/app/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/user/user_rig.tscn" id="2_rig"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://interaction/interaction_manager.gd" id="4_interaction"]
 [ext_resource type="PackedScene" path="res://scenes/orb/orb_manager.tscn" id="5_orbs"]
 [ext_resource type="Script" path="res://scenes/debug/debug_thread_controller.gd" id="6_debug_threads"]
+[ext_resource type="Script" path="res://scenes/debug/hitbox_debug.gd" id="36_hitbox"]
 [ext_resource type="PackedScene" path="res://scenes/panels/thread_panel.tscn" id="7_thread_panel"]
 [ext_resource type="Script" path="res://services/backend_bridge.gd" id="8_backend_bridge"]
 [ext_resource type="Script" path="res://services/fake_backend_transport.gd" id="9_fake_transport"]
@@ -123,3 +124,6 @@ visible = false
 
 [node name="DebugThreadController" type="Node" parent="."]
 script = ExtResource("6_debug_threads")
+
+[node name="HitboxDebug" type="Node3D" parent="."]
+script = ExtResource("36_hitbox")
