@@ -226,7 +226,7 @@ class DaemonRuntime:
             import segno
 
             buffer = io.BytesIO()
-            segno.make(text, micro=False).save(buffer, kind="png", scale=4, border=2)
+            segno.make(text, micro=False).save(buffer, kind="png", scale=6, border=4)
             return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
         except Exception:  # noqa: BLE001 - QR is a nicety
             return ""

@@ -393,6 +393,11 @@ class SpatialAgentServer:
                     raw = b""
                 if raw:
                     payload = await asyncio.to_thread(decode_qr, raw)
+                    try:
+                        with open("/tmp/qr_last.jpg", "wb") as handle:
+                            handle.write(raw)
+                    except OSError:
+                        pass
             log_record("pair_qr_scanned", session_id=session.id, decoded=bool(payload))
             await emit("pair.qr", "", {"payload": payload})
             return

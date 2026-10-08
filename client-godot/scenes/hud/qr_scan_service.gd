@@ -1,27 +1,24 @@
 class_name QrScanService
 extends Node3D
 
-## Pairing by QR. When the daemon reports the device is unpaired, this dialog
-## appears automatically: it shows the passthrough camera and prompts the user
-## to scan the QR in the Spatial Agent desktop app. Frames go to the daemon
-## (which decodes the QR) and pairing completes from the payload.
-##
-## Camera source priority: the native "PassthroughCamera" Android plugin (Meta
-## HEADSET_CAMERA via Camera2), then Godot's CameraServer as a fallback.
+## Pairing by QR. When the daemon reports the device is unpaired, a minimal
+## crosshair appears and prompts the user to aim at the QR in the Spatial Agent
+## app. Camera frames (native "PassthroughCamera" plugin, else CameraServer) are
+## streamed to the daemon, which decodes the QR and returns the pairing payload.
 
 @export var user_rig_path: NodePath = ^"../UserRig"
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
-@export_range(0.6, 2.0, 0.05) var scan_distance: float = 1.2
-@export_range(2, 30, 1) var scan_every_frames: int = 8
+@export_range(0.6, 2.0, 0.05) var scan_distance: float = 1.1
+@export_range(2, 30, 1) var scan_every_frames: int = 6
 
-const PROMPT_SCAN := "SCAN THE QR CODE IN THE\nSPATIAL AGENT APP"
-const PROMPT_NO_CAMERA := "NO CAMERA FEED\nENTER THE PAIRING CODE IN THE PALM FIELD"
+const PROMPT_SCAN := "AIM AT THE QR IN THE SPATIAL AGENT APP"
+const PROMPT_NO_CAMERA := "NO CAMERA - ENTER THE CODE IN THE PALM FIELD"
 
 var _camera: Camera3D = null
 var _bridge: BackendBridge = null
 var _viewport: SubViewport = null
 var _capture_rect: TextureRect = null
-var _quad: MeshInstance3D = null
+var _reticle: Node3D = null
 var _prompt: Label3D = null
 var _camera_texture: CameraTexture = null
 var _feed_index := -1
@@ -75,6 +72,7 @@ func start_scan() -> bool:
 	_frame = 0
 	visible = true
 	_place()
+	_set_prompt(PROMPT_SCAN)
 
 	if _use_plugin:
 		var plugin := Engine.get_singleton("PassthroughCamera")
@@ -83,36 +81,27 @@ func start_scan() -> bool:
 				if not _permission_requested:
 					_permission_requested = true
 					plugin.call("requestPermission")
-				_set_prompt(PROMPT_SCAN)
 				AppState.set_update_banner("Allow camera access to scan")
 				return true
 			if int(plugin.call("cameraCount")) > 0:
 				plugin.call("start")
 				_plugin_started = true
 				_camera_ok = true
-				_set_prompt(PROMPT_SCAN)
-				AppState.set_update_banner("Scan the pairing QR from the app")
+				AppState.set_update_banner("Aim at the pairing QR")
 				return true
-	# CameraServer fallback.
+
 	_camera_ok = camera_available()
 	if _camera_ok:
 		_feed_index = 0
 		var feed := CameraServer.get_feed(_feed_index)
 		feed.feed_is_active = true
 		_camera_texture = feed.get_texture(CameraServer.FEED_RGBA_IMAGE)
-		if _quad != null and _quad.material_override is StandardMaterial3D:
-			(_quad.material_override as StandardMaterial3D).albedo_texture = _camera_texture
-			_quad.visible = true
 		if _capture_rect != null:
 			_capture_rect.texture = _camera_texture
-		_set_prompt(PROMPT_SCAN)
-		AppState.set_update_banner("Scan the pairing QR from the app")
-		return true
-
-	if _quad != null:
-		_quad.visible = false
-	_set_prompt(PROMPT_NO_CAMERA)
-	AppState.set_update_banner("No passthrough camera; enter the code")
+		AppState.set_update_banner("Aim at the pairing QR")
+	else:
+		_set_prompt(PROMPT_NO_CAMERA)
+		AppState.set_update_banner("No passthrough camera; enter the code")
 	return true
 
 
@@ -155,39 +144,21 @@ func _poll_plugin() -> void:
 			if not _permission_requested:
 				_permission_requested = true
 				plugin.call("requestPermission")
-			_set_prompt(PROMPT_SCAN)
 			return
 		if int(plugin.call("cameraCount")) <= 0:
-			if _quad != null:
-				_quad.visible = false
 			_set_prompt(PROMPT_NO_CAMERA)
 			return
 		plugin.call("start")
 		_plugin_started = true
 		_camera_ok = true
-		_set_prompt(PROMPT_SCAN)
 	_frame += 1
 	if _frame % scan_every_frames != 0:
 		return
 	var bytes: PackedByteArray = plugin.call("frameJpeg")
 	if bytes.is_empty():
 		return
-	_update_overlay_from_jpeg(bytes)
 	if _bridge != null:
-		print("[QR] sending frame (%d bytes)" % bytes.size())
 		_bridge.send_command("pair.decode", {"image": Marshalls.raw_to_base64(bytes)})
-
-
-func _update_overlay_from_jpeg(bytes: PackedByteArray) -> void:
-	if _quad == null:
-		return
-	var image := Image.new()
-	if image.load_jpg_from_buffer(bytes) != OK:
-		return
-	var texture := ImageTexture.create_from_image(image)
-	if _quad.material_override is StandardMaterial3D:
-		(_quad.material_override as StandardMaterial3D).albedo_texture = texture
-	_quad.visible = true
 
 
 func _capture_viewport() -> void:
@@ -233,39 +204,38 @@ func _place() -> void:
 
 
 func _build() -> void:
-	var frame_material := StandardMaterial3D.new()
-	frame_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	frame_material.albedo_color = Color(0.02, 0.09, 0.13, 0.96)
-	var frame := MeshInstance3D.new()
-	var frame_mesh := QuadMesh.new()
-	frame_mesh.size = Vector2(0.78, 0.66)
-	frame.mesh = frame_mesh
-	frame.material_override = frame_material
-	frame.position = Vector3(0.0, 0.0, -0.01)
-	frame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(frame)
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color(0.55, 0.97, 1.0)
+	material.no_depth_test = true
 
-	var camera_material := StandardMaterial3D.new()
-	camera_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	camera_material.albedo_color = Color(0.03, 0.07, 0.1)
-	_quad = MeshInstance3D.new()
-	var mesh := QuadMesh.new()
-	mesh.size = Vector2(0.7, 0.5)
-	_quad.mesh = mesh
-	_quad.material_override = camera_material
-	_quad.visible = false
-	_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_quad)
+	_reticle = Node3D.new()
+	add_child(_reticle)
+	var horizontal := MeshInstance3D.new()
+	var h_mesh := BoxMesh.new()
+	h_mesh.size = Vector3(0.06, 0.0035, 0.0035)
+	horizontal.mesh = h_mesh
+	horizontal.material_override = material
+	_reticle.add_child(horizontal)
+	var vertical := MeshInstance3D.new()
+	var v_mesh := BoxMesh.new()
+	v_mesh.size = Vector3(0.0035, 0.06, 0.0035)
+	vertical.mesh = v_mesh
+	vertical.material_override = material
+	_reticle.add_child(vertical)
 
 	_prompt = Label3D.new()
 	_prompt.text = PROMPT_SCAN
-	_prompt.font_size = 40
-	_prompt.modulate = Color(0.7, 0.98, 1.0)
-	_prompt.position = Vector3(0.0, 0.46, 0.02)
+	_prompt.font_size = 30
+	_prompt.outline_size = 12
+	_prompt.modulate = Color(0.8, 0.99, 1.0)
+	_prompt.position = Vector3(0.0, 0.08, 0.01)
+	_prompt.no_depth_test = true
 	add_child(_prompt)
 
+	# Offscreen capture target for the CameraServer fallback.
 	_viewport = SubViewport.new()
-	_viewport.size = Vector2i(360, 270)
+	_viewport.size = Vector2i(480, 360)
 	_viewport.transparent_bg = false
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(_viewport)

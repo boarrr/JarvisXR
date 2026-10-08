@@ -92,8 +92,12 @@ class PassthroughCameraPlugin(godot: Godot) : GodotPlugin(godot) {
             try {
                 val characteristics = manager.getCameraCharacteristics(id)
                 val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-                val size: Size = map?.getOutputSizes(ImageFormat.JPEG)
-                    ?.minByOrNull { it.width * it.height } ?: Size(640, 480)
+                val sizes = map?.getOutputSizes(ImageFormat.JPEG)
+                Log.i(tag, "camera $id JPEG sizes: ${sizes?.joinToString { "${it.width}x${it.height}" }}")
+                // Prefer the largest size up to 1280 wide so a QR is legible.
+                val size: Size = sizes?.filter { it.width <= 1280 }?.maxByOrNull { it.width * it.height }
+                    ?: sizes?.maxByOrNull { it.width * it.height }
+                    ?: Size(640, 480)
                 val imageReader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 2)
                 imageReader.setOnImageAvailableListener({ source ->
                     source.acquireLatestImage()?.use { image ->
