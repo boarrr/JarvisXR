@@ -24,6 +24,17 @@ func _run() -> void:
 	_check(fake.pair_with_payload(payload), "transport pairs from a valid payload")
 	_check(not fake.pair_with_payload("garbage"), "transport rejects an invalid payload")
 
+	# Unpaired -> the scan dialog opens automatically.
+	var main := (load("res://scenes/app/main.tscn") as PackedScene).instantiate()
+	add_child(main)
+	var scanner := main.get_node("QrScanService") as QrScanService
+	_check(not scanner.is_scanning(), "scan dialog starts hidden")
+	EventBus.pairing_required.emit()
+	_check(scanner.is_scanning(), "auth_required auto-opens the scan dialog")
+	scanner.stop_scan()
+	_check(not scanner.is_scanning(), "scan dialog can be dismissed")
+	main.queue_free()
+
 	if not _failed:
 		print("[TEST] QR pairing checks passed")
 	get_tree().quit(1 if _failed else 0)

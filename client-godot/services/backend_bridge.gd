@@ -160,6 +160,9 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 			var error_code := str(event.payload.get("code", ""))
 			if error_code in ["no_adb", "no_adb_device", "install_failed"]:
 				update_message.emit("update.fallback", event.payload)
+			elif error_code == "auth_required":
+				# Unpaired headset: bring up the QR scan dialog automatically.
+				EventBus.pairing_required.emit()
 			elif error_code == "run_active":
 				# Tapping a quick action while the agent is still answering is
 				# not a failure; just nudge the user to wait.
