@@ -41,9 +41,6 @@ const SECONDARY := [
 @export_range(0.3, 1.0, 0.01) var console_scale: float = 0.7
 @export var grab_enabled: bool = true
 @export_range(0.05, 0.35, 0.01) var grab_margin: float = 0.16
-@export_range(-0.3, 0.3, 0.01) var palm_lateral: float = 0.0
-@export_range(0.0, 0.4, 0.01) var palm_forward: float = 0.12
-@export_range(-0.2, 0.2, 0.01) var palm_drop: float = 0.02
 
 var _hand_source: OpenXRInteractionSource = null
 var _user_rig: UserRig = null
@@ -62,7 +59,6 @@ var _targets: Array[Area3D] = []
 var _button_rects: Array[Rect2] = []
 var _panel_ignored := 0.0
 var _grabbing := false
-var _locked := true
 var _grab_hand := ""
 var _grab_offset := Vector3.ZERO
 var _chat_follow := true
@@ -101,21 +97,14 @@ func get_screen_viewport() -> SubViewport:
 
 func summon_now() -> void:
 	if visible:
-		if not _locked:
-			# Re-attach a detached panel to the hand.
-			_locked = true
-			if not _apply_palm_lock(0.0):
-				_park_fallback()
-			return
 		_hide_panel()
 		return
 	if _camera == null and _user_rig != null:
 		_camera = _user_rig.get_camera()
 	if _camera == null:
 		return
-	_locked = true
-	if not _apply_palm_lock(0.0):
-		_park_fallback()
+	# Free-floating: park in front of the user; grab header/edge to move it.
+	_park_fallback()
 	_set_console_visible(true)
 	_panel_ignored = 0.0
 	_chat_follow = true
@@ -466,13 +455,7 @@ func _physics_process(delta: float) -> void:
 	if not visible:
 		return
 	if not _grabbing:
-		if _locked:
-			# Ride the left hand like a wrist menu; fall back to a front park if
-			# the hand is not currently tracked.
-			if not _apply_palm_lock(delta):
-				_park_fallback()
-		else:
-			_gaze_auto_hide(delta)
+		_gaze_auto_hide(delta)
 	_update_grab(delta)
 	_update_swipe()
 	if not _grabbing:
@@ -496,25 +479,6 @@ func _gaze_auto_hide(delta: float) -> void:
 		_panel_ignored += delta
 		if _panel_ignored >= parked_ignore_seconds:
 			_hide_panel()
-
-
-func _apply_palm_lock(delta: float) -> bool:
-	if _hand_source == null:
-		return false
-	var sample := _hand_source.get_latest_hand_sample("left")
-	if sample.is_empty():
-		return false
-	var palm := sample.get("palm_transform", Transform3D.IDENTITY) as Transform3D
-	var normal := palm.basis.z.normalized()
-	var side := palm.basis.x.normalized()
-	var target := (
-		palm.origin + normal * palm_forward + side * palm_lateral + Vector3.DOWN * palm_drop
-	)
-	if delta > 0.0:
-		global_position = global_position.lerp(target, 1.0 - exp(-18.0 * delta))
-	else:
-		global_position = target
-	return true
 
 
 func _park_fallback() -> void:
@@ -582,8 +546,6 @@ func _update_grab(delta: float) -> void:
 		_grabbing = true
 		_grab_hand = hand
 		_grab_offset = global_position - tip
-		# Grabbing pulls the panel off the hand into free space.
-		_locked = false
 		_panel_ignored = 0.0
 
 
