@@ -14,6 +14,7 @@ project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 desktop_dir="$project_root/desktop"
 venv="$desktop_dir/.venv"
 daemon_port=${SPATIAL_AGENT_PORT:-8787}
+export PYTHONPATH="$project_root/backend/src:$desktop_dir/src${PYTHONPATH:+:$PYTHONPATH}"
 
 # 1. Provision the app venv (first run only).
 if [ ! -x "$venv/bin/python" ]; then
