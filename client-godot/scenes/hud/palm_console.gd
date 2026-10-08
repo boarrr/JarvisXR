@@ -293,7 +293,7 @@ func _make_button(
 	var shape := BoxShape3D.new()
 	# Shallow target sitting on the screen plane so taps land where the control
 	# looks, regardless of the angle the hand approaches from.
-	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.02)
+	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.01)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	area.add_child(collision)
@@ -337,7 +337,7 @@ func _make_input_field(root: Control, rect: Rect2) -> void:
 	var shape := BoxShape3D.new()
 	# Shallow target sitting on the screen plane so taps land where the control
 	# looks, regardless of the angle the hand approaches from.
-	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.02)
+	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.01)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	area.add_child(collision)
@@ -445,7 +445,7 @@ func _rect_to_local(rect: Rect2) -> Vector3:
 	return Vector3(
 		SCREEN_CENTER.x + (center.x - VIEWPORT_SIZE.x * 0.5) * scale_x,
 		SCREEN_CENTER.y - (center.y - VIEWPORT_SIZE.y * 0.5) * scale_y,
-		0.006
+		0.003
 	)
 
 

@@ -160,13 +160,13 @@ func add_screen_target(target_id: String, rect: Rect2) -> Area3D:
 	target.position = Vector3(
 		(center.x - float(viewport_size.x) * 0.5) * scale_x,
 		-(center.y - float(viewport_size.y) * 0.5) * scale_y,
-		0.03
+		0.015
 	)
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(
 		maxf(rect.size.x * scale_x, 0.03),
 		maxf(rect.size.y * scale_y, 0.03),
-		0.05
+		0.025
 	)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape

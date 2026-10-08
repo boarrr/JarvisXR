@@ -169,7 +169,7 @@ func _add_key(root: Control, rect: Rect2, label_text: String, target_id: String)
 	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
 	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.05)
+	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.025)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	area.add_child(collision)
@@ -200,7 +200,7 @@ func _rect_to_local(rect: Rect2) -> Vector3:
 	return Vector3(
 		(center.x - float(VIEWPORT_SIZE.x) * 0.5) * scale_x,
 		-(center.y - float(VIEWPORT_SIZE.y) * 0.5) * scale_y,
-		0.03
+		0.015
 	)
 
 

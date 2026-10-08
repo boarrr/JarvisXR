@@ -13,7 +13,7 @@ const NAV_TARGET_SCRIPT := preload("res://interaction/spatial_action_target.gd")
 
 const SCREEN_SIZE := Vector2(1.445, 0.865)
 const VIEW_SIZE := Vector2(920.0, 560.0)
-const NAV_Z := 0.03
+const NAV_Z := 0.015
 const SCROLL_LINES_PER_METER := 22.0
 
 @onready var _viewport: SubViewport = $CodeViewport
@@ -278,7 +278,7 @@ func _add_nav_target(target_id: String, rect: Rect2) -> void:
 	shape.size = Vector3(
 		maxf(rect.size.x * scale_x, 0.03),
 		maxf(rect.size.y * scale_y, 0.03),
-		0.05
+		0.025
 	)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
