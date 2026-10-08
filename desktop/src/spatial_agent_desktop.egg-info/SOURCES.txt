@@ -3,6 +3,7 @@ pyproject.toml
 src/spatial_agent_desktop/__init__.py
 src/spatial_agent_desktop/app.py
 src/spatial_agent_desktop/bridge.py
+src/spatial_agent_desktop/dependencies.py
 src/spatial_agent_desktop/linkinfo.py
 src/spatial_agent_desktop/paths.py
 src/spatial_agent_desktop/runtime.py

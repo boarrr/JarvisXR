@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import secrets
+import shutil
 import sys
+from pathlib import Path
 
 from spatial_agent_backend.config import Settings
 
@@ -43,6 +46,17 @@ def _load_config_env() -> None:
 def build_settings() -> Settings:
     base = app_support_dir()
     settings = Settings.from_environment()
+    # Prefer real agents when opencode is installed (the app starts it itself).
+    if "SPATIAL_AGENT_PROVIDER" not in os.environ and shutil.which("opencode"):
+        settings = dataclasses.replace(settings, provider="opencode")
+    if settings.provider == "opencode":
+        password = settings.opencode_password or secrets.token_hex(16)
+        directory = (
+            settings.opencode_directory or settings.workspace_path or str(Path.home())
+        )
+        settings = dataclasses.replace(
+            settings, opencode_password=password, opencode_directory=directory
+        )
     # A double-clicked .app has CWD "/", so pin the relative defaults to a
     # writable per-user directory.
     return dataclasses.replace(

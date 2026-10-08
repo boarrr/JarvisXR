@@ -1,20 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 from typing import Any
 
 from spatial_agent_backend.config import Settings
 from spatial_agent_backend.server import SpatialAgentServer
 
+from .dependencies import DependencySupervisor
 from .linkinfo import link_info
+from .paths import app_support_dir
 
 
 class DaemonRuntime:
     """Runs the daemon on a background asyncio loop and exposes a sync API.
 
     The desktop app is one process: pywebview owns the main thread, this class
-    owns a daemon thread running the server's event loop.
+    owns a daemon thread running the server's event loop. It also starts and
+    stops the agent dependencies (opencode, whisper) so there is nothing else to
+    launch.
     """
 
     def __init__(self, settings: Settings) -> None:
@@ -24,11 +29,22 @@ class DaemonRuntime:
         self._server: SpatialAgentServer | None = None
         self._ready = threading.Event()
         self._error = ""
+        self._deps = DependencySupervisor(app_support_dir() / "logs")
+
+    def _ensure_dependencies(self) -> None:
+        if self.settings.provider == "opencode":
+            self._deps.ensure_opencode(
+                self.settings.opencode_url, self.settings.opencode_password
+            )
+        model = os.environ.get("SPATIAL_AGENT_WHISPER_MODEL", "")
+        if model:
+            self._deps.ensure_whisper(model, self.settings.whisper_server_url)
 
     # -- lifecycle -----------------------------------------------------------
     def start(self) -> None:
         if self._thread is not None:
             return
+        self._ensure_dependencies()
         self._thread = threading.Thread(target=self._run, name="spatial-daemon", daemon=True)
         self._thread.start()
 
@@ -62,6 +78,7 @@ class DaemonRuntime:
             self._loop.call_soon_threadsafe(self._loop.stop)
         if self._thread is not None:
             self._thread.join(timeout=10)
+        self._deps.stop()
 
     def _submit(self, coro: Any) -> Any:
         assert self._loop is not None, "runtime is not started"

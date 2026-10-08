@@ -5,21 +5,30 @@ create/select/delete agents, chat with them, pause runs, and see the
 headset-facing link info (LAN URLs, CA fingerprint, pairing code, paired
 devices).
 
-## Quick start (one command)
+The app is self-contained: it starts and stops **opencode** (and **whisper**
+when a model is present) itself, so there is no third program to run.
 
-From the repo root:
+## Quick start
+
+Build and install the app (writes `/Applications/Spatial Agent.app`):
+
+```sh
+./desktop/build_app.sh
+cp -R "desktop/dist/Spatial Agent.app" /Applications/
+```
+
+Then **launch "Spatial Agent"** from Applications/Spotlight. On first run it
+writes a commented template to
+`~/Library/Application Support/SpatialAgent/config.env` — uncomment
+`SPATIAL_AGENT_WORKSPACE_PATH` (and set `SPATIAL_AGENT_PROVIDER=opencode` or
+`=codex`) to point it at a repo. Without that, it runs a UI demo with the
+deterministic `fake` provider.
+
+Dev convenience (runs from source with LAN + pairing preconfigured):
 
 ```sh
 ./scripts/run_daemon_app.sh
 ```
-
-This creates the app's virtualenv, starts `opencode serve` (+ `whisper-server`
-when available), then opens the app window (which hosts the daemon on the LAN
-with TLS + pairing). Close the window to stop everything. The first run installs
-dependencies, so it takes a minute; later runs are instant.
-
-- UI-only demo (no agent backend): `SPATIAL_AGENT_PROVIDER=fake ./scripts/run_daemon_app.sh`
-- Codex instead of opencode: `SPATIAL_AGENT_HARNESS=codex ./scripts/run_daemon_app.sh`
 
 ## Manual run
 
@@ -27,22 +36,21 @@ dependencies, so it takes a minute; later runs are instant.
 cd desktop
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e .            # installs the backend + pywebview/pystray
-# Point at your agent harness (opencode by default):
-SPATIAL_AGENT_PROVIDER=opencode \
-SPATIAL_AGENT_OPENCODE_URL=http://127.0.0.1:4096 \
-SPATIAL_AGENT_HARNESS=opencode \
-spatial-agent-desktop
+SPATIAL_AGENT_WORKSPACE_PATH=/path/to/your/repo spatial-agent-desktop
 ```
 
 The app writes its database/config to
-`~/Library/Application Support/SpatialAgent/`. The daemon binds loopback by
+`~/Library/Application Support/SpatialAgent/` and its dependency logs to
+`~/Library/Application Support/SpatialAgent/logs/`. The daemon binds loopback by
 default; set `SPATIAL_AGENT_HOST=0.0.0.0 SPATIAL_AGENT_AUTH_REQUIRED=1` plus TLS
-to let a headset connect (the **Pair headset** button shows the code).
+(or use `run_daemon_app.sh`) to let a headset connect — the **Pair headset**
+button shows the code + QR.
 
 ## Layout
 
 - `src/spatial_agent_desktop/runtime.py` — hosts `SpatialAgentServer` on a
   background asyncio loop; sync API for the UI.
+- `src/spatial_agent_desktop/dependencies.py` — starts/stops opencode + whisper.
 - `src/spatial_agent_desktop/bridge.py` — pywebview JS↔Python facade.
 - `src/spatial_agent_desktop/linkinfo.py` — LAN URLs / CA fingerprint / pairing.
 - `src/spatial_agent_desktop/app.py` — pywebview window entry point.
@@ -53,3 +61,4 @@ to let a headset connect (the **Pair headset** button shows the code).
 ```sh
 PYTHONPATH="../backend/src:src" ../backend/.venv/bin/python tests/test_runtime.py
 ```
+
