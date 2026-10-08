@@ -447,6 +447,34 @@ updater_plugin() {
 	printf '%s\n' "Export with Gradle build enabled so the plugin is packaged into the APK."
 }
 
+passthrough_plugin() {
+	plugin_source="$client_root/android_plugins/passthrough_camera"
+	if [ ! -d "$plugin_source" ]; then
+		printf '%s\n' "Passthrough camera plugin source not found: $plugin_source" >&2
+		exit 2
+	fi
+	gradlew="$client_root/android/build/gradlew"
+	if [ ! -x "$gradlew" ]; then
+		printf '%s\n' "Android build template missing; run ./scripts/quest.sh setup first." >&2
+		exit 2
+	fi
+	android_java_home=$(resolve_android_java_home || true)
+	android_sdk="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+	(
+		cd "$plugin_source" &&
+			JAVA_HOME="$android_java_home" ANDROID_HOME="$android_sdk" \
+				"$gradlew" assembleRelease --no-daemon --console=plain
+	)
+	aar=$(find "$plugin_source/build/outputs/aar" -name "*.aar" 2>/dev/null | head -1)
+	if [ -z "$aar" ]; then
+		printf '%s\n' "Passthrough camera AAR was not produced." >&2
+		exit 1
+	fi
+	cp "$aar" "$client_root/android/plugins/PassthroughCameraPlugin.aar"
+	cp "$plugin_source/PassthroughCamera.gdap" "$client_root/android/plugins/PassthroughCamera.gdap"
+	printf '%s\n' "Installed passthrough camera plugin at $client_root/android/plugins"
+}
+
 install_apk() {
 	require_command "$adb_bin"
 	if [ ! -f "$apk_path" ]; then
@@ -509,6 +537,9 @@ case "$action" in
 		;;
 	updater-plugin)
 		updater_plugin
+		;;
+	passthrough-plugin)
+		passthrough_plugin
 		;;
 	manifest)
 		write_manifest
