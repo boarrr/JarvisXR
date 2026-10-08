@@ -399,7 +399,10 @@ func _create_agent_at(position: Vector3) -> void:
 	if not _backend_bridge.send_command("thread.create", {"title": "New agent"}):
 		_pending_spawn_position = null
 		_pending_bind_thread = false
+		AppState.set_update_banner("Could not create agent - reconnecting")
 		EventBus.debug_message.emit("Could not create an agent")
+	else:
+		AppState.set_update_banner("Creating agent...")
 
 
 func _crush_agent(thread_id: String) -> void:

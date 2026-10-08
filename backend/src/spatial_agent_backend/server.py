@@ -428,6 +428,7 @@ class SpatialAgentServer:
             await emit("thread.snapshot", "", {"threads": [thread.to_wire() for thread in threads]})
         elif command.type == "thread.create":
             thread = await self.threads.create_thread(str(command.payload.get("title", "New thread")))
+            log_record("thread_created", session_id=session.id, thread_id=thread.id)
             await emit("thread.created", thread.id, {"thread": thread.to_wire()})
         elif command.type == "thread.focus":
             if command.thread_id:
