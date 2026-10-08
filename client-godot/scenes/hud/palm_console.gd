@@ -464,7 +464,8 @@ func _physics_process(delta: float) -> void:
 		_gaze_auto_hide(delta)
 	_update_grab(delta)
 	_update_swipe()
-	if not _grabbing:
+	# Rotate only while actively pinching to move; otherwise stay fixed in space.
+	if _grabbing:
 		_face_user(delta)
 
 

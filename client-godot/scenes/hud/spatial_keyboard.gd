@@ -19,8 +19,8 @@ const ROW_GAP := 8.0
 const TOP := 14.0
 
 @export var user_rig_path: NodePath = ^"../UserRig"
-@export_range(0.3, 2.5, 0.05) var distance_from_user: float = 0.5
-@export_range(-1.0, 1.0, 0.05) var vertical_offset: float = -0.28
+@export_range(0.3, 2.5, 0.05) var distance_from_user: float = 0.42
+@export_range(-1.0, 1.0, 0.05) var vertical_offset: float = -0.3
 
 var _camera: Camera3D = null
 var _viewport: SubViewport = null
