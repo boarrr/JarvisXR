@@ -17,12 +17,15 @@ Build and install the app (writes `/Applications/Spatial Agent.app`):
 cp -R "desktop/dist/Spatial Agent.app" /Applications/
 ```
 
-Then **launch "Spatial Agent"** from Applications/Spotlight. On first run it
-writes a commented template to
-`~/Library/Application Support/SpatialAgent/config.env` — uncomment
-`SPATIAL_AGENT_WORKSPACE_PATH` (and set `SPATIAL_AGENT_PROVIDER=opencode` or
-`=codex`) to point it at a repo. Without that, it runs a UI demo with the
-deterministic `fake` provider.
+Then **launch "Spatial Agent"** from Applications/Spotlight. On first run:
+
+- It starts **opencode** itself (and `whisper` when a model is present) — no
+  third program to run.
+- Click **Workspace → Choose folder…** to pick the repository agents should edit
+  (any git repo). The choice is remembered; new agents and missions target it.
+- Click **Pair headset** for the LAN URL + code + QR.
+
+No config files to edit — everything is in the window.
 
 Dev convenience (runs from source with LAN + pairing preconfigured):
 
