@@ -19,6 +19,7 @@ var _bridge: BackendBridge = null
 var _viewport: SubViewport = null
 var _capture_rect: TextureRect = null
 var _reticle: Node3D = null
+var _reticle_material: StandardMaterial3D = null
 var _prompt: Label3D = null
 var _camera_texture: CameraTexture = null
 var _feed_index := -1
@@ -178,6 +179,8 @@ func _capture_viewport() -> void:
 func _on_payload(payload: String) -> void:
 	if not _scanning or payload.strip_edges().is_empty():
 		return
+	_set_reticle_detected(true)
+	_set_prompt("QR DETECTED - PAIRING…")
 	var transport = ServiceRegistry.backend_transport
 	var paired := false
 	if transport != null and transport.has_method("pair_with_payload"):
@@ -186,7 +189,17 @@ func _on_payload(payload: String) -> void:
 		stop_scan()
 		AppState.set_update_banner("Paired - welcome")
 	else:
+		_set_reticle_detected(false)
+		_set_prompt(PROMPT_SCAN)
 		AppState.set_update_banner("QR read but pairing failed; try again")
+
+
+func _set_reticle_detected(detected: bool) -> void:
+	if _reticle_material == null:
+		return
+	_reticle_material.albedo_color = (
+		Color(0.25, 1.0, 0.45) if detected else Color(1.0, 0.22, 0.2)
+	)
 
 
 func _set_prompt(text: String) -> void:
@@ -204,33 +217,37 @@ func _place() -> void:
 
 
 func _build() -> void:
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color(0.55, 0.97, 1.0)
-	material.no_depth_test = true
+	_reticle_material = StandardMaterial3D.new()
+	_reticle_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_reticle_material.albedo_color = Color(1.0, 0.22, 0.2)
+	_reticle_material.no_depth_test = true
 
+	# A red square (frame) reticle to aim the QR inside.
 	_reticle = Node3D.new()
 	add_child(_reticle)
-	var horizontal := MeshInstance3D.new()
-	var h_mesh := BoxMesh.new()
-	h_mesh.size = Vector3(0.06, 0.0035, 0.0035)
-	horizontal.mesh = h_mesh
-	horizontal.material_override = material
-	_reticle.add_child(horizontal)
-	var vertical := MeshInstance3D.new()
-	var v_mesh := BoxMesh.new()
-	v_mesh.size = Vector3(0.0035, 0.06, 0.0035)
-	vertical.mesh = v_mesh
-	vertical.material_override = material
-	_reticle.add_child(vertical)
+	var half := 0.075
+	var edge := 0.006
+	for spec in [
+		[Vector3(half * 2.0 + edge, edge, edge), Vector3(0.0, half, 0.0)],
+		[Vector3(half * 2.0 + edge, edge, edge), Vector3(0.0, -half, 0.0)],
+		[Vector3(edge, half * 2.0 + edge, edge), Vector3(-half, 0.0, 0.0)],
+		[Vector3(edge, half * 2.0 + edge, edge), Vector3(half, 0.0, 0.0)],
+	]:
+		var bar := MeshInstance3D.new()
+		var bar_mesh := BoxMesh.new()
+		bar_mesh.size = spec[0]
+		bar.mesh = bar_mesh
+		bar.material_override = _reticle_material
+		bar.position = spec[1]
+		_reticle.add_child(bar)
 
 	_prompt = Label3D.new()
 	_prompt.text = PROMPT_SCAN
-	_prompt.font_size = 40
-	_prompt.outline_size = 16
+	_prompt.font_size = 22
+	_prompt.outline_size = 10
 	_prompt.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_prompt.modulate = Color(0.8, 0.99, 1.0)
-	_prompt.position = Vector3(0.0, 0.14, 0.01)
+	_prompt.position = Vector3(0.0, 0.12, 0.01)
 	_prompt.no_depth_test = true
 	add_child(_prompt)
 
