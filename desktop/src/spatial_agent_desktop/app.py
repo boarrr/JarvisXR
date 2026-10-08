@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import sys
 
 from spatial_agent_backend.config import Settings
@@ -8,6 +9,35 @@ from spatial_agent_backend.config import Settings
 from .bridge import Bridge
 from .paths import app_support_dir, web_dir
 from .runtime import DaemonRuntime
+
+_CONFIG_TEMPLATE = """\
+# Spatial Agent app configuration (KEY=VALUE). Lines starting with # are ignored.
+# Uncomment + edit to run real agents from a double-clicked app. Without these,
+# the app runs a UI demo with the deterministic "fake" provider.
+#
+# SPATIAL_AGENT_PROVIDER=opencode
+# SPATIAL_AGENT_OPENCODE_URL=http://127.0.0.1:4096
+# SPATIAL_AGENT_OPENCODE_PASSWORD=change-me
+# SPATIAL_AGENT_HARNESS=opencode
+# SPATIAL_AGENT_WORKSPACE_PATH=/absolute/path/to/your/repo
+# SPATIAL_AGENT_WORKSPACE_BRANCH=main
+# SPATIAL_AGENT_FS_ROOT=/Users/you
+"""
+
+
+def _load_config_env() -> None:
+    """Apply ~/Library/Application Support/SpatialAgent/config.env (if present)."""
+    base = app_support_dir()
+    config = base / "config.env"
+    if not config.is_file():
+        config.write_text(_CONFIG_TEMPLATE, encoding="utf-8")
+        return
+    for line in config.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
 
 
 def build_settings() -> Settings:
@@ -24,6 +54,7 @@ def build_settings() -> Settings:
 
 
 def main() -> int:
+    _load_config_env()
     settings = build_settings()
     try:
         settings.validate()

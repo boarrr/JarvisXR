@@ -24,7 +24,7 @@ pyinstaller --noconfirm --clean --windowed \
   --add-data "src/spatial_agent_desktop/web:spatial_agent_desktop/web" \
   --collect-all webview \
   --osx-bundle-identifier "dev.spatialagent.desktop" \
-  src/spatial_agent_desktop/app.py
+  run_app.py
 
 echo "Built: $here/dist/Spatial Agent.app"
 echo "Run it, or move it to /Applications. Headset pairing lives in the app's"

@@ -15,3 +15,9 @@ client-godot/android/
 client-godot/android_plugins/*/build/
 client-godot/android_plugins/*/.gradle/
 build/
+
+# Desktop app build artifacts
+desktop/.venv/
+desktop/dist/
+desktop/build/
+desktop/*.spec
