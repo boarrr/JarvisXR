@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import threading
+from pathlib import Path
 from typing import Any
 
 from spatial_agent_backend.config import Settings
 from spatial_agent_backend.server import SpatialAgentServer
+from spatial_agent_backend.workspace import WorkspaceError
 
 from .dependencies import DependencySupervisor
 from .linkinfo import link_info
@@ -30,6 +33,25 @@ class DaemonRuntime:
         self._ready = threading.Event()
         self._error = ""
         self._deps = DependencySupervisor(app_support_dir() / "logs")
+        self._state_path = app_support_dir() / "state.json"
+        self._selected_workspace_id = ""
+        self._load_state()
+
+    def _load_state(self) -> None:
+        try:
+            data = json.loads(self._state_path.read_text(encoding="utf-8"))
+            self._selected_workspace_id = str(data.get("workspace_id", ""))
+        except (OSError, ValueError):
+            self._selected_workspace_id = ""
+
+    def _save_state(self) -> None:
+        try:
+            self._state_path.write_text(
+                json.dumps({"workspace_id": self._selected_workspace_id}, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
 
     def _ensure_dependencies(self) -> None:
         if self.settings.provider == "opencode":
@@ -106,6 +128,78 @@ class DaemonRuntime:
     def link_info(self) -> dict[str, Any]:
         return link_info(self._server, self.settings)
 
+    # -- workspaces ----------------------------------------------------------
+    def list_workspaces(self) -> list[dict[str, Any]]:
+        server = self._server
+        if server is None:
+            return []
+        return [
+            {
+                "id": workspace.id,
+                "name": workspace.name,
+                "path": str(workspace.path),
+                "base_branch": workspace.base_branch,
+            }
+            for workspace in server.workspaces.list_workspaces()
+        ]
+
+    def selected_workspace(self) -> dict[str, Any]:
+        server = self._server
+        if server is None:
+            return {}
+        workspace = None
+        if self._selected_workspace_id:
+            workspace = server.workspaces.get(self._selected_workspace_id)
+        if workspace is None:
+            registered = server.workspaces.list_workspaces()
+            workspace = registered[0] if registered else None
+        if workspace is None:
+            return {}
+        if workspace.id != self._selected_workspace_id:
+            self._apply_workspace(workspace)
+        return {"id": workspace.id, "name": workspace.name, "path": str(workspace.path)}
+
+    def add_workspace(self, path: str, name: str = "") -> dict[str, Any]:
+        server = self._server
+        if server is None or not path.strip():
+            return {}
+        candidate = Path(path).expanduser()
+        if not candidate.is_dir():
+            return {"error": "Not a directory: %s" % candidate}
+        try:
+            workspace = server.workspaces.register(name.strip() or candidate.name, candidate)
+        except WorkspaceError as error:
+            return {"error": str(error)}
+        self._apply_workspace(workspace)
+        return {"id": workspace.id, "name": workspace.name, "path": str(workspace.path)}
+
+    def select_workspace(self, workspace_id: str) -> dict[str, Any]:
+        server = self._server
+        if server is None:
+            return {}
+        workspace = server.workspaces.get(workspace_id)
+        if workspace is None:
+            return {}
+        self._apply_workspace(workspace)
+        return {"id": workspace.id, "name": workspace.name, "path": str(workspace.path)}
+
+    def remove_workspace(self, workspace_id: str) -> bool:
+        server = self._server
+        if server is None:
+            return False
+        removed = server.workspaces.unregister(workspace_id)
+        if removed and self._selected_workspace_id == workspace_id:
+            self._selected_workspace_id = ""
+            self._save_state()
+        return bool(removed)
+
+    def _apply_workspace(self, workspace) -> None:
+        self._selected_workspace_id = workspace.id
+        self._save_state()
+        os.environ["SPATIAL_AGENT_WORKSPACE_PATH"] = str(workspace.path)
+        if self._server is not None:
+            self._server.coordinator.opencode_directory = str(workspace.path)
+
     # -- pairing -------------------------------------------------------------
     def issue_pairing_code(self) -> str:
         if self._server is None:
@@ -159,12 +253,13 @@ class DaemonRuntime:
         server = self._server
         if server is None:
             return {}
+        selected = workspace_id or str(self.selected_workspace().get("id", ""))
 
         async def _create() -> dict[str, Any]:
             thread = await server.threads.create_thread(title or "New agent")
-            if workspace_id:
+            if selected:
                 metadata = dict(thread.metadata)
-                metadata["workspace_id"] = workspace_id
+                metadata["workspace_id"] = selected
                 thread.metadata = metadata
                 await server.threads.persist_thread(thread.id)
             return {"id": thread.id, "title": thread.title}
@@ -238,7 +333,7 @@ class DaemonRuntime:
             return {}
 
         async def _create() -> dict[str, Any]:
-            wsid = workspace_id
+            wsid = workspace_id or str(self.selected_workspace().get("id", ""))
             if not wsid and server.workspaces is not None:
                 registered = server.workspaces.list_workspaces()
                 if registered:

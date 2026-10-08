@@ -25,6 +25,37 @@ class Bridge:
     def get_link_info(self) -> dict[str, Any]:
         return self._runtime.link_info()
 
+    # -- workspaces ----------------------------------------------------------
+    def list_workspaces(self) -> list[dict[str, Any]]:
+        return self._runtime.list_workspaces()
+
+    def selected_workspace(self) -> dict[str, Any]:
+        return self._runtime.selected_workspace()
+
+    def add_workspace(self, path: str, name: str = "") -> dict[str, Any]:
+        return self._runtime.add_workspace(str(path), str(name))
+
+    def select_workspace(self, workspace_id: str) -> dict[str, Any]:
+        return self._runtime.select_workspace(str(workspace_id))
+
+    def remove_workspace(self, workspace_id: str) -> bool:
+        return self._runtime.remove_workspace(str(workspace_id))
+
+    def choose_folder(self) -> str:
+        """Open the native folder picker and return the chosen path (or "")."""
+        try:
+            import webview
+
+            window = webview.windows[0] if webview.windows else None
+            if window is None:
+                return ""
+            result = window.create_file_dialog(webview.FOLDER_DIALOG)
+            if result:
+                return str(result[0])
+        except Exception:  # noqa: BLE001 - picker is a convenience
+            return ""
+        return ""
+
     def issue_pairing_code(self) -> str:
         return self._runtime.issue_pairing_code()
 

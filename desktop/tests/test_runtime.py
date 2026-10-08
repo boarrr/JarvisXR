@@ -118,6 +118,22 @@ class DaemonRuntimeTests(unittest.TestCase):
         self.assertTrue(result.get("merged"))
         self.assertEqual(self.runtime.mission_status(mission_id).get("status"), "merged")
 
+    def test_workspace_management(self) -> None:
+        other = Path(self._tmpdir.name) / "repo2"
+        other.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=other, check=True, capture_output=True)
+        added = self.runtime.add_workspace(str(other), "Repo2")
+        self.assertTrue(added.get("id"))
+        self.assertEqual(Path(added.get("path", "")).resolve(), other.resolve())
+        self.assertEqual(self.runtime.selected_workspace().get("id"), added["id"])
+        ids = [w["id"] for w in self.runtime.list_workspaces()]
+        self.assertIn(added["id"], ids)
+        self.assertTrue(self.runtime.remove_workspace(added["id"]))
+        # A non-git folder is rejected without raising.
+        plain = Path(self._tmpdir.name) / "plain"
+        plain.mkdir()
+        self.assertIn("error", self.runtime.add_workspace(str(plain), ""))
+
 
 if __name__ == "__main__":
     unittest.main()

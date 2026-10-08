@@ -1,5 +1,5 @@
 // Spatial Agent office: a live, clickable view of the daemon's agents.
-const STATE = { threads: [], selected: "", status: {}, link: {} };
+const STATE = { threads: [], selected: "", status: {}, link: {}, workspace: {} };
 
 const STATUS_COLOR = {
   working: "#38d39f",
@@ -21,14 +21,16 @@ function $(id) {
 async function refresh() {
   const a = api();
   if (!a) return;
-  const [status, link, threads] = await Promise.all([
+  const [status, link, threads, workspace] = await Promise.all([
     a.get_status(),
     a.get_link_info(),
     a.list_threads(),
+    a.selected_workspace(),
   ]);
   STATE.status = status || {};
   STATE.link = link || {};
   STATE.threads = threads || [];
+  STATE.workspace = workspace || {};
   if (STATE.selected && !STATE.threads.some((t) => t.id === STATE.selected)) {
     STATE.selected = "";
   }
@@ -41,6 +43,7 @@ async function refresh() {
 function renderChips() {
   const s = STATE.status || {};
   const chips = [
+    `repo: ${(STATE.workspace && STATE.workspace.name) || "none"}`,
     `provider: ${s.provider || "?"}`,
     `harness: ${s.harness || "?"}`,
     `port: ${s.port ?? "?"}`,
@@ -178,6 +181,10 @@ function initEvents() {
     refresh();
   });
 
+  $("btn-workspace").addEventListener("click", showWorkspace);
+
+  $("dialog-close").addEventListener("click", () => $("dialog").close());
+
   $("btn-mission").addEventListener("click", () => {
     openDialog(
       `<p>New mission (fans out to N agents, each its own worktree)</p>` +
@@ -284,6 +291,51 @@ function openDialog(html) {
 function escapeHtml(value) {
   return String(value == null ? "" : value).replace(/[&<>"]/g, (c) => {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+
+async function showWorkspace() {
+  const a = api();
+  if (!a) return;
+  const workspaces = await a.list_workspaces();
+  const selected = STATE.workspace && STATE.workspace.id;
+  const rows = workspaces.length
+    ? workspaces
+        .map(
+          (w) =>
+            `<div class="devrow"><span>${w.id === selected ? "● " : ""}${escapeHtml(
+              w.name
+            )} <span style="color:#7fa6bd">${escapeHtml(w.path)}</span></span>` +
+            `<span><button data-select="${w.id}">use</button> <button data-remove="${w.id}">remove</button></span></div>`
+        )
+        .join("")
+    : "<p>No repositories yet. Choose a folder.</p>";
+  openDialog(
+    `<p>Repository (agents edit code here)</p>${rows}` +
+      `<menu><button id="ws-choose">Choose folder…</button></menu>`
+  );
+  const body = $("dialog-body");
+  body.querySelectorAll("[data-select]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await a.select_workspace(b.getAttribute("data-select"));
+      $("dialog").close();
+      refresh();
+    })
+  );
+  body.querySelectorAll("[data-remove]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await a.remove_workspace(b.getAttribute("data-remove"));
+      showWorkspace();
+      refresh();
+    })
+  );
+  $("ws-choose").addEventListener("click", async () => {
+    const path = await a.choose_folder();
+    if (path) {
+      await a.add_workspace(path, "");
+      $("dialog").close();
+      refresh();
+    }
   });
 }
 
