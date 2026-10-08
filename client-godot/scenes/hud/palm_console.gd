@@ -15,20 +15,18 @@ const VIEWPORT_SIZE := Vector2i(640, 860)
 const SCREEN_CENTER := Vector2(0.0, 0.0)
 const SCREEN_SIZE := Vector2(0.5, 0.672)
 const HEADER_HEIGHT_PX := 104.0
-const FOOTER_HEIGHT_PX := 196.0
+const FOOTER_HEIGHT_PX := 210.0
 const CHAT_RENDER_INTERVAL := 0.1
 const CHAT_SCROLL_LINES_PER_METRE := 55.0
 
-const RECT_INPUT := Rect2(16, 664, 462, 74)
-const RECT_SPEAK := Rect2(486, 664, 138, 74)
-const RECT_SECONDARY := Rect2(16, 754, 608, 62)
+const RECT_INPUT := Rect2(16, 650, 462, 74)
+const RECT_SPEAK := Rect2(486, 650, 138, 74)
+const RECT_SECONDARY := Rect2(16, 736, 608, 76)
 const SECONDARY := [
 	["NEW", "palm:new_agent", "NewTarget"],
 	["CODE", "palm:code_toggle", "CodeTarget"],
 	["REVIEW", "palm:review", "ReviewTarget"],
-	["FILES", "palm:files", "FilesTarget"],
 	["UPDATE", "palm:update", "UpdateTarget"],
-	["SCAN", "palm:scan_qr", "ScanTarget"],
 	["CLOSE", "palm:dismiss", "CloseTarget"],
 ]
 
@@ -292,7 +290,9 @@ func _make_button(
 	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
 	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.08)
+	# Shallow target sitting on the screen plane so taps land where the control
+	# looks, regardless of the angle the hand approaches from.
+	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.02)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	area.add_child(collision)
@@ -334,7 +334,9 @@ func _make_input_field(root: Control, rect: Rect2) -> void:
 	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
 	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.08)
+	# Shallow target sitting on the screen plane so taps land where the control
+	# looks, regardless of the angle the hand approaches from.
+	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.02)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	area.add_child(collision)
@@ -440,7 +442,7 @@ func _rect_to_local(rect: Rect2) -> Vector3:
 	return Vector3(
 		SCREEN_CENTER.x + (center.x - VIEWPORT_SIZE.x * 0.5) * scale_x,
 		SCREEN_CENTER.y - (center.y - VIEWPORT_SIZE.y * 0.5) * scale_y,
-		0.03
+		0.006
 	)
 
 
