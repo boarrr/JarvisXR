@@ -19,8 +19,8 @@ const ROW_GAP := 8.0
 const TOP := 14.0
 
 @export var user_rig_path: NodePath = ^"../UserRig"
-@export_range(0.6, 2.5, 0.05) var distance_from_user: float = 1.15
-@export_range(-1.0, 1.0, 0.05) var vertical_offset: float = -0.32
+@export_range(0.3, 2.5, 0.05) var distance_from_user: float = 0.5
+@export_range(-1.0, 1.0, 0.05) var vertical_offset: float = -0.28
 
 var _camera: Camera3D = null
 var _viewport: SubViewport = null
@@ -33,7 +33,24 @@ func _ready() -> void:
 	if rig != null:
 		_camera = rig.get_camera()
 	_build()
+	_build_touch_surface()
 	visible = false
+
+
+func _build_touch_surface() -> void:
+	# Hand-stop surface so fingers rest on the keys instead of passing through.
+	var surface := Area3D.new()
+	surface.name = "KeyboardSurface"
+	surface.collision_layer = 2
+	surface.collision_mask = 0
+	surface.monitoring = false
+	surface.add_to_group("touch_surface")
+	var box := BoxShape3D.new()
+	box.size = Vector3(SCREEN_SIZE.x, SCREEN_SIZE.y, 0.03)
+	var collision := CollisionShape3D.new()
+	collision.shape = box
+	surface.add_child(collision)
+	add_child(surface)
 
 
 func is_open() -> bool:

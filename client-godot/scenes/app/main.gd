@@ -71,6 +71,7 @@ func _ready() -> void:
 	EventBus.debug_message.connect(_on_debug_message)
 	AppState.thread_added.connect(_on_thread_added_for_layout)
 	_palm_console.compose_submitted.connect(_on_compose_submitted)
+	_palm_console.typing_changed.connect(_on_typing_changed)
 	_spatial_keyboard.key_input.connect(_on_keyboard_key)
 	_spatial_keyboard.special.connect(_on_keyboard_special)
 	AppState.listening_state = _speech_service.get_state()
@@ -183,8 +184,7 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 			elif event.target_id == "palm:code_toggle":
 				_code_viewer.toggle()
 			elif event.target_id == "palm:input_focus":
-				if _palm_console.begin_typing() and not _hardware_key_seen:
-					_spatial_keyboard.open()
+				_palm_console.begin_typing()
 			elif event.target_id.begins_with("kbd:"):
 				_spatial_keyboard.handle_key(event.target_id)
 			elif event.target_id == "palm:review":
@@ -332,6 +332,13 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		# Once a hardware keyboard is used we stop auto-showing the on-screen one.
 		_hardware_key_seen = true
+
+
+func _on_typing_changed(typing: bool) -> void:
+	if typing and not _hardware_key_seen:
+		_spatial_keyboard.open()
+	else:
+		_spatial_keyboard.close()
 
 
 func _on_keyboard_key(text: String) -> void:

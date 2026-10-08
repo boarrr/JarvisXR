@@ -69,6 +69,9 @@ func _physics_process(delta: float) -> void:
 		and not _was_selecting
 		and not pointer_state.is_grabbing
 		and not target_id.is_empty()
+		# Panels are touch-only: a pinch ray must never press a button. UI ids
+		# contain ":" (world/agent targets do not). Move a pane close and touch it.
+		and not ":" in target_id
 	):
 		_emit_event(InteractionEvent.Type.SELECT, target_id, hit_position)
 		_reset_dwell()

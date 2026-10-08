@@ -2,6 +2,7 @@ class_name PalmConsole
 extends Node3D
 
 signal compose_submitted(text: String)
+signal typing_changed(typing: bool)
 
 ## Left-hand master panel, redesigned voice-first.
 ##
@@ -380,6 +381,7 @@ func begin_typing() -> bool:
 	AppState.text_input_active = true
 	_refresh_header()
 	_render_now()
+	typing_changed.emit(true)
 	return true
 
 
@@ -390,6 +392,7 @@ func end_typing() -> void:
 	AppState.text_input_active = false
 	_refresh_header()
 	_render_now()
+	typing_changed.emit(false)
 
 
 func submit_composer() -> bool:
