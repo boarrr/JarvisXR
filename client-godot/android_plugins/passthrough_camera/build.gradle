@@ -1,0 +1,28 @@
+plugins {
+    id 'com.android.library' version '8.6.1'
+    id 'org.jetbrains.kotlin.android' version '2.1.21'
+}
+
+android {
+    namespace 'com.spatialagent.passthrough'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 29
+        targetSdk 36
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    compileOnly 'org.godotengine:godot:4.7.2.stable'
+    compileOnly 'androidx.core:core:1.8.0'
+}

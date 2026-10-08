@@ -2,9 +2,12 @@ class_name QrScanService
 extends Node3D
 
 ## Pairing by QR. When the daemon reports the device is unpaired, this dialog
-## appears automatically: it frames the passthrough camera and prompts the user
-## to scan the QR shown in the Spatial Agent desktop app. It streams frames to
-## the daemon (which decodes the QR) and pairs from the decoded payload.
+## appears automatically: it shows the passthrough camera and prompts the user
+## to scan the QR in the Spatial Agent desktop app. Frames go to the daemon
+## (which decodes the QR) and pairing completes from the payload.
+##
+## Camera source priority: the native "PassthroughCamera" Android plugin (Meta
+## HEADSET_CAMERA via Camera2), then Godot's CameraServer as a fallback.
 
 @export var user_rig_path: NodePath = ^"../UserRig"
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
@@ -24,6 +27,9 @@ var _camera_texture: CameraTexture = null
 var _feed_index := -1
 var _scanning := false
 var _camera_ok := false
+var _use_plugin := false
+var _plugin_started := false
+var _permission_requested := false
 var _frame := 0
 
 
@@ -33,6 +39,8 @@ func _ready() -> void:
 		_camera = rig.get_camera()
 	_bridge = get_node_or_null(backend_bridge_path) as BackendBridge
 	_build()
+	if Engine.has_singleton("PassthroughCamera"):
+		_use_plugin = true
 	EventBus.qr_pairing_payload.connect(_on_payload)
 	EventBus.pairing_required.connect(_on_pairing_required)
 	visible = false
@@ -43,6 +51,10 @@ func is_scanning() -> bool:
 
 
 func camera_available() -> bool:
+	if _use_plugin:
+		var plugin := Engine.get_singleton("PassthroughCamera")
+		if plugin != null and bool(plugin.call("hasPermission")) and int(plugin.call("cameraCount")) > 0:
+			return true
 	return CameraServer.get_feed_count() > 0
 
 
@@ -63,6 +75,25 @@ func start_scan() -> bool:
 	_frame = 0
 	visible = true
 	_place()
+
+	if _use_plugin:
+		var plugin := Engine.get_singleton("PassthroughCamera")
+		if plugin != null:
+			if not bool(plugin.call("hasPermission")):
+				if not _permission_requested:
+					_permission_requested = true
+					plugin.call("requestPermission")
+				_set_prompt(PROMPT_SCAN)
+				AppState.set_update_banner("Allow camera access to scan")
+				return true
+			if int(plugin.call("cameraCount")) > 0:
+				plugin.call("start")
+				_plugin_started = true
+				_camera_ok = true
+				_set_prompt(PROMPT_SCAN)
+				AppState.set_update_banner("Scan the pairing QR from the app")
+				return true
+	# CameraServer fallback.
 	_camera_ok = camera_available()
 	if _camera_ok:
 		_feed_index = 0
@@ -76,16 +107,21 @@ func start_scan() -> bool:
 			_capture_rect.texture = _camera_texture
 		_set_prompt(PROMPT_SCAN)
 		AppState.set_update_banner("Scan the pairing QR from the app")
-	else:
-		if _quad != null:
-			_quad.visible = false
-		_set_prompt(PROMPT_NO_CAMERA)
-		AppState.set_update_banner("No passthrough camera; enter the code")
-		EventBus.debug_message.emit("QR scan unavailable: no camera feed")
+		return true
+
+	if _quad != null:
+		_quad.visible = false
+	_set_prompt(PROMPT_NO_CAMERA)
+	AppState.set_update_banner("No passthrough camera; enter the code")
 	return true
 
 
 func stop_scan() -> void:
+	if _use_plugin and _plugin_started:
+		var plugin := Engine.get_singleton("PassthroughCamera")
+		if plugin != null:
+			plugin.call("stop")
+		_plugin_started = false
 	if _feed_index >= 0:
 		var feed := CameraServer.get_feed(_feed_index)
 		if feed != null:
@@ -100,14 +136,61 @@ func _process(_delta: float) -> void:
 	if not _scanning:
 		return
 	_place()
+	if _use_plugin:
+		_poll_plugin()
+		return
 	if not _camera_ok:
 		return
 	_frame += 1
 	if _frame % scan_every_frames == 0:
-		_capture_and_send()
+		_capture_viewport()
 
 
-func _capture_and_send() -> void:
+func _poll_plugin() -> void:
+	var plugin := Engine.get_singleton("PassthroughCamera")
+	if plugin == null:
+		return
+	if not _plugin_started:
+		if not bool(plugin.call("hasPermission")):
+			if not _permission_requested:
+				_permission_requested = true
+				plugin.call("requestPermission")
+			_set_prompt(PROMPT_SCAN)
+			return
+		if int(plugin.call("cameraCount")) <= 0:
+			if _quad != null:
+				_quad.visible = false
+			_set_prompt(PROMPT_NO_CAMERA)
+			return
+		plugin.call("start")
+		_plugin_started = true
+		_camera_ok = true
+		_set_prompt(PROMPT_SCAN)
+	_frame += 1
+	if _frame % scan_every_frames != 0:
+		return
+	var bytes: PackedByteArray = plugin.call("frameJpeg")
+	if bytes.is_empty():
+		return
+	_update_overlay_from_jpeg(bytes)
+	if _bridge != null:
+		print("[QR] sending frame (%d bytes)" % bytes.size())
+		_bridge.send_command("pair.decode", {"image": Marshalls.raw_to_base64(bytes)})
+
+
+func _update_overlay_from_jpeg(bytes: PackedByteArray) -> void:
+	if _quad == null:
+		return
+	var image := Image.new()
+	if image.load_jpg_from_buffer(bytes) != OK:
+		return
+	var texture := ImageTexture.create_from_image(image)
+	if _quad.material_override is StandardMaterial3D:
+		(_quad.material_override as StandardMaterial3D).albedo_texture = texture
+	_quad.visible = true
+
+
+func _capture_viewport() -> void:
 	if _viewport == null or _bridge == null:
 		return
 	var image := _viewport.get_texture().get_image()
@@ -150,7 +233,6 @@ func _place() -> void:
 
 
 func _build() -> void:
-	# Frame: a slightly larger dark panel behind the camera view.
 	var frame_material := StandardMaterial3D.new()
 	frame_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	frame_material.albedo_color = Color(0.02, 0.09, 0.13, 0.96)

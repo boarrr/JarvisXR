@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="horizonos.permission.HEADSET_CAMERA" />
+    <uses-permission android:name="com.oculus.permission.HEADSET_CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <application>
+        <meta-data
+            android:name="org.godotengine.plugin.v2.PassthroughCamera"
+            android:value="com.spatialagent.passthrough.PassthroughCameraPlugin" />
+    </application>
+</manifest>

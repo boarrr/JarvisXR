@@ -1,0 +1,4 @@
+[config]
+name="PassthroughCamera"
+binary_type="local"
+binary="PassthroughCameraPlugin.aar"

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from spatial_agent_backend.config import Settings
+from spatial_agent_backend.observability import configure_logging
 
 from .bridge import Bridge
 from .paths import app_support_dir, web_dir
@@ -69,6 +70,7 @@ def build_settings() -> Settings:
 
 def main() -> int:
     _load_config_env()
+    configure_logging()
     settings = build_settings()
     try:
         settings.validate()
