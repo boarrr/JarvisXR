@@ -243,7 +243,7 @@ function initEvents() {
     const info = await a.pairing_payload();
     openDialog(
       `<p>Pair a headset — point it at this and scan with the passthrough camera:</p>` +
-        (info.qr ? `<img src="${info.qr}" width="340" height="340" alt="pairing QR" />` : "") +
+        (info.qr ? `<img src="${info.qr}" width="520" height="520" alt="pairing QR" />` : "") +
         `<p>or enter the code: <code>${escapeHtml(info.code || "")}</code></p>` +
         `<p style="color:#7fa6bd;font-size:12px">${escapeHtml(info.url || "")}</p>`
     );

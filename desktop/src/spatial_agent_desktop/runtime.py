@@ -213,7 +213,9 @@ class DaemonRuntime:
         urls = link.get("ws_urls") or [""]
         url = str(urls[0]) if urls else ""
         code = self.issue_pairing_code()
-        payload = pairing_payload(url, code, str(link.get("ca_fingerprint", "")))
+        # Keep the QR short (no CA fingerprint) so it stays low-density and
+        # readable from a distance; the baked CA already matches.
+        payload = pairing_payload(url, code, "")
         return {"code": code, "url": url, "payload": payload, "qr": self.qr_data_uri(payload)}
 
     def qr_data_uri(self, text: str) -> str:

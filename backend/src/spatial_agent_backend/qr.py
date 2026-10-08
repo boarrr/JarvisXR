@@ -20,7 +20,10 @@ def pairing_payload(url: str, code: str, ca_fingerprint: str = "") -> str:
 
 
 def decode_qr(image_bytes: bytes) -> str:
-    """Decode the first QR code in a PNG/JPEG image; "" when none/unsupported."""
+    """Decode the first QR code in a PNG/JPEG image; "" when none/unsupported.
+
+    Tries the frame as-is, upscaled (helps small/far codes), and inverted.
+    """
     if not image_bytes:
         return ""
     try:
@@ -32,9 +35,19 @@ def decode_qr(image_bytes: bytes) -> str:
     image = cv2.imdecode(array, cv2.IMREAD_GRAYSCALE)
     if image is None:
         return ""
+    detector = cv2.QRCodeDetector()
+    candidates = [image]
     try:
-        detector = cv2.QRCodeDetector()
-        data, _points, _ = detector.detectAndDecode(image)
-        return data or ""
-    except Exception:  # noqa: BLE001 - cv2 raises various types
-        return ""
+        candidates.append(cv2.resize(image, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC))
+    except Exception:  # noqa: BLE001
+        pass
+    candidates.append(cv2.bitwise_not(image))
+    for candidate in candidates:
+        try:
+            data, _points, _ = detector.detectAndDecode(candidate)
+        except Exception:  # noqa: BLE001 - cv2 raises various types
+            continue
+        if data:
+            return data
+    return ""
+

@@ -8,7 +8,7 @@ extends Node3D
 
 @export var user_rig_path: NodePath = ^"../UserRig"
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
-@export_range(0.6, 2.0, 0.05) var scan_distance: float = 1.1
+@export_range(0.8, 3.0, 0.05) var scan_distance: float = 1.8
 @export_range(2, 30, 1) var scan_every_frames: int = 6
 
 const PROMPT_SCAN := "AIM AT THE QR IN THE SPATIAL AGENT APP"
@@ -226,10 +226,11 @@ func _build() -> void:
 
 	_prompt = Label3D.new()
 	_prompt.text = PROMPT_SCAN
-	_prompt.font_size = 30
-	_prompt.outline_size = 12
+	_prompt.font_size = 40
+	_prompt.outline_size = 16
+	_prompt.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_prompt.modulate = Color(0.8, 0.99, 1.0)
-	_prompt.position = Vector3(0.0, 0.08, 0.01)
+	_prompt.position = Vector3(0.0, 0.14, 0.01)
 	_prompt.no_depth_test = true
 	add_child(_prompt)
 
