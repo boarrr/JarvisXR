@@ -240,12 +240,12 @@ function initEvents() {
   $("btn-pair").addEventListener("click", async () => {
     const a = api();
     if (!a) return;
-    const code = await a.issue_pairing_code();
-    const qr = await a.qr_data_uri(code);
+    const info = await a.pairing_payload();
     openDialog(
-      `<p>Type this on the headset (or <code>/pair</code>):</p>` +
-        `<p><code>${code}</code></p>` +
-        (qr ? `<img src="${qr}" width="180" height="180" alt="pairing QR" />` : "")
+      `<p>Pair a headset — point it at this and scan with the passthrough camera:</p>` +
+        (info.qr ? `<img src="${info.qr}" width="220" height="220" alt="pairing QR" />` : "") +
+        `<p>or enter the code: <code>${escapeHtml(info.code || "")}</code></p>` +
+        `<p style="color:#7fa6bd;font-size:12px">${escapeHtml(info.url || "")}</p>`
     );
   });
 

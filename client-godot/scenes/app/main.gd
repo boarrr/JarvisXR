@@ -17,6 +17,7 @@ var _speech_service: SpeechService = null
 @onready var _orb_manager: OrbManager = $OrbManager
 @onready var _palm_console: PalmConsole = $PalmConsole
 @onready var _spatial_keyboard: SpatialKeyboard = $SpatialKeyboard
+@onready var _qr_scan_service: QrScanService = $QrScanService
 @onready var _updater: UpdaterService = $UpdaterService
 @onready var _workspace_panel: WorkspacePanel = $WorkspacePanel
 @onready var _diff_review_panel: DiffReviewPanel = $DiffReviewPanel
@@ -193,6 +194,8 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 					_file_viewer.close()
 				else:
 					_file_viewer.open_host()
+			elif event.target_id == "palm:scan_qr":
+				_qr_scan_service.toggle_scan()
 			elif event.target_id == "palm:cognition_toggle":
 				_cognition_layer.toggle_enabled()
 			elif event.target_id == "palm:mission_toggle":
@@ -522,6 +525,8 @@ func _on_cockpit_panel_requested(panel: String) -> void:	match panel:
 			_daemon_settings_panel.toggle()
 		"missions":
 			_mission_topology.toggle_enabled()
+		"scan":
+			_qr_scan_service.toggle_scan()
 
 
 func _respond_to_next_approval(decision: String) -> bool:

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from spatial_agent_backend.config import Settings
+from spatial_agent_backend.qr import pairing_payload
 from spatial_agent_backend.server import SpatialAgentServer
 from spatial_agent_backend.workspace import WorkspaceError
 
@@ -206,8 +207,16 @@ class DaemonRuntime:
             return ""
         return self._server.pairing.issue_code()
 
+    def pairing_payload(self) -> dict[str, Any]:
+        """A fresh pairing code plus the join payload + QR a headset can scan."""
+        link = self.link_info()
+        urls = link.get("ws_urls") or [""]
+        url = str(urls[0]) if urls else ""
+        code = self.issue_pairing_code()
+        payload = pairing_payload(url, code, str(link.get("ca_fingerprint", "")))
+        return {"code": code, "url": url, "payload": payload, "qr": self.qr_data_uri(payload)}
+
     def qr_data_uri(self, text: str) -> str:
-        """A PNG data URI for a QR code, or "" if segno is unavailable."""
         if not text:
             return ""
         try:

@@ -87,6 +87,10 @@ func stop() -> void:
 	super.stop()
 
 
+func pair_with_payload(payload: String) -> bool:
+	return not PairingPayload.parse(payload).is_empty()
+
+
 func send_command(command_type: String, payload: Dictionary = {}, thread_id: String = "") -> bool:
 	if get_connection_state() != STATE_CONNECTED:
 		return false

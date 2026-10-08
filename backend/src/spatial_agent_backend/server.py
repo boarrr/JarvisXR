@@ -20,6 +20,7 @@ from .auth import PairingManager
 from .config import Settings
 from .coordinator import AgentCoordinator
 from .mission_service import MissionService
+from .qr import decode_qr
 from .discovery import DiscoveryAdvertiser, build_beacon, local_ipv4_addresses
 from .mcp_host import McpHost
 from .observability import configure_logging, log_record
@@ -378,6 +379,22 @@ class SpatialAgentServer:
                 "",
                 {"device_id": device.id, "device_name": device.name, "token": token},
             )
+            return
+
+        # Available before pairing: a headset scans the daemon's pairing QR with
+        # its passthrough camera and sends the frame here to be decoded.
+        if command.type == "pair.decode":
+            image = str(command.payload.get("image", ""))
+            payload = ""
+            if image:
+                try:
+                    raw = base64.b64decode(image, validate=False)
+                except Exception:  # noqa: BLE001 - malformed base64
+                    raw = b""
+                if raw:
+                    payload = await asyncio.to_thread(decode_qr, raw)
+            log_record("pair_qr_scanned", session_id=session.id, decoded=bool(payload))
+            await emit("pair.qr", "", {"payload": payload})
             return
 
         if not session.ready:

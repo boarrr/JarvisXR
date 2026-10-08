@@ -59,6 +59,9 @@ class Bridge:
     def issue_pairing_code(self) -> str:
         return self._runtime.issue_pairing_code()
 
+    def pairing_payload(self) -> dict[str, Any]:
+        return self._runtime.pairing_payload()
+
     def qr_data_uri(self, text: str) -> str:
         return self._runtime.qr_data_uri(str(text))
 

@@ -67,6 +67,7 @@ for scene in \
 	openxr_hand_source_smoke \
 	quick_intent_smoke \
 	palm_composer_smoke \
+	qr_pairing_smoke \
 	cognition_layer_smoke \
 	mission_topology_smoke \
 	spatial_services_smoke \

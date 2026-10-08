@@ -126,6 +126,8 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 			var approval_id := str(event.payload.get("approval_id", ""))
 			if not approval_id.is_empty():
 				AppState.resolve_approval(approval_id)
+		"pair.qr":
+			EventBus.qr_pairing_payload.emit(str(event.payload.get("payload", "")))
 		"session.paired":
 			AppState.set_paired_device(
 				str(event.payload.get("device_id", "")),

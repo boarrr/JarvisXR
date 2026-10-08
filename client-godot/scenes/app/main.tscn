@@ -1,4 +1,4 @@
-[gd_scene load_steps=31 format=3]
+[gd_scene load_steps=32 format=3]
 
 [ext_resource type="Script" path="res://scenes/app/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/user/user_rig.tscn" id="2_rig"]
@@ -17,6 +17,7 @@
 [ext_resource type="PackedScene" path="res://scenes/xr/xr_runtime.tscn" id="17_xr_runtime"]
 [ext_resource type="PackedScene" path="res://scenes/hud/palm_console.tscn" id="18_palm_console"]
 [ext_resource type="PackedScene" path="res://scenes/hud/spatial_keyboard.tscn" id="34_keyboard"]
+[ext_resource type="PackedScene" path="res://scenes/hud/qr_scan_service.tscn" id="35_qr"]
 [ext_resource type="PackedScene" path="res://scenes/hud/hand_ray_visualizer.tscn" id="19_hand_ray"]
 [ext_resource type="PackedScene" path="res://scenes/panels/quick_intent_panel.tscn" id="20_quick_intent"]
 [ext_resource type="PackedScene" path="res://scenes/cognition/cognition_layer.tscn" id="21_cognition"]
@@ -90,6 +91,8 @@ script = ExtResource("32_perf_probe")
 [node name="PalmConsole" parent="." instance=ExtResource("18_palm_console")]
 
 [node name="SpatialKeyboard" parent="." instance=ExtResource("34_keyboard")]
+
+[node name="QrScanService" parent="." instance=ExtResource("35_qr")]
 
 [node name="HandRayVisualizer" parent="." instance=ExtResource("19_hand_ray")]
 

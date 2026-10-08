@@ -16,6 +16,7 @@ CLIENT_COMMAND_TYPES = frozenset(
     {
         "session.hello",
         "session.pair",
+        "pair.decode",
         "thread.list",
         "thread.create",
         "thread.focus",
@@ -58,6 +59,7 @@ V2_COMMAND_TYPES = frozenset(
     {
         "workspace.list",
         "workspace.bind",
+        "pair.decode",
         "file.list",
         "file.read",
         "fs.list",
@@ -179,6 +181,7 @@ def validate_command_payload(command: Envelope) -> None:
     allowed_fields = {
         "session.hello": {"client", "protocol_version", "auth_token"},
         "session.pair": {"code", "device_name"},
+        "pair.decode": {"image"},
         "thread.list": set(),
         "thread.create": {"title"},
         "thread.focus": set(),

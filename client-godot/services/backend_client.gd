@@ -26,6 +26,7 @@ var _reconnect_attempt: int = 0
 var _reconnect_remaining_seconds: float = -1.0
 var _protocol_version: int = BackendEvent.PROTOCOL_VERSION
 var _url_from_config: bool = false
+var _pending_pair_code: String = ""
 # Link fallback: keep the configured name first, then a remembered working URL
 # and any baked fallbacks (an IP), so a failed .local lookup does not brick the
 # headset when a direct IP still works.
@@ -63,6 +64,13 @@ func _process(delta: float) -> void:
 		_record_last_good()
 		_set_connection_state(STATE_CONNECTED)
 		_send_command_envelope("session.hello", _hello_payload(), "")
+		if not _pending_pair_code.is_empty():
+			_send_command_envelope(
+				"session.pair",
+				{"code": _pending_pair_code, "device_name": OS.get_model_name()},
+				""
+			)
+			_pending_pair_code = ""
 	if _socket.get_available_packet_count() > 0:
 		_receive_available_packets()
 	if _socket == null:
@@ -152,6 +160,22 @@ func pair(code: String) -> bool:
 
 func is_pairing_supported() -> bool:
 	return true
+
+
+func pair_with_payload(payload_text: String) -> bool:
+	# QR pairing: point the payload at this daemon and pair with its code.
+	var parsed := PairingPayload.parse(payload_text)
+	if parsed.is_empty():
+		return false
+	var url := str(parsed.get("url", ""))
+	if _is_valid_websocket_url(url) and url != websocket_url:
+		set_manual_url(url)
+	_pending_pair_code = str(parsed.get("code", ""))
+	if _socket != null and _socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		var code := _pending_pair_code
+		_pending_pair_code = ""
+		return pair(code)
+	return not _pending_pair_code.is_empty()
 
 
 func get_protocol_version() -> int:

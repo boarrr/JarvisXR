@@ -36,7 +36,7 @@ func get_help_text() -> String:
 	return (
 		"/new TITLE · /focus NAME · /rename TITLE · /archive · /cancel · /list\n"
 		+ "/pair CODE · /workspaces · /workspace NAME · /files · /diff · /daemon\n"
-		+ "/apply · /reject · /tools · /tool status|clock|note · /mission GOAL · /fleet"
+		+ "/apply · /reject · /tools · /tool status|clock|note · /mission GOAL · /fleet · /scan · /pairqr PAYLOAD"
 	)
 
 
@@ -107,6 +107,19 @@ func _route_command(text: String) -> bool:
 		"/fleet":
 			EventBus.cockpit_panel_requested.emit("missions")
 			return _report(true, "Fleet constellation toggled")
+		"/scan":
+			EventBus.cockpit_panel_requested.emit("scan")
+			return _report(true, "QR scan toggled")
+		"/pairqr":
+			if argument.is_empty():
+				return _report(false, "Usage: /pairqr PAYLOAD")
+			var qr_transport = ServiceRegistry.backend_transport
+			if qr_transport == null or not qr_transport.has_method("pair_with_payload"):
+				return _report(false, "Pairing by payload is unavailable")
+			return _report(
+				bool(qr_transport.call("pair_with_payload", argument)),
+				"Pairing from QR payload"
+			)
 		"/pair":
 			if argument.is_empty():
 				return _report(false, "Usage: /pair CODE")

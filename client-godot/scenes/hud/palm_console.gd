@@ -28,6 +28,7 @@ const SECONDARY := [
 	["REVIEW", "palm:review", "ReviewTarget"],
 	["FILES", "palm:files", "FilesTarget"],
 	["UPDATE", "palm:update", "UpdateTarget"],
+	["SCAN", "palm:scan_qr", "ScanTarget"],
 	["CLOSE", "palm:dismiss", "CloseTarget"],
 ]
 
