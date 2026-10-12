@@ -591,7 +591,9 @@ class SpatialAgentServer:
             level = str(command.payload.get("level", "info")).strip() or "info"
             source = str(command.payload.get("source", "headset")).strip() or "headset"
             message = str(command.payload.get("message", ""))
-            await asyncio.to_thread(self._append_client_log, level, source, message)
+            seq = int(command.payload.get("seq", 0))
+            tags = str(command.payload.get("tags", "")).strip()
+            await asyncio.to_thread(self._append_client_log, level, source, message, seq, tags)
         elif command.type == "client.telemetry":
             session.telemetry = dict(command.payload)
             session.last_seen = time.time()
@@ -1233,11 +1235,14 @@ class SpatialAgentServer:
             200, "OK", {"Content-Type": "application/json"}, json.dumps(payload).encode()
         )
 
-    def _append_client_log(self, level: str, source: str, message: str) -> None:
+    def _append_client_log(
+        self, level: str, source: str, message: str, seq: int = 0, tags: str = ""
+    ) -> None:
         """Persist log lines relayed from a headset so the daemon host can debug
         wireless clients without USB/adb."""
         stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
-        text = f"{stamp} [{source}/{level}] {message}"
+        suffix = f" {{{tags}}}" if tags else ""
+        text = f"{stamp} [{source}/{level}] {message}{suffix}"
         print(f"[client] {text}", flush=True)
         path = self.settings.client_log_path
         if path is None:

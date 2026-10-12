@@ -201,7 +201,7 @@ def validate_command_payload(command: Envelope) -> None:
         "voice.audio.chunk": {"data", "seq"},
         "voice.audio.end": set(),
         "voice.audio.cancel": set(),
-        "client.log": {"level", "message", "source"},
+        "client.log": {"level", "message", "source", "seq", "tags"},
         "client.telemetry": {
             "client_ts",
             "rtt_ms",

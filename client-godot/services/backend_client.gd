@@ -446,6 +446,8 @@ func _handle_socket_closed() -> void:
 	var close_code := _socket.get_close_code()
 	var close_reason := _socket.get_close_reason()
 	var opened_before_close := _has_opened
+	if LogRelay != null:
+		LogRelay.note_disconnect("code=%d reason=%s" % [close_code, close_reason])
 	_socket = null
 	_has_opened = false
 	_session_id = ""
