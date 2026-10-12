@@ -8,6 +8,7 @@ extends Node3D
 
 @export var user_rig_path: NodePath = ^"../UserRig"
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
+@export var xr_runtime_path: NodePath = ^"../XRRuntime"
 @export_range(0.8, 3.0, 0.05) var scan_distance: float = 1.8
 @export_range(2, 30, 1) var scan_every_frames: int = 6
 
@@ -16,10 +17,12 @@ const PROMPT_NO_CAMERA := "NO CAMERA - ENTER THE CODE IN THE PALM FIELD"
 
 var _camera: Camera3D = null
 var _bridge: BackendBridge = null
+var _xr_runtime: XRRuntime = null
 var _viewport: SubViewport = null
 var _capture_rect: TextureRect = null
 var _reticle: Node3D = null
 var _reticle_material: StandardMaterial3D = null
+var _preview: MeshInstance3D = null
 var _prompt: Label3D = null
 var _camera_texture: CameraTexture = null
 var _feed_index := -1
@@ -36,6 +39,7 @@ func _ready() -> void:
 	if rig != null:
 		_camera = rig.get_camera()
 	_bridge = get_node_or_null(backend_bridge_path) as BackendBridge
+	_xr_runtime = get_node_or_null(xr_runtime_path) as XRRuntime
 	_build()
 	if Engine.has_singleton("PassthroughCamera"):
 		_use_plugin = true
@@ -73,6 +77,9 @@ func start_scan() -> bool:
 	_frame = 0
 	visible = true
 	_place()
+	# Free the cameras from the passthrough compositor while scanning.
+	if _xr_runtime != null:
+		_xr_runtime.set_passthrough_enabled(false)
 	_set_prompt(PROMPT_SCAN)
 
 	if _use_plugin:
@@ -120,6 +127,8 @@ func stop_scan() -> void:
 	_camera_ok = false
 	_scanning = false
 	visible = false
+	if _xr_runtime != null:
+		_xr_runtime.set_passthrough_enabled(true)
 
 
 func _process(_delta: float) -> void:
@@ -158,6 +167,12 @@ func _poll_plugin() -> void:
 	var bytes: PackedByteArray = plugin.call("frameJpeg")
 	if bytes.is_empty():
 		return
+	if _preview != null and _preview.material_override is StandardMaterial3D:
+		var image := Image.new()
+		if image.load_jpg_from_buffer(bytes) == OK:
+			(_preview.material_override as StandardMaterial3D).albedo_texture = (
+				ImageTexture.create_from_image(image)
+			)
 	if _bridge != null:
 		_bridge.send_command("pair.decode", {"image": Marshalls.raw_to_base64(bytes)})
 
@@ -217,6 +232,19 @@ func _place() -> void:
 
 
 func _build() -> void:
+	# Live camera preview so the user can aim while the app is opaque during scan.
+	var preview_material := StandardMaterial3D.new()
+	preview_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	preview_material.albedo_color = Color(0.05, 0.05, 0.05)
+	_preview = MeshInstance3D.new()
+	var preview_mesh := QuadMesh.new()
+	preview_mesh.size = Vector2(0.9, 0.9)
+	_preview.mesh = preview_mesh
+	_preview.material_override = preview_material
+	_preview.position = Vector3(0.0, -0.06, -0.02)
+	_preview.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_preview)
+
 	_reticle_material = StandardMaterial3D.new()
 	_reticle_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_reticle_material.albedo_color = Color(1.0, 0.22, 0.2)

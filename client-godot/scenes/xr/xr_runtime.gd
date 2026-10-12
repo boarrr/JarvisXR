@@ -85,6 +85,16 @@ func get_hand_source() -> OpenXRInteractionSource:
 	return _hand_source
 
 
+func set_passthrough_enabled(enabled: bool) -> void:
+	# Godot's blend enum here is 0-based: 0=Opaque, 1=Additive, 2=AlphaBlend.
+	# The passthrough compositor holds the cameras, so drop to opaque while a
+	# screen needs exclusive camera access (e.g. QR scanning).
+	var openxr_interface := XRServer.find_interface("OpenXR") as OpenXRInterface
+	if openxr_interface != null and _is_active:
+		openxr_interface.set_environment_blend_mode(2 if enabled else 0)
+	_configure_passthrough_background(enabled)
+
+
 func get_xr_camera() -> XRCamera3D:
 	return _camera
 

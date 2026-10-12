@@ -125,19 +125,14 @@ class PassthroughCameraPlugin(godot: Godot) : GodotPlugin(godot) {
     }
 
     private fun orderedCameras(manager: CameraManager): List<String> {
-        val preferred = mutableListOf<String>()
-        val rest = mutableListOf<String>()
-        for (id in manager.cameraIdList) {
-            val facing = manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING)
-            if (facing == CameraCharacteristics.LENS_FACING_FRONT ||
-                facing == CameraCharacteristics.LENS_FACING_EXTERNAL
-            ) {
-                preferred.add(id)
-            } else {
-                rest.add(id)
-            }
-        }
-        return preferred + rest
+        // Camera "1" on Quest is an "Android Virtual Camera" that returns black
+        // frames; the real passthrough cameras are exposed as "50"/"51". Prefer
+        // those and try the black virtual camera last.
+        val ids = manager.cameraIdList.toList()
+        val passthrough = ids.filter { it == "50" || it == "51" }
+        val others = ids.filter { it != "50" && it != "51" && it != "1" }
+        val black = ids.filter { it == "1" }
+        return passthrough + others + black
     }
 
     private val stateCallback = object : CameraDevice.StateCallback() {
