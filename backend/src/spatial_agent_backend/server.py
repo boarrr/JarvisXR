@@ -761,7 +761,14 @@ class SpatialAgentServer:
             if package is None:
                 await emit("error", "", {"code": "no_update", "message": "No update is published"})
                 return
-            result = await self._adb_install(str(package.apk_path), emit)
+            if self.settings.disable_adb_update:
+                result = {
+                    "ok": False,
+                    "code": "adb_disabled",
+                    "message": "Host adb updates are disabled",
+                }
+            else:
+                result = await self._adb_install(str(package.apk_path), emit)
             if result.get("ok"):
                 log_record("update_applied", session_id=session.id, version=package.version)
                 await emit("update.applied", "", {"version": package.version})
@@ -1111,9 +1118,9 @@ class SpatialAgentServer:
             self.settings.host,
             self.settings.port,
             max_size=self.settings.max_packet_bytes,
-            max_queue=32,
+            max_queue=64,
             ping_interval=20,
-            ping_timeout=20,
+            ping_timeout=120,
             ssl=self._ssl_context,
         ) as websocket_server:
             self._websocket_server = websocket_server

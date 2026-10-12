@@ -79,6 +79,7 @@ class Settings:
     workspaces_file: Path = Path("data/workspaces.json")
     mcp_config_path: Path = Path("data/mcp.json")
     update_manifest_path: Path = Path("../build/quest/manifest.json")
+    disable_adb_update: bool = False
     auth_required: bool = False
     tls_certificate_path: Path | None = None
     tls_private_key_path: Path | None = None
@@ -128,6 +129,7 @@ class Settings:
                     str(Path(__file__).resolve().parents[3] / "build" / "quest" / "manifest.json"),
                 )
             ),
+            disable_adb_update=_truthy(os.getenv("SPATIAL_AGENT_DISABLE_ADB_UPDATE", "0")),
             auth_required=_truthy(os.getenv("SPATIAL_AGENT_AUTH_REQUIRED", "0")),
             tls_certificate_path=_optional_path(os.getenv("SPATIAL_AGENT_TLS_CERT", "")),
             tls_private_key_path=_optional_path(os.getenv("SPATIAL_AGENT_TLS_KEY", "")),

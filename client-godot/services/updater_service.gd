@@ -124,6 +124,13 @@ func begin_install() -> void:
 		return
 	var dir_path := ProjectSettings.globalize_path(UPDATE_DIR)
 	DirAccess.make_dir_recursive_absolute(dir_path)
+	# If a previously downloaded APK already matches this manifest, skip the
+	# transfer entirely and go straight to the installer.
+	if _local_apk_matches(str(_manifest.get("sha256", ""))):
+		print("[UPDATER] reusing existing APK; skipping download")
+		_downloading = false
+		_launch_installer()
+		return
 	print("[UPDATER] downloading %s bytes to %s" % [
 		str(_manifest.get("size_bytes", 0)), ProjectSettings.globalize_path(UPDATE_PATH)
 	])
@@ -272,6 +279,12 @@ func _on_chunk(payload: Dictionary) -> void:
 		_downloading = false
 		update_failed.emit("empty_chunk")
 		return
+	# Chunks can arrive out of order or duplicated after a re-request timeout.
+	# Only accept the exact offset we are waiting for; otherwise ask again.
+	var chunk_offset := int(payload.get("offset", 0))
+	if chunk_offset != _next_offset:
+		_request_chunk(_next_offset)
+		return
 	_file.store_buffer(data)
 	_hasher.update(data)
 	_received += data.size()
@@ -305,7 +318,9 @@ func _finish_download() -> void:
 
 
 func _launch_installer() -> void:
-	AppState.set_update_banner("Installing update...")
+	# Stop re-applying on the periodic check: the installer is now in charge.
+	_install_requested = false
+	AppState.set_update_banner("Confirm install in the headset")
 	print("[UPDATER] launching installer; singleton=%s" % Engine.has_singleton(PLUGIN_NAME))
 	if not Engine.has_singleton(PLUGIN_NAME):
 		update_failed.emit("plugin_missing")
@@ -323,13 +338,34 @@ func _launch_installer() -> void:
 
 func _on_install_result(success: bool, message: String) -> void:
 	_downloading = false
+	_install_requested = false
 	set_process(false)
 	print("[UPDATER] install_result success=%s message=%s" % [success, message])
 	if success and message == "installed":
 		_write_installed_sha(str(_manifest.get("sha256", "")))
+		AppState.set_update_banner("Updated - relaunching")
+		return
+	if message == "user_action_required" or message == "installer_opened" or message == "session_committed":
+		# The system confirmation is showing; the OS completes the install.
+		AppState.set_update_banner("Confirm install in the headset")
+		return
 	if not success:
-		AppState.set_update_banner("Update failed - check adb")
+		AppState.set_update_banner("Update failed - check settings")
 		update_failed.emit(message)
+
+
+func _local_apk_matches(expected_sha: String) -> bool:
+	if expected_sha.is_empty() or not FileAccess.file_exists(UPDATE_PATH):
+		return false
+	var file := FileAccess.open(UPDATE_PATH, FileAccess.READ)
+	if file == null:
+		return false
+	var hasher := HashingContext.new()
+	hasher.start(HashingContext.HASH_SHA256)
+	while file.get_position() < file.get_length():
+		hasher.update(file.get_buffer(1 << 20))
+	file.close()
+	return hasher.finish().hex_encode() == expected_sha
 
 
 func _read_installed_sha() -> String:
