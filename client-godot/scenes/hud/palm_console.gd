@@ -706,11 +706,15 @@ func _render_conversation() -> void:
 		lines.append("[color=#6b9aa5]No messages yet. Tap TALK and speak.[/color]")
 	_body.text = "\n\n".join(lines)
 	_refresh_voice_label()
-	# Auto-follow only while the reader is at the tail; manual scroll is respected
-	# even while the agent keeps streaming.
+	# Setting .text resets the scroll to the top, so always re-apply the tracked
+	# line. Follow the tail while _chat_follow, otherwise keep the reader's spot
+	# (manual scroll must survive streaming re-renders).
+	var last_line := maxi(0, _body.get_line_count() - 1)
 	if _chat_follow:
-		_chat_scroll_line = maxi(0, _body.get_line_count() - 1)
-		_body.scroll_to_line(_chat_scroll_line)
+		_chat_scroll_line = last_line
+	else:
+		_chat_scroll_line = clampi(_chat_scroll_line, 0, last_line)
+	_body.scroll_to_line(_chat_scroll_line)
 
 
 func _refresh_voice_label() -> void:
