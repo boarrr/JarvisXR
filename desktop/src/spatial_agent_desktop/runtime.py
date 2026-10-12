@@ -3,7 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import shutil
+import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +40,8 @@ class DaemonRuntime:
         self._deps = DependencySupervisor(app_support_dir() / "logs")
         self._state_path = app_support_dir() / "state.json"
         self._selected_workspace_id = ""
+        self._wifi_keeper: threading.Thread | None = None
+        self._wifi_stop = threading.Event()
         self._load_state()
 
     def _load_state(self) -> None:
@@ -70,6 +76,10 @@ class DaemonRuntime:
         self._ensure_dependencies()
         self._thread = threading.Thread(target=self._run, name="spatial-daemon", daemon=True)
         self._thread.start()
+        self._wifi_keeper = threading.Thread(
+            target=self._keep_wifi_adb, name="spatial-wifi-adb", daemon=True
+        )
+        self._wifi_keeper.start()
 
     def _run(self) -> None:
         loop = asyncio.new_event_loop()
@@ -97,11 +107,78 @@ class DaemonRuntime:
         return not self._error and self._server is not None
 
     def stop(self) -> None:
+        self._wifi_stop.set()
         if self._loop is not None and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
         if self._thread is not None:
             self._thread.join(timeout=10)
+        if self._wifi_keeper is not None:
+            self._wifi_keeper.join(timeout=5)
         self._deps.stop()
+
+    # -- wireless adb keeper -------------------------------------------------
+    def _adb_binary(self) -> str:
+        found = shutil.which("adb")
+        if found:
+            return found
+        candidate = Path.home() / "Library/Android/sdk/platform-tools/adb"
+        return str(candidate) if candidate.exists() else ""
+
+    def _wifi_ip_path(self) -> Path:
+        return self.settings.update_manifest_path.parent / "wifi-ip"
+
+    def _keep_wifi_adb(self) -> None:
+        """Re-arm adb-over-Wi-Fi whenever the headset shows up on USB.
+
+        ``adb tcpip 5555`` does not survive a reboot, so a headset that reboots
+        drops wireless adb. We cannot enable it without the adb channel, but we
+        can do it automatically the moment USB is attached, so the user never
+        has to run a command.
+        """
+        adb = self._adb_binary()
+        if not adb:
+            return
+        while not self._wifi_stop.is_set():
+            try:
+                proc = subprocess.run(
+                    [adb, "devices"], capture_output=True, text=True, timeout=8
+                )
+                rows = [line.split("\t") for line in proc.stdout.splitlines()[1:] if "\t" in line]
+                usb = [r[0] for r in rows if ":" not in r[0] and r[1].strip() == "device"]
+                wifi = [r[0] for r in rows if ":" in r[0] and r[1].strip() == "device"]
+                if usb and not wifi:
+                    self._arm_wifi_adb(adb, usb[0])
+            except Exception:  # noqa: BLE001 - the keeper must never crash
+                pass
+            self._wifi_stop.wait(10.0)
+
+    def _arm_wifi_adb(self, adb: str, serial: str) -> None:
+        try:
+            subprocess.run([adb, "-s", serial, "tcpip", "5555"], capture_output=True, timeout=15)
+            time.sleep(2)
+            ip = self._read_wlan_ip(adb, serial)
+            if not ip:
+                return
+            subprocess.run([adb, "connect", f"{ip}:5555"], capture_output=True, timeout=15)
+            path = self._wifi_ip_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(ip, encoding="utf-8")
+            print(f"[wifi-adb] armed {ip}:5555", flush=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _read_wlan_ip(self, adb: str, serial: str) -> str:
+        try:
+            proc = subprocess.run(
+                [adb, "-s", serial, "shell", "ip", "-4", "addr", "show", "wlan0"],
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
+        except Exception:  # noqa: BLE001
+            return ""
+        match = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", proc.stdout)
+        return match.group(1) if match else ""
 
     def _submit(self, coro: Any) -> Any:
         assert self._loop is not None, "runtime is not started"
