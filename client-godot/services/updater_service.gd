@@ -163,7 +163,9 @@ func _start_http() -> void:
 	else:
 		_reset_partial()
 		_received = 0
-	_file = FileAccess.open(PART_PATH, FileAccess.READ_WRITE)
+	# READ_WRITE requires the file to already exist; use WRITE to create it.
+	var mode := FileAccess.READ_WRITE if FileAccess.file_exists(PART_PATH) else FileAccess.WRITE
+	_file = FileAccess.open(PART_PATH, mode)
 	if _file == null:
 		print("[UPDATER] cannot open target: %d" % FileAccess.get_open_error())
 		_fail_attempt("cannot_write")
