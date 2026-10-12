@@ -1,9 +1,11 @@
 #!/bin/sh
-# Publish a smaller (release, compressed-libs) build for wireless self-update.
+# Publish a build for wireless self-update.
 #
-# Bumps the patch version, exports a release APK signed with the same debug
-# keystore as debug builds (so it installs over them), and publishes it to the
-# daemon's update manifest.
+# Bumps the patch version and publishes to the daemon's update manifest.
+#
+# NOTE: we ship *debug* builds. Godot's Android release template SIGSEGVs in the
+# Vulkan render path on this Horizon build (VkRenderer.onVkDrawFrame ->
+# GodotLib.step), so release (~30MB) is not usable yet; debug is ~37MB.
 #
 # Usage: ./scripts/dev_update.sh
 set -eu
@@ -29,5 +31,5 @@ if grep -q '^config/version=' "$project"; then
 	sed -i '' "s|^config/version=.*|config/version=\"$new_name\"|" "$project"
 fi
 
-printf '%s\n' "Publishing release $new_name (code $new_code)"
-exec "$project_root/scripts/quest.sh" export-release
+printf '%s\n' "Publishing $new_name (code $new_code)"
+exec "$project_root/scripts/quest.sh" export
