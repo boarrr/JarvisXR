@@ -80,6 +80,7 @@ class Settings:
     mcp_config_path: Path = Path("data/mcp.json")
     update_manifest_path: Path = Path("../build/quest/manifest.json")
     disable_adb_update: bool = False
+    client_log_path: Path | None = None
     auth_required: bool = False
     tls_certificate_path: Path | None = None
     tls_private_key_path: Path | None = None
@@ -130,6 +131,7 @@ class Settings:
                 )
             ),
             disable_adb_update=_truthy(os.getenv("SPATIAL_AGENT_DISABLE_ADB_UPDATE", "0")),
+            client_log_path=_optional_path(os.getenv("SPATIAL_AGENT_CLIENT_LOG", "")),
             auth_required=_truthy(os.getenv("SPATIAL_AGENT_AUTH_REQUIRED", "0")),
             tls_certificate_path=_optional_path(os.getenv("SPATIAL_AGENT_TLS_CERT", "")),
             tls_private_key_path=_optional_path(os.getenv("SPATIAL_AGENT_TLS_KEY", "")),

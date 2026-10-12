@@ -30,6 +30,7 @@ CLIENT_COMMAND_TYPES = frozenset(
         "voice.audio.chunk",
         "voice.audio.end",
         "voice.audio.cancel",
+        "client.log",
         "workspace.list",
         "workspace.bind",
         "file.list",
@@ -77,6 +78,7 @@ V2_COMMAND_TYPES = frozenset(
         "voice.audio.chunk",
         "voice.audio.end",
         "voice.audio.cancel",
+        "client.log",
         "mission.create",
         "mission.status",
         "mission.cancel",
@@ -195,6 +197,7 @@ def validate_command_payload(command: Envelope) -> None:
         "voice.audio.chunk": {"data", "seq"},
         "voice.audio.end": set(),
         "voice.audio.cancel": set(),
+        "client.log": {"level", "message", "source"},
         "workspace.list": set(),
         "workspace.bind": {"workspace_id"},
         "file.list": {"path"},
@@ -250,6 +253,10 @@ def validate_command_payload(command: Envelope) -> None:
     elif command.type == "agent.spawn":
         _required_text(payload, "mission_id", 64)
         _required_text(payload, "task", 4000)
+    elif command.type == "client.log":
+        _required_text(payload, "message", MAX_TEXT_LENGTH)
+        _optional_text(payload, "level", 16)
+        _optional_text(payload, "source", 40)
     elif command.type == "update.fetch":
         for field_name in ("offset", "length"):
             if field_name in payload and not isinstance(payload[field_name], int):

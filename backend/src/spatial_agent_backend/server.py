@@ -5,6 +5,7 @@ import asyncio
 import base64
 from collections import deque
 from contextlib import suppress
+from datetime import datetime, timezone
 from dataclasses import dataclass, field, replace
 import json
 from pathlib import Path
@@ -265,6 +266,7 @@ class SpatialAgentServer:
                     "voice.audio.chunk",
                     "voice.audio.end",
                     "voice.audio.cancel",
+                    "client.log",
                 }
                 if (
                     command.type not in _rate_exempt
@@ -549,6 +551,11 @@ class SpatialAgentServer:
         elif command.type == "voice.audio.cancel":
             self._utterances.pop(session.id, None)
             await emit("voice.cancelled", command.thread_id, {})
+        elif command.type == "client.log":
+            level = str(command.payload.get("level", "info")).strip() or "info"
+            source = str(command.payload.get("source", "headset")).strip() or "headset"
+            message = str(command.payload.get("message", ""))
+            await asyncio.to_thread(self._append_client_log, level, source, message)
         elif command.type == "workspace.list":
             await emit(
                 "workspace.snapshot",
@@ -1065,6 +1072,22 @@ class SpatialAgentServer:
             event_type, session_id=session_id, thread_id=thread_id, payload=payload
         )
         await self._broadcast_event(event)
+
+    def _append_client_log(self, level: str, source: str, message: str) -> None:
+        """Persist log lines relayed from a headset so the daemon host can debug
+        wireless clients without USB/adb."""
+        stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+        text = f"{stamp} [{source}/{level}] {message}"
+        print(f"[client] {text}", flush=True)
+        path = self.settings.client_log_path
+        if path is None:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(text + "\n")
+        except OSError:
+            pass
 
     def _build_ssl_context(self) -> ssl.SSLContext | None:
         if not (self.settings.tls_certificate_path and self.settings.tls_private_key_path):

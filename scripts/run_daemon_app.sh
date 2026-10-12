@@ -40,6 +40,8 @@ export SPATIAL_AGENT_OPENCODE_DIR="$project_root"
 export SPATIAL_AGENT_WORKSPACE_PATH="${SPATIAL_AGENT_WORKSPACE_PATH:-$project_root}"
 export SPATIAL_AGENT_WORKSPACE_NAME="${SPATIAL_AGENT_WORKSPACE_NAME:-SpatialAgent}"
 export SPATIAL_AGENT_WORKSPACE_BRANCH="${SPATIAL_AGENT_WORKSPACE_BRANCH:-main}"
+# Mirror headset logs relayed over the websocket to a file on the daemon host.
+export SPATIAL_AGENT_CLIENT_LOG="$project_root/build/quest/client.log"
 
 # Bind the LAN so the headset can reach it (TLS + pairing).
 "$project_root/scripts/tls.sh" >/dev/null 2>&1 || true
