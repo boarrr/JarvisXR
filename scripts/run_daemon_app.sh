@@ -43,6 +43,24 @@ export SPATIAL_AGENT_WORKSPACE_BRANCH="${SPATIAL_AGENT_WORKSPACE_BRANCH:-main}"
 # Mirror headset logs relayed over the websocket to a file on the daemon host.
 export SPATIAL_AGENT_CLIENT_LOG="$project_root/build/quest/client.log"
 
+# Auto-detect a whisper.cpp model so on-headset voice works out of the box. The
+# app starts whisper-server itself once this points at a ggml model.
+if [ -z "${SPATIAL_AGENT_WHISPER_MODEL:-}" ]; then
+	for candidate in \
+		"$project_root/../../work/whisper-model/ggml-small.en.bin" \
+		"$project_root/../../work/whisper-model/ggml-base.en.bin" \
+		"$project_root/../../work/whisper-model/ggml-tiny.en.bin" \
+		"$project_root/../whisper-model/ggml-base.en.bin" \
+		"$HOME/.cache/whisper/ggml-small.en.bin" \
+		"$HOME/.cache/whisper/ggml-base.en.bin" \
+		"$HOME/whisper.cpp/models/ggml-base.en.bin"; do
+		if [ -f "$candidate" ]; then
+			export SPATIAL_AGENT_WHISPER_MODEL="$candidate"
+			break
+		fi
+	done
+fi
+
 # Bind the LAN so the headset can reach it (TLS + pairing).
 "$project_root/scripts/tls.sh" >/dev/null 2>&1 || true
 if [ -f "$project_root/backend/certs/server.crt" ]; then
