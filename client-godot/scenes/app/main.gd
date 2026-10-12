@@ -181,6 +181,11 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 				_uncombine_agent(AppState.focused_thread_id)
 			elif event.target_id == "palm:update":
 				_updater.request_update()
+			elif event.target_id == "palm:hitbox_debug":
+				AppState.hitbox_debug_visible = not AppState.hitbox_debug_visible
+				EventBus.debug_message.emit(
+					"Hitbox markers %s" % ("on" if AppState.hitbox_debug_visible else "off")
+				)
 			elif event.target_id == "palm:code_toggle":
 				_code_viewer.toggle()
 			elif event.target_id == "palm:input_focus":

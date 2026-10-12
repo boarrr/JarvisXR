@@ -28,6 +28,7 @@ const SECONDARY := [
 	["CODE", "palm:code_toggle", "CodeTarget"],
 	["REVIEW", "palm:review", "ReviewTarget"],
 	["UPDATE", "palm:update", "UpdateTarget"],
+	["DEBUG", "palm:hitbox_debug", "DebugTarget"],
 	["CLOSE", "palm:dismiss", "CloseTarget"],
 ]
 

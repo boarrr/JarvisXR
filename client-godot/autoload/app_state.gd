@@ -26,6 +26,7 @@ signal tool_catalog_changed()
 signal pairing_changed(device_id: String, device_name: String)
 signal orb_layout_changed(thread_id: String)
 signal undo_changed(count: int)
+signal hitbox_debug_changed(value: bool)
 
 var connection_state: String = "offline":
 	set(value):
@@ -81,6 +82,13 @@ var current_transcript: String = "":
 
 var palm_console_open := false
 var update_banner := ""
+
+var hitbox_debug_visible := false:
+	set(value):
+		if hitbox_debug_visible == value:
+			return
+		hitbox_debug_visible = value
+		hitbox_debug_changed.emit(value)
 
 
 func set_update_banner(value: String) -> void:

@@ -1,11 +1,12 @@
 class_name HitboxDebug
 extends Node3D
 
-## Debug overlay that draws a wireframe box for every interactable hitbox, so
-## the touch targets can be seen. Toggle with F4.
+## Draws a red, slightly translucent marker over every interactable hitbox so the
+## touch targets are visible while still seeing the panels underneath. Toggled
+## from the palm console (DEBUG button) or with F4.
 
-@export var color := Color(0.2, 1.0, 0.45, 0.9)
-@export var enabled := true
+@export var color := Color(1.0, 0.16, 0.16, 0.42)
+@export var enabled := false
 
 var _pool: Array[MeshInstance3D] = []
 var _material: StandardMaterial3D = null
@@ -15,13 +16,32 @@ func _ready() -> void:
 	_material = StandardMaterial3D.new()
 	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_material.albedo_color = color
-	_material.wireframe = true
+	_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_material.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
+	# Always draw on top so the targets are visible even behind/through panels.
 	_material.no_depth_test = true
+	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_material.disable_receive_shadows = true
+	_material.render_priority = 10
+	if AppState != null and AppState.hitbox_debug_changed.is_connected(_on_toggled) == false:
+		AppState.hitbox_debug_changed.connect(_on_toggled)
+		enabled = AppState.hitbox_debug_visible
+
+
+func toggle() -> void:
+	if AppState != null:
+		AppState.hitbox_debug_visible = not AppState.hitbox_debug_visible
+	else:
+		enabled = not enabled
+
+
+func _on_toggled(value: bool) -> void:
+	enabled = value
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F4:
-		enabled = not enabled
+		toggle()
 		get_viewport().set_input_as_handled()
 
 
@@ -31,8 +51,6 @@ func _process(_delta: float) -> void:
 		for node in get_tree().get_nodes_in_group("interactable"):
 			var area := node as Area3D
 			if area == null or not area.is_visible_in_tree():
-				continue
-			if not area.has_method("get_interaction_target_id"):
 				continue
 			for child in area.get_children():
 				if not (child is CollisionShape3D):
