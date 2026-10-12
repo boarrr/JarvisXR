@@ -315,10 +315,11 @@ func _send_stream_request(stream: Stream) -> void:
 	var headers := PackedStringArray()
 	if not _auth_token.is_empty():
 		headers.append("Authorization: Bearer %s" % _auth_token)
+	# Every stream must request its own sub-range, including the first request
+	# (otherwise the server returns the whole file and segments overlap).
 	var first := stream.start + stream.received
 	var last := stream.start + stream.length - 1
-	if stream.received > 0:
-		headers.append("Range: bytes=%d-%d" % [first, last])
+	headers.append("Range: bytes=%d-%d" % [first, last])
 	var error := stream.client.request(HTTPClient.METHOD_GET, _download_path, headers)
 	if error != OK:
 		_restart_stream(stream)
