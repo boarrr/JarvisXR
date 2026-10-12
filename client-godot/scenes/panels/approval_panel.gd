@@ -165,7 +165,7 @@ func _make_target(target_name: String, target_id: String, rect: Rect2) -> void:
 	var shape := BoxShape3D.new()
 	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
 	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
-	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.05)
+	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.012)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	area.add_child(collision)
@@ -198,7 +198,7 @@ func _rect_to_local(rect: Rect2) -> Vector3:
 	return Vector3(
 		SCREEN_CENTER.x + (center.x - VIEWPORT_SIZE.x * 0.5) * scale_x,
 		SCREEN_CENTER.y - (center.y - VIEWPORT_SIZE.y * 0.5) * scale_y,
-		0.03
+		0.006
 	)
 
 

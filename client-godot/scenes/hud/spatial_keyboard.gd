@@ -19,8 +19,11 @@ const ROW_GAP := 8.0
 const TOP := 14.0
 
 @export var user_rig_path: NodePath = ^"../UserRig"
-@export_range(0.3, 2.5, 0.05) var distance_from_user: float = 0.42
-@export_range(-1.0, 1.0, 0.05) var vertical_offset: float = -0.3
+@export_range(0.25, 1.2, 0.01) var distance_from_user: float = 0.40
+@export_range(-1.0, 0.0, 0.01) var vertical_offset: float = -0.34
+# Tilt the top edge away from the user so it reads like a desk keyboard. Negative
+# tips the readable face up toward the user.
+@export_range(-60.0, 20.0, 1.0) var tilt_degrees: float = -22.0
 
 var _camera: Camera3D = null
 var _viewport: SubViewport = null
@@ -169,7 +172,7 @@ func _add_key(root: Control, rect: Rect2, label_text: String, target_id: String)
 	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
 	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.025)
+	shape.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.006)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	area.add_child(collision)
@@ -200,11 +203,21 @@ func _rect_to_local(rect: Rect2) -> Vector3:
 	return Vector3(
 		(center.x - float(VIEWPORT_SIZE.x) * 0.5) * scale_x,
 		-(center.y - float(VIEWPORT_SIZE.y) * 0.5) * scale_y,
-		0.015
+		0.004
 	)
 
 
 func _place_in_reading_zone() -> void:
-	var camera_basis := _camera.global_transform.basis.orthonormalized()
-	var offset := Vector3(0.0, vertical_offset, -distance_from_user)
-	global_transform = Transform3D(camera_basis, _camera.global_position + camera_basis * offset)
+	# Face the user with a level yaw only (the full camera basis made the keyboard
+	# inherit head pitch/roll and sit at a bad angle), then tilt it like a desk
+	# keyboard. Placed lower than the palm console so the two never clip.
+	var forward := -_camera.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() < 0.0001:
+		forward = Vector3.FORWARD
+	forward = forward.normalized()
+	var yaw := atan2(-forward.x, -forward.z)
+	var basis := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, deg_to_rad(tilt_degrees))
+	var position := _camera.global_position + forward * distance_from_user
+	position.y += vertical_offset
+	global_transform = Transform3D(basis, position)
