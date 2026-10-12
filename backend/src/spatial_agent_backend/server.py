@@ -945,7 +945,7 @@ class SpatialAgentServer:
             return [(row[0].strip(), row[1].strip()) for row in rows if len(row) >= 2]
 
         async def pick() -> str:
-            _rc, out = await run(["devices"], 10)
+            _rc, out = await run(["devices"], 5)
             devs = parse_devices(out)
             usb = [name for name, state in devs if ":" not in name and state == "device"]
             if usb:
@@ -953,23 +953,26 @@ class SpatialAgentServer:
             wifi = [name for name, state in devs if ":" in name and state == "device"]
             return wifi[0] if wifi else ""
 
-        with suppress(Exception):
-            await run(["start-server"], 20)
-
         last_code, last_message = "no_adb_device", "No adb device connected"
         remote = "/data/local/tmp/spatial-agent-update.apk"
-        for _attempt in range(4):
+        # Fast reject: probe adb once (no start-server, no sleeping retries) so a
+        # wireless client gets update.fallback immediately rather than ~18s later.
+        serial = await pick()
+        if not serial and cached_ip:
+            with suppress(Exception):
+                await run(["disconnect", f"{cached_ip}:5555"], 10)
+                await run(["connect", f"{cached_ip}:5555"], 10)
+            await asyncio.sleep(2)
             serial = await pick()
-            if not serial and cached_ip:
-                with suppress(Exception):
-                    await run(["disconnect", f"{cached_ip}:5555"], 10)
-                    await run(["connect", f"{cached_ip}:5555"], 10)
-                await asyncio.sleep(2)
-                serial = await pick()
+        if not serial:
+            return {"ok": False, "code": "no_adb_device", "message": "No adb device connected"}
+        with suppress(Exception):
+            await run(["start-server"], 20)
+        for _attempt in range(3):
             if not serial:
-                last_code, last_message = "no_adb_device", "No adb device connected"
-                await asyncio.sleep(3)
-                continue
+                serial = await pick()
+                if not serial:
+                    break
 
             await emit("update.progress", "", {"stage": "transferring", "percent": 0})
             # adb suppresses its progress bar when piped, so we push the APK in
