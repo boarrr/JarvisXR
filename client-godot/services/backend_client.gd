@@ -3,6 +3,8 @@ extends BackendTransport
 
 const TOKEN_CONFIG_PATH := "user://daemon_auth.cfg"
 const DAEMON_CONFIG_PATH := "user://daemon.cfg"
+const TELEMETRY_INTERVAL_SECONDS := 5.0
+const LINK_TIMEOUT_MSEC := 20000
 
 @export var websocket_url: String = "ws://127.0.0.1:8787/ws"
 @export var auth_token: String = ""
@@ -37,6 +39,10 @@ var _candidate_urls: PackedStringArray = []
 var _candidate_index: int = 0
 var _discovered_urls: PackedStringArray = []
 var _discovery: DiscoveryService = null
+# Connection health: heartbeats + telemetry so both sides know the link state.
+var _telemetry_accum: float = 0.0
+var _last_rx_msec: int = 0
+var _last_rtt_msec: int = -1
 
 
 func _ready() -> void:
@@ -77,6 +83,38 @@ func _process(delta: float) -> void:
 		return
 	if _socket.get_ready_state() == WebSocketPeer.STATE_CLOSED:
 		_handle_socket_closed()
+		return
+	if _socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		_maybe_send_telemetry(delta)
+		_check_link_alive()
+
+
+func _maybe_send_telemetry(delta: float) -> void:
+	_telemetry_accum += delta
+	if _telemetry_accum < TELEMETRY_INTERVAL_SECONDS:
+		return
+	_telemetry_accum = 0.0
+	var now := Time.get_ticks_msec()
+	var payload := {
+		"client_ts": now,
+		"free_mem": OS.get_static_memory_usage(),
+		"version": str(ProjectSettings.get_setting("application/config/version", "")),
+	}
+	if _last_rtt_msec >= 0:
+		payload["rtt_ms"] = _last_rtt_msec
+	if _last_rx_msec > 0:
+		payload["last_rx_age"] = now - _last_rx_msec
+	_send_command_envelope("client.telemetry", payload, "")
+
+
+func _check_link_alive() -> void:
+	if _last_rx_msec <= 0:
+		return
+	var silent := Time.get_ticks_msec() - _last_rx_msec
+	if silent > LINK_TIMEOUT_MSEC:
+		print("[BACKEND] link silent for %d ms; reconnecting" % silent)
+		_last_rx_msec = 0
+		reconnect()
 
 
 func get_mode() -> String:
@@ -222,6 +260,26 @@ func get_last_good_url() -> String:
 	return _last_good_url
 
 
+func get_http_base() -> String:
+	# The daemon serves the update APK + /health over HTTP on the same host/port
+	# as the control websocket. Derive an http(s) base from the live URL.
+	var source := websocket_url
+	if not _last_good_url.is_empty():
+		source = _last_good_url
+	var base := source.replace("wss://", "https://").replace("ws://", "http://")
+	var scheme_end := base.find("://")
+	if scheme_end < 0:
+		return ""
+	var path_start := base.find("/", scheme_end + 3)
+	if path_start >= 0:
+		base = base.substr(0, path_start)
+	return base
+
+
+func get_protocol_version_value() -> int:
+	return BackendEvent.PROTOCOL_VERSION
+
+
 func build_tls_options(url: String) -> TLSOptions:
 	if not url.begins_with("wss://"):
 		return null
@@ -337,6 +395,7 @@ func _send_command_envelope(command_type: String, payload: Dictionary, thread_id
 
 func _receive_available_packets() -> void:
 	while _socket != null and _socket.get_available_packet_count() > 0:
+		_last_rx_msec = Time.get_ticks_msec()
 		var packet := _socket.get_packet()
 		if packet.size() > max_packet_bytes:
 			_emit_local_error("packet_too_large", "Backend packet exceeded the configured size limit")
@@ -363,6 +422,10 @@ func _handle_text_packet(text: String) -> void:
 	if event.type == "session.ready":
 		_session_id = event.session_id
 		_protocol_version = int(event.payload.get("protocol_version", 1))
+	if event.type == "server.heartbeat":
+		var client_ts := int(event.payload.get("client_ts", 0))
+		if client_ts > 0:
+			_last_rtt_msec = Time.get_ticks_msec() - client_ts
 	backend_event_received.emit(event)
 	if event.type == "session.paired":
 		var token := str(event.payload.get("token", ""))

@@ -11,10 +11,13 @@ import json
 from pathlib import Path
 import socket
 import ssl
+import time
 from typing import Any
 
 from websockets.asyncio.server import ServerConnection, serve
+from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
+from websockets.http11 import Request, Response
 
 from . import __version__
 from .auth import PairingManager
@@ -34,11 +37,24 @@ _SHARED_EVENT_PREFIXES = (
     "tool.",
     "workspace.",
     "file.",
+    "device.",
 )
 
 
 def _is_shared_event(event_type: str) -> bool:
     return event_type.startswith(_SHARED_EVENT_PREFIXES)
+
+
+def _http_response(
+    status: int, reason: str, headers: dict[str, str] | None = None, body: bytes = b""
+) -> Response:
+    pairs = list((headers or {}).items())
+    if "Content-Length" not in (headers or {}):
+        pairs.append(("Content-Length", str(len(body))))
+    pairs.append(("Connection", "close"))
+    return Response(status, reason, Headers(pairs), body)
+
+
 from .discovery import DiscoveryAdvertiser, build_beacon, local_ipv4_addresses
 from .mcp_host import McpHost
 from .observability import configure_logging, log_record
@@ -50,6 +66,7 @@ from .protocol import (
     make_event,
     new_id,
     parse_client_message,
+    utc_now,
 )
 from .providers import (
     ClaudeProvider,
@@ -62,7 +79,7 @@ from .providers import (
 from .storage import SQLiteStore
 from .opencode_bridge import OpencodeClient
 from .thread_service import ThreadNotFoundError, ThreadService
-from .update_service import UpdateError, UpdateService
+from .update_service import UpdateError, UpdateService, parse_byte_range
 from .voice_service import Utterance, VoiceError, WhisperTranscriber
 from .tools import ToolRegistry
 from .workspace import WorkspaceError, WorkspaceManager
@@ -77,8 +94,24 @@ class Session:
     protocol_version: int = 1
     device_id: str = ""
     device_name: str = ""
+    remote: str = ""
+    connected_at: float = field(default_factory=time.time)
+    last_seen: float = field(default_factory=time.time)
+    telemetry: dict[str, Any] = field(default_factory=dict)
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     command_times: deque[float] = field(default_factory=deque)
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "session_id": self.id,
+            "device_id": self.device_id,
+            "device_name": self.device_name,
+            "remote": self.remote,
+            "connected_at": self.connected_at,
+            "last_seen": self.last_seen,
+            "protocol_version": self.protocol_version,
+            "telemetry": self.telemetry,
+        }
 
     def allow_command(self, limit_per_minute: int) -> bool:
         now = asyncio.get_running_loop().time()
@@ -225,8 +258,9 @@ class SpatialAgentServer:
 
     async def handle_connection(self, connection: ServerConnection) -> None:
         session = Session(new_id("sess"), connection)
+        session.remote = str(connection.remote_address)
         self._sessions.append(session)
-        log_record("connection_opened", session_id=session.id, remote=str(connection.remote_address))
+        log_record("connection_opened", session_id=session.id, remote=session.remote)
 
         async def emit(event_type: str, thread_id: str, payload: dict[str, Any]) -> None:
             event = make_event(
@@ -267,6 +301,8 @@ class SpatialAgentServer:
                     "voice.audio.end",
                     "voice.audio.cancel",
                     "client.log",
+                    "client.telemetry",
+                    "devices.list",
                 }
                 if (
                     command.type not in _rate_exempt
@@ -556,6 +592,18 @@ class SpatialAgentServer:
             source = str(command.payload.get("source", "headset")).strip() or "headset"
             message = str(command.payload.get("message", ""))
             await asyncio.to_thread(self._append_client_log, level, source, message)
+        elif command.type == "client.telemetry":
+            session.telemetry = dict(command.payload)
+            session.last_seen = time.time()
+            # Echo the client's timestamp so it can measure round-trip time.
+            await emit(
+                "server.heartbeat",
+                "",
+                {"t": utc_now(), "client_ts": command.payload.get("client_ts", 0)},
+            )
+            await self._broadcast_devices()
+        elif command.type == "devices.list":
+            await emit("devices.snapshot", "", {"devices": self._device_snapshot()})
         elif command.type == "workspace.list":
             await emit(
                 "workspace.snapshot",
@@ -782,12 +830,20 @@ class SpatialAgentServer:
             else:
                 log_record("update_apply_failed", session_id=session.id, code=result.get("code", ""))
                 # No usable adb link (or the install failed): hand the transfer
-                # back to the cockpit so it can download and install the APK
-                # itself via its PackageInstaller plugin - no USB required.
+                # back to the cockpit so it can stream the APK itself over HTTPS
+                # (resumable) and install it via its PackageInstaller plugin.
                 await emit(
                     "update.fallback",
                     "",
-                    {"reason": result.get("code", "install_failed"), "message": result.get("message", "")},
+                    {
+                        "reason": result.get("code", "install_failed"),
+                        "message": result.get("message", ""),
+                        "method": "http",
+                        "path": f"/update/{package.sha256}.apk",
+                        "sha256": package.sha256,
+                        "size_bytes": package.size_bytes,
+                        "version": package.version,
+                    },
                 )
                 # Also send the legacy error shape: older clients only trigger
                 # their in-app installer from this error code.
@@ -809,23 +865,18 @@ class SpatialAgentServer:
             else:
                 await emit("update.none", "", {})
         elif command.type == "update.fetch":
+            # Legacy websocket chunk path. No per-chunk logging: it saturated the
+            # event loop with SQLite writes during wireless updates.
             offset = int(command.payload.get("offset", 0))
             length = int(command.payload.get("length", self.updates.chunk_bytes))
-            log_record("update_fetch", session_id=session.id, offset=offset, length=length)
             try:
                 data, eof = self.updates.read_chunk(offset, length)
             except UpdateError as error:
                 await emit("error", "", {"code": error.code, "message": error.message})
                 return
             import base64 as _base64
-            if eof or offset == 0:
-                log_record(
-                    "update_transfer",
-                    session_id=session.id,
-                    offset=offset,
-                    bytes=len(data),
-                    eof=eof,
-                )
+            if eof:
+                log_record("update_transfer_done", session_id=session.id, offset=offset)
             await emit(
                 "update.chunk",
                 "",
@@ -1073,6 +1124,115 @@ class SpatialAgentServer:
         )
         await self._broadcast_event(event)
 
+    # -- HTTP on the websocket port (update APK + health) --------------------
+    async def _process_http_request(
+        self, connection: ServerConnection, request: Request
+    ) -> Response | None:
+        """Serve the self-update APK and ``/health`` over the websocket port.
+
+        Returning ``None`` lets the request continue to the websocket handshake;
+        returning a ``Response`` completes an ordinary HTTP request.
+        """
+        path = request.path.split("?", 1)[0]
+        if path == "/ws":
+            return None
+        if getattr(request, "method", "GET") != "GET":
+            return _http_response(405, "Method Not Allowed", {"Allow": "GET"})
+        if path == "/health":
+            return self._http_health()
+        if path == "/update/manifest.json":
+            if not self._http_authorized(request):
+                return _http_response(401, "Unauthorized", {"WWW-Authenticate": "Bearer"})
+            payload = self.updates.manifest_payload()
+            if not payload:
+                return _http_response(404, "Not Found")
+            return _http_response(
+                200, "OK", {"Content-Type": "application/json"}, json.dumps(payload).encode()
+            )
+        if path.startswith("/update/") and path.endswith(".apk"):
+            return self._http_update(request, path)
+        return _http_response(404, "Not Found")
+
+    def _http_authorized(self, request: Request) -> bool:
+        if not self.settings.auth_required:
+            return True
+        header = request.headers.get("Authorization") or ""
+        if not header.startswith("Bearer "):
+            return False
+        token = header[len("Bearer ") :].strip()
+        if not token:
+            return False
+        try:
+            return self.pairing.verify(token) is not None
+        except Exception:  # noqa: BLE001 - never let auth crash the request
+            return False
+
+    def _http_update(self, request: Request, path: str) -> Response:
+        if not self._http_authorized(request):
+            return _http_response(401, "Unauthorized", {"WWW-Authenticate": "Bearer"})
+        package = self.updates.current()
+        if package is None:
+            return _http_response(404, "Not Found")
+        requested = path[len("/update/") : -len(".apk")]
+        if requested and requested != package.sha256:
+            return _http_response(409, "Conflict")
+        size = package.size_bytes
+        try:
+            parsed = parse_byte_range(request.headers.get("Range"), size)
+        except UpdateError as error:
+            if error.code == "range_not_satisfiable":
+                return _http_response(
+                    416, "Range Not Satisfiable", {"Content-Range": f"bytes */{size}"}
+                )
+            return _http_response(400, "Bad Request")
+        headers = {
+            "Content-Type": "application/vnd.android.package-archive",
+            "Accept-Ranges": "bytes",
+            "ETag": f'"{package.sha256}"',
+        }
+        if parsed is None:
+            data = self.updates.read_range(0, size - 1)
+            headers["Content-Length"] = str(len(data))
+            log_record("update_http", bytes=len(data), range="full", version=package.version)
+            return _http_response(200, "OK", headers, data)
+        start, end = parsed
+        data = self.updates.read_range(start, end)
+        headers["Content-Length"] = str(len(data))
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+        log_record("update_http", bytes=len(data), range=f"{start}-{end}", version=package.version)
+        return _http_response(206, "Partial Content", headers, data)
+
+    def _device_snapshot(self) -> list[dict[str, Any]]:
+        now = time.time()
+        return [
+            {**session.to_wire(), "age_seconds": round(now - session.last_seen, 1)}
+            for session in self._sessions
+            if session.ready
+        ]
+
+    async def _broadcast_devices(self) -> None:
+        with suppress(ConnectionClosed, OSError):
+            await self.broadcast("devices.snapshot", "", {"devices": self._device_snapshot()})
+
+    def _http_health(self) -> Response:
+        package = self.updates.current()
+        payload = {
+            "status": "ok",
+            "version": __version__,
+            "provider": self.provider_label,
+            "paused": self.coordinator.is_paused(),
+            "sessions": len(self._sessions),
+            "devices": self._device_snapshot(),
+            "update": (
+                {"version": package.version, "size_bytes": package.size_bytes}
+                if package is not None
+                else None
+            ),
+        }
+        return _http_response(
+            200, "OK", {"Content-Type": "application/json"}, json.dumps(payload).encode()
+        )
+
     def _append_client_log(self, level: str, source: str, message: str) -> None:
         """Persist log lines relayed from a headset so the daemon host can debug
         wireless clients without USB/adb."""
@@ -1144,6 +1304,7 @@ class SpatialAgentServer:
             max_queue=64,
             ping_interval=20,
             ping_timeout=120,
+            process_request=self._process_http_request,
             ssl=self._ssl_context,
         ) as websocket_server:
             self._websocket_server = websocket_server
