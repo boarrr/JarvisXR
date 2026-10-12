@@ -9,7 +9,7 @@ extends Node3D
 @export var user_rig_path: NodePath = ^"../UserRig"
 @export var backend_bridge_path: NodePath = ^"../BackendBridge"
 @export var xr_runtime_path: NodePath = ^"../XRRuntime"
-@export_range(0.8, 3.0, 0.05) var scan_distance: float = 1.8
+@export_range(0.6, 3.0, 0.05) var scan_distance: float = 1.05
 @export_range(2, 30, 1) var scan_every_frames: int = 6
 
 const PROMPT_SCAN := "AIM AT THE QR IN THE SPATIAL AGENT APP"
@@ -238,10 +238,10 @@ func _build() -> void:
 	preview_material.albedo_color = Color(0.05, 0.05, 0.05)
 	_preview = MeshInstance3D.new()
 	var preview_mesh := QuadMesh.new()
-	preview_mesh.size = Vector2(0.9, 0.9)
+	preview_mesh.size = Vector2(1.5, 1.5)
 	_preview.mesh = preview_mesh
 	_preview.material_override = preview_material
-	_preview.position = Vector3(0.0, -0.06, -0.02)
+	_preview.position = Vector3(0.0, 0.0, -0.02)
 	_preview.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_preview)
 
@@ -252,6 +252,7 @@ func _build() -> void:
 
 	# A red square (frame) reticle to aim the QR inside.
 	_reticle = Node3D.new()
+	_reticle.position = Vector3(0.0, 0.0, 0.03)
 	add_child(_reticle)
 	var half := 0.075
 	var edge := 0.006
