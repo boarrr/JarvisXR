@@ -21,3 +21,7 @@ desktop/.venv/
 desktop/dist/
 desktop/build/
 desktop/*.spec
+desktop/src/spatial_agent_desktop/bundle_config.json
+desktop/dist/
+desktop/build/
+*.spec

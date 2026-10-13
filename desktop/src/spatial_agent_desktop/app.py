@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import secrets
 import shutil
@@ -29,19 +30,37 @@ _CONFIG_TEMPLATE = """\
 """
 
 
+def _load_bundled_config() -> None:
+    """Apply defaults bundled at build time so a double-clicked app runs against
+    the repo with LAN/TLS/workspace configured (instead of localhost-only)."""
+    path = Path(__file__).parent / "bundle_config.json"
+    if not path.is_file():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if isinstance(value, str) and value:
+                os.environ.setdefault(key, value)
+
+
 def _load_config_env() -> None:
     """Apply ~/Library/Application Support/SpatialAgent/config.env (if present)."""
     base = app_support_dir()
     config = base / "config.env"
     if not config.is_file():
         config.write_text(_CONFIG_TEMPLATE, encoding="utf-8")
-        return
-    for line in config.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, _, value = stripped.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
+    else:
+        for line in config.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, _, value = stripped.partition("=")
+            os.environ.setdefault(key.strip(), value.strip())
+    # Bundled defaults fill anything config.env (or the environment) left unset.
+    _load_bundled_config()
 
 
 def build_settings() -> Settings:
@@ -58,6 +77,10 @@ def build_settings() -> Settings:
         settings = dataclasses.replace(
             settings, opencode_password=password, opencode_directory=directory
         )
+    # With TLS configured the daemon is meant for the headset on the LAN; never
+    # stay localhost-only in that case.
+    if settings.tls_certificate_path and settings.host in ("127.0.0.1", "localhost"):
+        settings = dataclasses.replace(settings, host="0.0.0.0")
     # A double-clicked .app has CWD "/", so pin the relative defaults to a
     # writable per-user directory.
     return dataclasses.replace(
