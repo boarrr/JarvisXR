@@ -488,6 +488,12 @@ class SpatialAgentServer:
 
         if command.type == "thread.list":
             threads = await self.threads.list_threads()
+            log_record(
+                "thread_list",
+                session_id=session.id,
+                count=len(threads),
+                ids=[thread.id for thread in threads][:8],
+            )
             await emit("thread.snapshot", "", {"threads": [thread.to_wire() for thread in threads]})
         elif command.type == "thread.create":
             thread = await self.threads.create_thread(str(command.payload.get("title", "New thread")))

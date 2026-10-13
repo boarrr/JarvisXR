@@ -309,6 +309,7 @@ func add_thread(thread: AgentThread) -> bool:
 	threads_by_id[thread.id] = thread
 	if not already_exists:
 		ordered_thread_ids.append(thread.id)
+		print("[STATE] add_thread %s (total=%d)" % [thread.id, ordered_thread_ids.size()])
 		thread_added.emit(thread)
 	else:
 		thread_updated.emit(thread)

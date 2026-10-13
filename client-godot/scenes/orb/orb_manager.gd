@@ -136,6 +136,7 @@ func _spawn_or_update_orb(thread: AgentThread) -> void:
 	add_child(orb)
 	orb.bind_thread(thread)
 	_orbs_by_thread_id[thread.id] = orb
+	print("[ORB] spawned %s" % thread.id)
 
 	var origin := _get_layout_origin()
 	var target := calculate_slot_global_position(thread.spatial_slot)

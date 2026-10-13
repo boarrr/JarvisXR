@@ -182,6 +182,7 @@ func _on_backend_event_received(event: BackendEvent) -> void:
 func _apply_thread_snapshot(payload: Dictionary) -> void:
 	var authoritative_ids: Dictionary = {}
 	var thread_payloads: Array = payload.get("threads", [])
+	print("[THREADS] snapshot n=%d" % thread_payloads.size())
 	for thread_variant in thread_payloads:
 		if not thread_variant is Dictionary:
 			continue
