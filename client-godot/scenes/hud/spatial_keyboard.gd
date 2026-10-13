@@ -64,6 +64,7 @@ func open() -> bool:
 	if _camera == null:
 		var rig := get_node_or_null(user_rig_path) as UserRig
 		_camera = rig.get_camera() if rig != null else null
+	print("[KEYBOARD] open camera=%s rig_path=%s" % [str(_camera != null), str(user_rig_path)])
 	if _camera == null:
 		return false
 	_place_in_reading_zone()

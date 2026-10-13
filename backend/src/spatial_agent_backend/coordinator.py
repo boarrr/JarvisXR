@@ -467,6 +467,7 @@ class AgentCoordinator:
                 thread_id=run.thread_id,
                 run_id=run.run_id,
                 error_type=type(error).__name__,
+                error_message=str(error)[:400],
             )
         finally:
             log_record("opencode_run_end", run_id=run.run_id)
@@ -565,6 +566,7 @@ class AgentCoordinator:
                 thread_id=run.thread_id,
                 run_id=run.run_id,
                 error_type=type(error).__name__,
+                error_message=str(error)[:400],
             )
         finally:
             if session_id:
@@ -881,6 +883,7 @@ class AgentCoordinator:
                 thread_id=run.thread_id,
                 run_id=run.run_id,
                 error_type=type(error).__name__,
+                error_message=str(error)[:400],
             )
         finally:
             if primed is not None and not primed.done():

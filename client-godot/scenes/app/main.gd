@@ -189,6 +189,7 @@ func _on_interaction_event(event: InteractionEvent) -> void:
 			elif event.target_id == "palm:code_toggle":
 				_code_viewer.toggle()
 			elif event.target_id == "palm:input_focus":
+				print("[KEYBOARD] select palm:input_focus")
 				_palm_console.begin_typing()
 			elif event.target_id.begins_with("kbd:"):
 				_spatial_keyboard.handle_key(event.target_id)
@@ -340,6 +341,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _on_typing_changed(typing: bool) -> void:
+	print("[KEYBOARD] typing_changed typing=%s hardware_seen=%s" % [typing, _hardware_key_seen])
 	if typing and not _hardware_key_seen:
 		_spatial_keyboard.open()
 	else:

@@ -370,6 +370,9 @@ func backspace() -> void:
 
 
 func begin_typing() -> bool:
+	print("[KEYBOARD] begin_typing field=%s thread=%s approvals=%d" % [
+		str(_input_field != null), AppState.focused_thread_id, AppState.approval_requests.size()
+	])
 	if _input_field == null:
 		return false
 	if AppState.focused_thread_id.is_empty():

@@ -40,6 +40,10 @@ export SPATIAL_AGENT_OPENCODE_DIR="$project_root"
 export SPATIAL_AGENT_WORKSPACE_PATH="${SPATIAL_AGENT_WORKSPACE_PATH:-$project_root}"
 export SPATIAL_AGENT_WORKSPACE_NAME="${SPATIAL_AGENT_WORKSPACE_NAME:-SpatialAgent}"
 export SPATIAL_AGENT_WORKSPACE_BRANCH="${SPATIAL_AGENT_WORKSPACE_BRANCH:-main}"
+# Fixed opencode server password so the daemon's client and the spawned
+# `opencode serve` always agree (a random password from a stale server caused
+# every agent run to fail with HTTP 401 -> OpencodeError).
+export SPATIAL_AGENT_OPENCODE_PASSWORD="${SPATIAL_AGENT_OPENCODE_PASSWORD:-spatialagent}"
 # Mirror headset logs relayed over the websocket to a file on the daemon host.
 export SPATIAL_AGENT_CLIENT_LOG="$project_root/build/quest/client.log"
 
