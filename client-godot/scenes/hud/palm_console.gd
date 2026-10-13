@@ -219,17 +219,19 @@ func _build_scroll_debug() -> void:
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.no_depth_test = true
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Same width as the footer button row and the same protrusion off the panel
+	# as the button hitboxes (z=0.003, depth 0.01).
 	var rect := Rect2(
-		16,
+		RECT_SECONDARY.position.x,
 		HEADER_HEIGHT_PX,
-		VIEWPORT_SIZE.x - 32,
+		RECT_SECONDARY.size.x,
 		VIEWPORT_SIZE.y - HEADER_HEIGHT_PX - FOOTER_HEIGHT_PX
 	)
 	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
 	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
 	_scroll_debug = MeshInstance3D.new()
 	var box := BoxMesh.new()
-	box.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.02)
+	box.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.01)
 	_scroll_debug.mesh = box
 	_scroll_debug.material_override = material
 	_scroll_debug.position = _rect_to_local(rect)
