@@ -52,6 +52,7 @@ var _title_label: Label = null
 var _subtitle_label: Label = null
 var _build_label: Label = null
 var _body: RichTextLabel = null
+var _scroll_debug: MeshInstance3D = null
 var _voice_label: Label = null
 var _input_field: LineEdit = null
 var _typing := false
@@ -73,6 +74,7 @@ var _swipe_last := Vector2.ZERO
 var _scroll_anchor_y := 0.0
 var _scroll_accumulator := 0.0
 var _scroll_velocity := 0.0
+var _scroll_log_msec := 0
 
 
 func _ready() -> void:
@@ -187,6 +189,7 @@ func _build_screen() -> void:
 
 	_build_surface()
 	_build_backing_and_screen(root)
+	_build_scroll_debug()
 
 
 func _build_surface() -> void:
@@ -206,6 +209,39 @@ func _build_surface() -> void:
 	surface.add_child(collision)
 	surface.position = Vector3(SCREEN_CENTER.x, SCREEN_CENTER.y, 0.0)
 	add_child(surface)
+
+
+func _build_scroll_debug() -> void:
+	# Visualises the swipe/scroll region (the chat body) in the debug overlay.
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color(1.0, 0.55, 0.1, 0.30)
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.no_depth_test = true
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var rect := Rect2(
+		16,
+		HEADER_HEIGHT_PX,
+		VIEWPORT_SIZE.x - 32,
+		VIEWPORT_SIZE.y - HEADER_HEIGHT_PX - FOOTER_HEIGHT_PX
+	)
+	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
+	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
+	_scroll_debug = MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.02)
+	_scroll_debug.mesh = box
+	_scroll_debug.material_override = material
+	_scroll_debug.position = _rect_to_local(rect)
+	_scroll_debug.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_scroll_debug.visible = AppState.hitbox_debug_visible
+	add_child(_scroll_debug)
+	AppState.hitbox_debug_changed.connect(_on_hitbox_debug_changed)
+
+
+func _on_hitbox_debug_changed(value: bool) -> void:
+	if _scroll_debug != null:
+		_scroll_debug.visible = value
 
 
 func _build_backing_and_screen(root: Control) -> void:
@@ -738,21 +774,33 @@ func _update_swipe() -> void:
 	var tip := Vector3.ZERO
 	var hand := ""
 	var half := SCREEN_SIZE * 0.6
+	# Generous depth window: the fingertip hovers ~0.1 m off the plane while
+	# touching, and a tight threshold made the gesture feel un-hittable.
+	var best_distance := 0.18
+	var near_hand := ""
+	var near_z := 999.0
 	for candidate in ["right", "left"]:
 		var sample := _hand_source.get_latest_hand_sample(candidate)
 		if sample.is_empty():
 			continue
 		var candidate_tip := sample.get("index_tip", Vector3.ZERO) as Vector3
 		var candidate_local := to_local(candidate_tip)
+		if near_hand.is_empty() or absf(candidate_local.z) < absf(near_z):
+			near_hand = candidate
+			near_z = candidate_local.z
 		if (
-			absf(candidate_local.z) < 0.08
+			absf(candidate_local.z) < best_distance
 			and absf(candidate_local.x - SCREEN_CENTER.x) <= half.x
 			and absf(candidate_local.y - SCREEN_CENTER.y) <= half.y
 		):
+			best_distance = absf(candidate_local.z)
 			tip = candidate_tip
 			hand = candidate
-			break
 	if hand.is_empty():
+		var now_ms := Time.get_ticks_msec()
+		if now_ms - _scroll_log_msec > 700 and not near_hand.is_empty():
+			_scroll_log_msec = now_ms
+			print("[SCROLL] no-target hand=%s tip_z=%.3f" % [near_hand, near_z])
 		_swipe_active = false
 		_swipe_hand = ""
 		return
@@ -762,6 +810,12 @@ func _update_swipe() -> void:
 	var local := to_local(tip)
 	var on_surface := true
 	var position_2d := Vector2(local.x, local.y)
+	var now_ms2 := Time.get_ticks_msec()
+	if now_ms2 - _scroll_log_msec > 700:
+		_scroll_log_msec = now_ms2
+		print("[SCROLL] on-panel hand=%s z=%.3f y=%.3f footer=%s active=%s" % [
+			hand, local.z, local.y, _over_footer(local), _swipe_active
+		])
 	# The footer is a button band: never treat touches there as scrolls, or a
 	# poke's natural finger travel would cancel the tap.
 	if _over_footer(local):
@@ -800,6 +854,10 @@ func _scroll_chat_lines(line_delta: float) -> void:
 	_scroll_accumulator -= float(whole)
 	var last_line := maxi(0, _body.get_line_count() - 1)
 	_chat_scroll_line = clampi(_chat_scroll_line + whole, 0, last_line)
+	var bar := _body.get_v_scroll_bar()
+	print("[SCROLL] apply delta=%.2f -> line %d/%d scroll=%.1f/%.1f page=%.1f" % [
+		line_delta, _chat_scroll_line, last_line, bar.value, bar.max_value, bar.page
+	])
 	_body.scroll_to_line(_chat_scroll_line)
 	_chat_follow = _chat_scroll_line >= last_line
 	if _viewport != null and visible:
