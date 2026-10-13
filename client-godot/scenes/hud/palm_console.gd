@@ -193,21 +193,30 @@ func _build_screen() -> void:
 
 
 func _build_surface() -> void:
-	# A thin invisible plane over the screen used to "stop" the hand at the
-	# panel (Meta-style) so fingers land on the controls instead of passing
-	# through. It is not in "interactable" so it never emits selections.
+	# Hand-stop only over the footer controls (input + buttons) so fingers land
+	# on them instead of passing through. The conversation body is deliberately
+	# left open so the hand can pass through it for the scroll gesture. It is not
+	# in "interactable" so it never emits selections.
 	var surface := Area3D.new()
 	surface.name = "SurfaceTarget"
 	surface.collision_layer = 2
 	surface.collision_mask = 0
 	surface.monitoring = false
 	surface.add_to_group("touch_surface")
+	var rect := Rect2(
+		0.0,
+		VIEWPORT_SIZE.y - FOOTER_HEIGHT_PX,
+		VIEWPORT_SIZE.x,
+		FOOTER_HEIGHT_PX
+	)
+	var scale_x := SCREEN_SIZE.x / float(VIEWPORT_SIZE.x)
+	var scale_y := SCREEN_SIZE.y / float(VIEWPORT_SIZE.y)
 	var box := BoxShape3D.new()
-	box.size = Vector3(SCREEN_SIZE.x, SCREEN_SIZE.y, 0.03)
+	box.size = Vector3(rect.size.x * scale_x, rect.size.y * scale_y, 0.03)
 	var collision := CollisionShape3D.new()
 	collision.shape = box
 	surface.add_child(collision)
-	surface.position = Vector3(SCREEN_CENTER.x, SCREEN_CENTER.y, 0.0)
+	surface.position = _rect_to_local(rect)
 	add_child(surface)
 
 
