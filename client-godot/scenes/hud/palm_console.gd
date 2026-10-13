@@ -773,43 +773,44 @@ func _refresh_voice_label() -> void:
 
 
 func _update_swipe() -> void:
-	var tip := Vector3.ZERO
+	# Scroll gesture: all four fingers inside the scroll region ("through" the
+	# hit box). Track the hand (finger centroid); dragging up pushes the content
+	# up, dragging down pushes it down.
 	var hand := ""
+	var anchor := Vector3.ZERO
 	var half := SCREEN_SIZE * 0.6
-	# Generous depth window: the fingertip hovers ~0.1 m off the plane while
-	# touching, and a tight threshold made the gesture feel un-hittable.
-	var best_distance := 0.18
-	var near_hand := ""
-	var near_z := 999.0
+	var threshold := 0.20
 	for candidate in ["right", "left"]:
 		var sample := _hand_source.get_latest_hand_sample(candidate)
 		if sample.is_empty():
 			continue
-		var candidate_tip := sample.get("index_tip", Vector3.ZERO) as Vector3
-		var candidate_local := to_local(candidate_tip)
-		if near_hand.is_empty() or absf(candidate_local.z) < absf(near_z):
-			near_hand = candidate
-			near_z = candidate_local.z
-		if (
-			absf(candidate_local.z) < best_distance
-			and absf(candidate_local.x - SCREEN_CENTER.x) <= half.x
-			and absf(candidate_local.y - SCREEN_CENTER.y) <= half.y
-		):
-			best_distance = absf(candidate_local.z)
-			tip = candidate_tip
+		var sum := Vector3.ZERO
+		var all_in := true
+		for key in ["index_tip", "middle_tip", "ring_tip", "pinky_tip"]:
+			if not sample.has(key):
+				all_in = false
+				break
+			var tip_local := to_local(sample.get(key, Vector3.ZERO) as Vector3)
+			if (
+				absf(tip_local.z) >= threshold
+				or absf(tip_local.x - SCREEN_CENTER.x) > half.x
+				or absf(tip_local.y - SCREEN_CENTER.y) > half.y
+			):
+				all_in = false
+				break
+			sum += sample.get(key, Vector3.ZERO) as Vector3
+		if all_in:
 			hand = candidate
+			anchor = sum / 4.0
+			break
 	if hand.is_empty():
-		var now_ms := Time.get_ticks_msec()
-		if now_ms - _scroll_log_msec > 700 and not near_hand.is_empty():
-			_scroll_log_msec = now_ms
-			print("[SCROLL] no-target hand=%s tip_z=%.3f" % [near_hand, near_z])
 		_swipe_active = false
 		_swipe_hand = ""
 		return
 	if hand != _swipe_hand:
 		_swipe_hand = hand
 		_swipe_active = false
-	var local := to_local(tip)
+	var local := to_local(anchor)
 	var on_surface := true
 	var position_2d := Vector2(local.x, local.y)
 	var now_ms2 := Time.get_ticks_msec()
