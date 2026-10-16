@@ -5,6 +5,10 @@ const TOKEN_CONFIG_PATH := "user://daemon_auth.cfg"
 const DAEMON_CONFIG_PATH := "user://daemon.cfg"
 const TELEMETRY_INTERVAL_SECONDS := 5.0
 const LINK_TIMEOUT_MSEC := 20000
+# Cap how long one candidate may sit in CONNECTING before we move on. Without
+# this, an unreachable stale IP blocks for the OS TCP timeout (~30s) and the
+# headset takes ~a minute to reach the current address on a new network.
+const CONNECT_TIMEOUT_MSEC := 5000
 
 @export var websocket_url: String = "ws://127.0.0.1:8787/ws"
 @export var auth_token: String = ""
@@ -43,6 +47,7 @@ var _discovery: DiscoveryService = null
 var _telemetry_accum: float = 0.0
 var _last_rx_msec: int = 0
 var _last_rtt_msec: int = -1
+var _connect_started_msec: int = 0
 
 
 func _ready() -> void:
@@ -63,6 +68,15 @@ func _process(delta: float) -> void:
 		return
 	_socket.poll()
 	var state := _socket.get_ready_state()
+	if (
+		state == WebSocketPeer.STATE_CONNECTING
+		and Time.get_ticks_msec() - _connect_started_msec > CONNECT_TIMEOUT_MSEC
+	):
+		print("[BACKEND] connect timeout on %s; next candidate" % websocket_url)
+		_socket.close()
+		_socket = null
+		_schedule_next_attempt()
+		return
 	if state == WebSocketPeer.STATE_OPEN and not _has_opened:
 		_has_opened = true
 		_reconnect_attempt = 0
@@ -130,6 +144,7 @@ func start() -> void:
 	_reconnect_attempt = 0
 	_reconnect_remaining_seconds = -1.0
 	_rebuild_candidates()
+	print("[BACKEND] candidates: %s" % str(_candidate_urls))
 	_candidate_index = 0
 	_apply_candidate(0)
 	if not _is_valid_websocket_url(websocket_url):
@@ -151,6 +166,7 @@ func _connect_socket() -> void:
 	_has_opened = false
 	_session_id = ""
 	_set_connection_state(STATE_CONNECTING)
+	_connect_started_msec = Time.get_ticks_msec()
 	var result := _socket.connect_to_url(websocket_url, build_tls_options(websocket_url))
 	if result != OK:
 		_socket = null
@@ -232,7 +248,9 @@ func set_default_url(url: String) -> void:
 func set_default_fallbacks(value: String) -> void:
 	if value.strip_edges().is_empty():
 		return
-	_fallback_urls = _dedupe_urls(Array(_fallback_urls) + Array(value.split(",", false)))
+	# Replace rather than append: the baked value is the current LAN IP, and
+	# accumulating old ones just adds unreachable candidates to grind through.
+	_fallback_urls = _dedupe_urls(Array(value.split(",", false)))
 	_rebuild_candidates()
 
 
@@ -508,12 +526,14 @@ func _rebuild_candidates() -> void:
 	var values: Array = []
 	for url in _discovered_urls:
 		values.append(url)
+	# Prefer the baked LAN fallback over the localhost default: on the headset the
+	# daemon is never on 127.0.0.1, so trying it first just wastes a cycle.
+	for fallback in _fallback_urls:
+		values.append(fallback)
 	var primary := _primal_url if not _primal_url.is_empty() else websocket_url
 	if not primary.is_empty():
 		values.append(primary)
 	values.append(_last_good_url)
-	for fallback in _fallback_urls:
-		values.append(fallback)
 	_candidate_urls = _dedupe_urls(values)
 
 
@@ -564,6 +584,9 @@ func _apply_candidate(index: int) -> void:
 		return
 	_candidate_index = clampi(index, 0, _candidate_urls.size() - 1)
 	websocket_url = _candidate_urls[_candidate_index]
+	print("[BACKEND] trying candidate %d/%d %s" % [
+		_candidate_index + 1, _candidate_urls.size(), websocket_url
+	])
 
 
 func _schedule_next_attempt() -> void:
