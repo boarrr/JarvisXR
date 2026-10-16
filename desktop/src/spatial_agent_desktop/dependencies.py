@@ -77,8 +77,10 @@ class DependencySupervisor:
         if executable is None:
             return False
         log = open(self.log_dir / "whisper.log", "ab")
+        # CPU-only (-ng): the Metal/GPU path hangs or dies while loading the
+        # model on this machine, so voice never came up.
         process = subprocess.Popen(
-            [executable, "-m", model_path, "--host", host, "--port", str(port)],
+            [executable, "-m", model_path, "-ng", "--host", host, "--port", str(port)],
             stdout=log,
             stderr=subprocess.STDOUT,
         )
