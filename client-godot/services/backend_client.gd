@@ -283,14 +283,17 @@ func get_protocol_version_value() -> int:
 func build_tls_options(url: String) -> TLSOptions:
 	if not url.begins_with("wss://"):
 		return null
-	var certificate := _load_certificate()
-	if certificate != null:
-		return TLSOptions.client(certificate)
+	# Unsafe TLS takes precedence: the daemon's self-signed cert is issued for a
+	# specific IP, so pinning it by CA breaks whenever the network (and IP)
+	# changes. For a roaming LAN dev tool we skip verification instead.
 	if (
 		allow_unsafe_tls
 		or bool(ProjectSettings.get_setting("spatial_agent/allow_unsafe_tls", false))
 	):
 		return TLSOptions.client_unsafe()
+	var certificate := _load_certificate()
+	if certificate != null:
+		return TLSOptions.client(certificate)
 	return null
 
 

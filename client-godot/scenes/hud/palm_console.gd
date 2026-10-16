@@ -782,37 +782,38 @@ func _refresh_voice_label() -> void:
 
 
 func _update_swipe() -> void:
-	# Scroll gesture: all four fingers inside the scroll region ("through" the
-	# hit box). Track the hand (finger centroid); dragging up pushes the content
-	# up, dragging down pushes it down.
+	# Scroll gesture: the hand passes through the scroll region; track its
+	# position and drag up/down to push the content. On this runtime the hand
+	# sample only reports palm/thumb/index, so gate + track on the palm (always
+	# tracked) rather than the four fingertips.
 	var hand := ""
 	var anchor := Vector3.ZERO
 	var half := SCREEN_SIZE * 0.6
-	var threshold := 0.20
+	var threshold := 0.25
+	var diag := ""
 	for candidate in ["right", "left"]:
 		var sample := _hand_source.get_latest_hand_sample(candidate)
-		if sample.is_empty():
+		if sample.is_empty() or not sample.has("palm"):
 			continue
-		var sum := Vector3.ZERO
-		var all_in := true
-		for key in ["index_tip", "middle_tip", "ring_tip", "pinky_tip"]:
-			if not sample.has(key):
-				all_in = false
-				break
-			var tip_local := to_local(sample.get(key, Vector3.ZERO) as Vector3)
-			if (
-				absf(tip_local.z) >= threshold
-				or absf(tip_local.x - SCREEN_CENTER.x) > half.x
-				or absf(tip_local.y - SCREEN_CENTER.y) > half.y
-			):
-				all_in = false
-				break
-			sum += sample.get(key, Vector3.ZERO) as Vector3
-		if all_in:
+		var palm := sample.get("palm", Vector3.ZERO) as Vector3
+		var palm_local := to_local(palm)
+		if diag == "":
+			diag = "%s palm=(%.2f,%.2f,%.2f) keys=%s" % [
+				candidate, palm_local.x, palm_local.y, palm_local.z, str(sample.keys())
+			]
+		if (
+			absf(palm_local.z) < threshold
+			and absf(palm_local.x - SCREEN_CENTER.x) <= half.x
+			and absf(palm_local.y - SCREEN_CENTER.y) <= half.y
+		):
 			hand = candidate
-			anchor = sum / 4.0
+			anchor = palm
 			break
 	if hand.is_empty():
+		var now_ms := Time.get_ticks_msec()
+		if now_ms - _scroll_log_msec > 500 and diag != "":
+			_scroll_log_msec = now_ms
+			print("[SCROLL] no-gate " + diag)
 		_swipe_active = false
 		_swipe_hand = ""
 		return
