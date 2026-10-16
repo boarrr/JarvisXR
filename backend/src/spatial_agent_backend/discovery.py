@@ -31,6 +31,9 @@ APP_ID = "spatial-agent"
 PROTOCOL_VERSION = 2
 DEFAULT_DISCOVERY_PORT = 8789
 BEACON_INTERVAL_SECONDS = 1.0
+# How often to recompute the advertised LAN addresses (so a Wi-Fi change is
+# picked up automatically instead of needing a daemon restart).
+BEACON_REFRESH_SECONDS = 5.0
 DISCOVER_MAGIC = b"spatial-agent-discover"
 
 
@@ -163,8 +166,18 @@ class DiscoveryAdvertiser:
             sock.bind(("", self.port))
             sock.settimeout(0.5)
             last_broadcast = 0.0
+            last_refresh = 0.0
             while not (self._stop is not None and self._stop.is_set()):
                 now = time.monotonic()
+                # Recompute our addresses so a network change (new Wi-Fi -> new
+                # IP) is advertised without restarting the daemon.
+                if now - last_refresh >= BEACON_REFRESH_SECONDS:
+                    last_refresh = now
+                    fresh = local_ipv4_addresses()
+                    if fresh and fresh != list(self.payload.get("ips", [])):
+                        self.payload["ips"] = fresh
+                        data = encode_beacon(self.payload)
+                        targets = _broadcast_targets(fresh, self.port)
                 if now - last_broadcast >= self.interval:
                     for target in targets:
                         try:
